@@ -692,3 +692,287 @@ h1 { line-height: 1.02; }
     font-size: 10px;
   }
 }
+
+.auth-shell {
+  align-items: stretch;
+  grid-template-columns: minmax(320px, 46%) minmax(0, 54%);
+}
+
+.auth-visual,
+.auth-panel {
+  min-width: 0;
+}
+
+.auth-visual {
+  align-items: center;
+  display: flex;
+}
+
+.auth-message {
+  left: auto;
+  margin: auto 0;
+  max-width: 100%;
+  position: relative;
+  top: auto;
+  width: 100%;
+}
+
+.auth-message h1 {
+  font-size: 68px;
+  line-height: 1.04;
+  overflow-wrap: anywhere;
+}
+
+.auth-panel {
+  padding-bottom: max(32px, env(safe-area-inset-bottom));
+}
+
+.auth-form-wrap {
+  margin-top: clamp(32px, 7vh, 72px);
+  width: 100%;
+}
+
+.auth-form-wrap h2 {
+  font-size: 48px;
+  line-height: 1.04;
+}
+
+.auth-intro {
+  max-width: 42ch;
+}
+
+.auth-form,
+.auth-form label,
+.field-row {
+  min-width: 0;
+}
+
+.registration-name-row,
+.auth-form .field-row {
+  gap: 18px;
+}
+
+.auth-form input,
+.auth-form select {
+  min-width: 0;
+}
+
+.consent {
+  align-items: flex-start;
+  line-height: 1.5 !important;
+}
+
+.consent > span {
+  min-width: 0;
+}
+
+.legal-link {
+  background: none;
+  border: 0;
+  color: var(--coral);
+  cursor: pointer;
+  font: inherit;
+  padding: 0;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+  text-transform: none;
+}
+
+.legal-link:focus-visible,
+.auth-form input:focus-visible,
+.auth-form select:focus-visible {
+  outline: 2px solid var(--coral);
+  outline-offset: 3px;
+}
+
+.legal-backdrop {
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding: max(16px, env(safe-area-inset-top)) 16px max(16px, env(safe-area-inset-bottom));
+}
+
+.legal-dialog {
+  background: var(--cream);
+  margin: auto;
+  max-height: min(86vh, 760px);
+  max-height: min(86dvh, 760px);
+  max-width: 660px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding: 44px clamp(22px, 5vw, 48px) 32px;
+  position: relative;
+  width: 100%;
+}
+
+.legal-dialog h2 {
+  font-size: 38px;
+  line-height: 1.12;
+  margin: 0 40px 24px 0;
+  overflow-wrap: anywhere;
+}
+
+.legal-copy p {
+  color: var(--muted);
+  font-size: 14px;
+  line-height: 1.65;
+  margin: 0 0 17px;
+  overflow-wrap: anywhere;
+}
+
+.legal-copy strong {
+  color: var(--ink);
+}
+
+.legal-close {
+  margin-top: 8px;
+}
+
+.email-compose-modal {
+  max-height: min(90vh, 760px);
+  max-height: min(90dvh, 760px);
+  overflow-y: auto;
+}
+
+.email-compose-modal h2 {
+  overflow-wrap: anywhere;
+}
+
+.email-recipient {
+  color: var(--muted);
+  font-size: 13px;
+  overflow-wrap: anywhere;
+}
+
+.email-compose-modal textarea {
+  background: transparent;
+  border: 1px solid var(--line);
+  color: var(--ink);
+  font: 14px/1.5 'Headland One', Georgia, serif;
+  min-height: 150px;
+  padding: 10px;
+  resize: vertical;
+  width: 100%;
+}
+
+@media (max-width: 900px) {
+  .auth-shell {
+    grid-template-columns: minmax(260px, 40%) minmax(0, 60%);
+  }
+
+  .auth-visual {
+    padding-left: 9%;
+    padding-right: 9%;
+  }
+
+  .auth-message h1 {
+    font-size: 54px;
+  }
+
+  .auth-stamp {
+    left: 9%;
+  }
+
+  .auth-panel {
+    padding-left: 7%;
+    padding-right: 7%;
+  }
+}
+
+@media (min-width: 701px) and (max-width: 800px) {
+  .auth-message > p:last-child {
+    display: block;
+    font-size: 13px;
+    line-height: 1.45;
+    margin: 0;
+    max-width: 34ch;
+  }
+}
+
+@media (max-width: 700px) {
+  .auth-shell {
+    display: block;
+  }
+
+  .auth-visual {
+    align-items: center;
+    min-height: 225px;
+    padding: 24px 7%;
+  }
+
+  .auth-message {
+    margin: 0;
+  }
+
+  .auth-message .eyebrow,
+  .auth-stamp {
+    display: none;
+  }
+
+  .auth-message h1 {
+    font-size: 43px;
+    line-height: 1.04;
+    margin: 0 0 8px;
+  }
+
+  .auth-message > p:last-child {
+    display: block;
+    font-size: 13px;
+    line-height: 1.45;
+    margin: 0;
+    max-width: 34ch;
+  }
+
+  .auth-visual:after {
+    height: 220px;
+    right: -145px;
+    top: 12%;
+    width: 220px;
+  }
+
+  .auth-panel {
+    padding: 22px 7% 36px;
+  }
+
+  .auth-panel-top {
+    font-size: 10px;
+  }
+
+  .auth-form-wrap {
+    margin: 34px auto 0;
+  }
+
+  .auth-page-label {
+    margin-bottom: 25px;
+  }
+
+  .auth-form-wrap h2 {
+    font-size: 42px;
+    margin-bottom: 14px;
+  }
+
+  .auth-intro {
+    margin-bottom: 24px;
+  }
+
+  .registration-name-row,
+  .auth-form .field-row {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .legal-dialog {
+    max-height: 90vh;
+    max-height: 90dvh;
+    padding: 40px 22px 24px;
+  }
+
+  .legal-dialog h2 {
+    font-size: 31px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .legal-dialog,
+  .legal-backdrop {
+    scroll-behavior: auto;
+  }
+}

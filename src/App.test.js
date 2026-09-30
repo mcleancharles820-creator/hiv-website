@@ -82,6 +82,106 @@ test('shows all requested registration fields', () => {
   expect(screen.getByText(/terms/i)).toBeInTheDocument();
 });
 
+test('signup terms and privacy links open readable legal notices', () => {
+  render(<App />);
+  userEvent.click(screen.getByRole('button', { name: /new here\? sign up/i }));
+
+  userEvent.click(screen.getByRole('button', { name: /terms of use/i }));
+  expect(screen.getByRole('dialog')).toHaveAccessibleName('Terms of Use');
+  expect(screen.getByText(/not a medical provider/i)).toBeInTheDocument();
+  userEvent.click(screen.getByRole('button', { name: /^close$/i }));
+
+  userEvent.click(screen.getByRole('button', { name: /privacy notice/i }));
+  expect(screen.getByRole('dialog')).toHaveAccessibleName('Privacy Notice');
+  expect(screen.getByText(/do not submit real patient or sensitive health information/i)).toBeInTheDocument();
+  fireEvent.keyDown(window, { key: 'Escape' });
+  expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+});
+
+test('admin email service sends a registered user ID to the backend', async () => {
+  const previousApiMode = db.useApi;
+  const fetchMock = jest.spyOn(global, 'fetch').mockResolvedValue({
+    ok: true,
+    json: async () => ({ sent: true }),
+  });
+  db.useApi = true;
+
+  try {
+    await expect(db.sendAccountEmail(42, 'Account update', 'Please review your account.')).resolves.toEqual({ sent: true });
+    expect(fetchMock).toHaveBeenCalledWith('/api/admin/email', expect.objectContaining({
+      method: 'POST',
+      credentials: 'same-origin',
+      body: JSON.stringify({ userId: 42, subject: 'Account update', message: 'Please review your account.' }),
+    }));
+  } finally {
+    db.useApi = previousApiMode;
+  }
+});
+
+test('admin can email a registered account from the user list', async () => {
+  const previousApiMode = db.useApi;
+  db.registerUser({ fullName: 'Admin User', email: 'mail.admin@example.com', password: 'securePassword123', role: 'admin' });
+  db.registerUser({ fullName: 'Mail Recipient', email: 'mail.recipient@example.com', password: 'securePassword123', role: 'patient' });
+  render(<App />);
+  userEvent.selectOptions(screen.getByLabelText(/account type/i), 'admin');
+  userEvent.type(screen.getByLabelText(/email address/i), 'mail.admin@example.com');
+  userEvent.type(screen.getByLabelText(/^password$/i), 'securePassword123');
+  userEvent.click(screen.getByRole('button', { name: /^sign in/i }));
+  db.useApi = true;
+  userEvent.click(screen.getByRole('button', { name: 'Users' }));
+
+  const recipientCard = screen.getByText('Mail Recipient').closest('article');
+  userEvent.click(within(recipientCard).getByRole('button', { name: /send email/i }));
+  userEvent.type(screen.getByLabelText(/^subject$/i), 'Care update');
+  userEvent.type(screen.getByLabelText(/^message$/i), 'Please sign in to review your care update.');
+
+  const fetchMock = jest.spyOn(global, 'fetch').mockResolvedValue({ ok: true, json: async () => ({ sent: true }) });
+  try {
+    userEvent.click(within(screen.getByRole('dialog')).getByRole('button', { name: /^send email/i }));
+    expect(await screen.findByRole('heading', { name: /email delivered/i })).toBeInTheDocument();
+    expect(fetchMock).toHaveBeenCalledWith('/api/admin/email', expect.objectContaining({
+      method: 'POST',
+      body: JSON.stringify({ userId: db.getTable('Users').find((user) => user.email === 'mail.recipient@example.com').user_id, subject: 'Care update', message: 'Please sign in to review your care update.' }),
+    }));
+  } finally {
+    db.useApi = previousApiMode;
+  }
+});
+
+test('API signup waits for email verification and supports resending the link', async () => {
+  const previousApiMode = db.useApi;
+  db.useApi = true;
+  const fetchMock = jest.spyOn(global, 'fetch').mockImplementation(async (url) => {
+    if (url === '/api/auth/session') return { ok: false, json: async () => ({ error: 'Sign in required.' }) };
+    if (url === '/api/auth/register') return { ok: true, json: async () => ({ verificationRequired: true, email: 'verify@example.com' }) };
+    if (url === '/api/auth/resend-verification') return { ok: true, json: async () => ({ ok: true, message: 'If the account needs verification, a new link has been sent.' }) };
+    throw new Error(`Unexpected request: ${url}`);
+  });
+
+  try {
+    render(<App />);
+    userEvent.click(screen.getByRole('button', { name: /new here\? sign up/i }));
+    userEvent.type(screen.getByLabelText(/first name/i), 'Verify');
+    userEvent.type(screen.getByLabelText(/last name/i), 'Account');
+    userEvent.type(screen.getByLabelText(/email address/i), 'verify@example.com');
+    userEvent.type(screen.getByLabelText(/^age$/i), '30');
+    fireEvent.change(screen.getByLabelText(/date of birth/i), { target: { value: '1996-01-01' } });
+    userEvent.selectOptions(screen.getByLabelText(/^gender/i), 'Woman');
+    userEvent.type(screen.getByLabelText(/^password$/i), 'securePass1234');
+    userEvent.type(screen.getByLabelText(/confirm password/i), 'securePass1234');
+    userEvent.click(screen.getByRole('checkbox'));
+    userEvent.click(screen.getByRole('button', { name: /create my account/i }));
+
+    expect(await screen.findByRole('heading', { name: /check your email/i })).toBeInTheDocument();
+    expect(screen.queryByRole('heading', { name: /your care dashboard/i })).not.toBeInTheDocument();
+    userEvent.click(screen.getByRole('button', { name: /resend verification email/i }));
+    expect(await screen.findByText(/if the account needs verification/i)).toBeInTheDocument();
+    expect(fetchMock).toHaveBeenCalledWith('/api/auth/resend-verification', expect.objectContaining({ method: 'POST' }));
+  } finally {
+    db.useApi = previousApiMode;
+  }
+});
+
 test('switching from sign in to sign up clears entered credentials and account type', () => {
   render(<App />);
   userEvent.type(screen.getByLabelText(/email address/i), 'user@example.com');

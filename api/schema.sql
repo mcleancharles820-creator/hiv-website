@@ -25,9 +25,20 @@ CREATE TABLE users (
     gender VARCHAR(50) CHECK (gender IS NULL OR gender IN ('Woman', 'Man', 'Non-binary', 'Prefer not to say', 'Self-describe')),
     terms_accepted BOOLEAN NOT NULL DEFAULT TRUE,
     is_active BOOLEAN NOT NULL DEFAULT TRUE,
+    email_verified BOOLEAN NOT NULL DEFAULT FALSE,
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
+
+CREATE TABLE email_verification_tokens (
+    token_id BIGSERIAL PRIMARY KEY,
+    user_id INT NOT NULL REFERENCES users(user_id) ON DELETE CASCADE,
+    token_hash CHAR(64) NOT NULL UNIQUE,
+    expires_at TIMESTAMPTZ NOT NULL,
+    consumed_at TIMESTAMPTZ,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+CREATE INDEX idx_email_verification_tokens_user ON email_verification_tokens(user_id, expires_at);
 
 -- 2. Testing Facilities
 CREATE TABLE testing_facilities (

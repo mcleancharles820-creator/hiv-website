@@ -81,6 +81,19 @@ function AuthScreen({ onEnter }) {
   const [error, setError] = useState('');
   const [role, setRole] = useState('patient');
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [legalDocument, setLegalDocument] = useState(null);
+  const [verificationEmail, setVerificationEmail] = useState('');
+  const [verificationMessage, setVerificationMessage] = useState('');
+  const [resendingVerification, setResendingVerification] = useState(false);
+
+  useEffect(() => {
+    if (!legalDocument) return undefined;
+    const closeOnEscape = (event) => {
+      if (event.key === 'Escape') setLegalDocument(null);
+    };
+    window.addEventListener('keydown', closeOnEscape);
+    return () => window.removeEventListener('keydown', closeOnEscape);
+  }, [legalDocument]);
 
   useEffect(() => {
     scrollPageToTop();
@@ -118,6 +131,13 @@ function AuthScreen({ onEnter }) {
       const registration = db.registerUser({ firstName, lastName, email, password, role, age, dateOfBirth, gender, contactNumber, termsAccepted });
       const registered = db.useApi ? await registration : registration;
 
+      if (registered.verificationRequired || registered.verificationPending) {
+        setVerificationEmail(email.trim());
+        setVerificationMessage(registered.error || 'We sent a verification link. Open it before signing in.');
+        setIsSubmitting(false);
+        return;
+      }
+
       if (registered.error) {
         setError(registered.error);
         setIsSubmitting(false);
@@ -129,12 +149,25 @@ function AuthScreen({ onEnter }) {
       const authentication = db.login({ email, password, role });
       const auth = db.useApi ? await authentication : authentication;
       if (auth.error) {
+        if (db.useApi && /verify your email/i.test(auth.error)) {
+          setVerificationEmail(email.trim());
+          setVerificationMessage(auth.error);
+          setIsSubmitting(false);
+          return;
+        }
         setError(auth.error);
         setIsSubmitting(false);
         return;
       }
       onEnter(auth.user?.role || role, false, auth);
     }
+  };
+
+  const resendVerification = async () => {
+    setResendingVerification(true);
+    const result = await db.resendVerificationEmail(verificationEmail);
+    setVerificationMessage(result.error || result.message || 'If this account needs verification, a new link has been sent.');
+    setResendingVerification(false);
   };
 
   return (
@@ -146,9 +179,15 @@ function AuthScreen({ onEnter }) {
       <div className="auth-panel">
         <div className="auth-panel-top"><span>WELCOME</span><span>01 / 01</span></div>
         <div key={mode} className="auth-form-wrap route-transition">
-          <div className="auth-page-label"><span>{mode === 'login' ? 'LOG IN' : 'SIGN UP'}</span><span>01 / 01</span></div>
-          <h2>{mode === 'login' ? <>Good to<br /><i>see you.</i></> : <>Make space<br /><i>for care.</i></>}</h2>
-          <p className="auth-intro">{mode === 'login' ? 'Sign in to keep your support journey in one private place.' : 'Create an account to save resources and connect with support.'}</p>
+          <div className="auth-page-label"><span>{verificationEmail ? 'VERIFY EMAIL' : mode === 'login' ? 'LOG IN' : 'SIGN UP'}</span><span>01 / 01</span></div>
+          <h2>{verificationEmail ? <>Check your<br /><i>email.</i></> : mode === 'login' ? <>Good to<br /><i>see you.</i></> : <>Make space<br /><i>for care.</i></>}</h2>
+          <p className="auth-intro">{verificationEmail ? `We sent a verification link to ${verificationEmail}. Verify your address, then return here to sign in.` : mode === 'login' ? 'Sign in to keep your support journey in one private place.' : 'Create an account to save resources and connect with support.'}</p>
+          {verificationEmail ? <div className="verification-prompt">
+            <p className="verification-address">{verificationEmail}</p>
+            {verificationMessage && <p className="verification-feedback" role="status">{verificationMessage}</p>}
+            <button className="primary-button" type="button" onClick={resendVerification} disabled={resendingVerification}>{resendingVerification ? 'Sending...' : 'Resend verification email'} <span>↗</span></button>
+            <button className="auth-switch" type="button" onClick={() => { setVerificationEmail(''); setVerificationMessage(''); setMode('login'); setRole('patient'); setError(''); }}>Back to sign in</button>
+          </div> : <>
           <form key={mode} className={`auth-form ${mode === 'register' ? 'registration-form' : ''}`} onSubmit={handleSubmit} autoComplete="off">
             {mode === 'register' && <div className="field-row registration-name-row"><label>First Name<input name="firstName" required type="text" autoComplete="given-name" placeholder="First name" /></label><label>Last Name<input name="lastName" required type="text" autoComplete="family-name" placeholder="Last name" /></label></div>}
             <label>Email Address<input name="email" required type="email" autoComplete="off" placeholder="you@example.com" /></label>
@@ -158,7 +197,7 @@ function AuthScreen({ onEnter }) {
             <label>Password<input name="password" required minLength={mode === 'register' ? 12 : undefined} type="password" autoComplete="new-password" placeholder="Enter your password" /></label>
             {mode === 'register' && <label>Confirm Password<input name="confirmPassword" required type="password" autoComplete="new-password" placeholder="Re-enter your password" /></label>}
             {mode === 'register' && <label>Contact Number <span className="optional">(optional)</span><input name="contactNumber" type="tel" autoComplete="off" placeholder="Your contact number" /></label>}
-            {mode === 'register' && <label className="consent"><input name="terms" required type="checkbox" /><span>I agree to the <a href="#terms">Terms</a> and <a href="#privacy">Privacy Policy</a>.</span></label>}
+            {mode === 'register' && <label className="consent"><input name="terms" required type="checkbox" /><span>I agree to the <button type="button" className="legal-link" onClick={() => setLegalDocument('terms')}>Terms of Use</button> and have read the <button type="button" className="legal-link" onClick={() => setLegalDocument('privacy')}>Privacy Notice</button>.</span></label>}
             {error && <p className="form-error" role="alert">{error}</p>}
             <button className="primary-button auth-submit" type="submit" disabled={isSubmitting}>{isSubmitting ? 'Please wait...' : mode === 'login' ? 'Sign in' : 'Create my account'} <span>↗</span></button>
           </form>
@@ -167,8 +206,33 @@ function AuthScreen({ onEnter }) {
           <div className="guest-divider"><span>or</span></div>
           <button className="guest-button" onClick={() => onEnter('patient', true)}>Continue as guest <span>→</span></button>
           <p className="privacy-note">Your information is treated with care and never shared without your permission.</p>
+          </>}
         </div>
       </div>
+      {legalDocument && <div className="modal-backdrop legal-backdrop" role="presentation" onClick={() => setLegalDocument(null)}>
+        <section className="legal-dialog" role="dialog" aria-modal="true" aria-labelledby="legal-title" onClick={(event) => event.stopPropagation()}>
+          <button className="close-button" type="button" onClick={() => setLegalDocument(null)} aria-label="Close legal information">×</button>
+          <p className="eyebrow">HIVeLink · Account information</p>
+          <h2 id="legal-title">{legalDocument === 'terms' ? 'Terms of Use' : 'Privacy Notice'}</h2>
+          {legalDocument === 'terms' ? <div className="legal-copy">
+            <p><strong>Use of this service.</strong> HIVeLink provides educational information and tools for communicating about support, appointments, and care. By creating an account, you agree to use the service lawfully and provide information that is accurate to the best of your knowledge.</p>
+            <p><strong>Not medical care.</strong> This website is not a medical provider and does not diagnose, treat, or replace advice from a licensed health professional. Do not use chat or appointment requests for emergencies. Contact local emergency services or a qualified clinician when urgent help is needed.</p>
+            <p><strong>Your account.</strong> Keep your sign-in details private and tell the service administrator if you believe your account has been accessed without permission. Access may be suspended to protect users or maintain the service.</p>
+            <p><strong>Respectful use.</strong> Do not use HIVeLink to threaten, harass, impersonate, or unlawfully access another person’s information. Do not submit information about another person unless you are authorized to do so.</p>
+            <p><strong>Availability and changes.</strong> Features may change or be unavailable. Information on the site may not always reflect current clinic schedules, medication stock, or local guidance; confirm these directly with a health professional or facility.</p>
+            <p><strong>Questions.</strong> For account or service questions, contact the organization operating HIVeLink. These terms are a plain-language service notice and are not a substitute for legal advice or a complete legal agreement.</p>
+          </div> : <div className="legal-copy">
+            <p><strong>Information we collect.</strong> Depending on how you use HIVeLink, this can include your name, email, contact details, date of birth, account credentials, appointment and medication requests, messages, and information you choose to share with a health worker.</p>
+            <p><strong>How it is used.</strong> Information is used to create and secure your account, provide requested platform features, coordinate support, and maintain service operations. Do not enter information you are not comfortable sharing.</p>
+            <p><strong>Email notifications.</strong> HIVeLink may email your registered address about account setup, appointment or medication request status, or a new private-chat message. Chat message text and clinical notes are not included in those automatic notifications. Administrators may also send account-related messages to the email address on file.</p>
+            <p><strong>Storage and access.</strong> When the production API is configured, account and service records are stored in the operator’s database and can be accessed by authorized staff according to their role. Administrators and assigned health workers may see information needed for their responsibilities.</p>
+            <p><strong>Security and limits.</strong> Reasonable technical safeguards are used, but no internet service can guarantee absolute security. Do not use this site for emergency communication. Contact the operator promptly if you suspect unauthorized access.</p>
+            <p><strong>Your choices.</strong> You may choose what information to provide, except fields required for an account or feature. To request access, correction, or deletion, contact the organization operating HIVeLink.</p>
+            <p><strong>Important status notice.</strong> HIVeLink is still being prepared for public operation. Do not submit real patient or sensitive health information until the operator has completed appropriate security, privacy, and legal reviews and has published contact details for privacy requests.</p>
+          </div>}
+          <button type="button" className="primary-button legal-close" onClick={() => setLegalDocument(null)}>Close</button>
+        </section>
+      </div>}
     </div>
   );
 }
@@ -1148,6 +1212,51 @@ function HealthWorkerDashboard({ currentUser, currentWorker, onPublicHub, onSign
   );
 }
 
+function AdminEmailModal({ user, onClose }) {
+  const [subject, setSubject] = useState('');
+  const [message, setMessage] = useState('');
+  const [error, setError] = useState('');
+  const [sent, setSent] = useState(false);
+  const [sending, setSending] = useState(false);
+
+  const handleSubmit = async (event) => {
+    event.preventDefault();
+    setError('');
+    setSending(true);
+    const result = await db.sendAccountEmail(user.userId, subject, message);
+    setSending(false);
+    if (result.error) {
+      setError(result.error);
+      return;
+    }
+    setSent(true);
+  };
+
+  return (
+    <div className="modal-backdrop" role="presentation" onClick={onClose}>
+      <section className="patient-form email-compose-modal" role="dialog" aria-modal="true" aria-labelledby="email-compose-title" onClick={(event) => event.stopPropagation()}>
+        <button className="close-button" type="button" onClick={onClose} aria-label="Close email composer">×</button>
+        {sent ? <>
+          <p className="eyebrow">Message sent</p>
+          <h2 id="email-compose-title">Email delivered</h2>
+          <p>A message was sent to {user.email}.</p>
+          <button className="primary-button" type="button" onClick={onClose}>Done</button>
+        </> : <>
+          <p className="eyebrow">Registered account</p>
+          <h2 id="email-compose-title">Email {user.fullName}</h2>
+          <p className="email-recipient">To: {user.email}</p>
+          {error && <p className="form-error" role="alert">{error}</p>}
+          <form onSubmit={handleSubmit}>
+            <label>Subject<input required maxLength="160" value={subject} onChange={(event) => setSubject(event.target.value)} /></label>
+            <label>Message<textarea required maxLength="5000" rows="7" value={message} onChange={(event) => setMessage(event.target.value)} /></label>
+            <button className="primary-button" type="submit" disabled={sending}>{sending ? 'Sending...' : 'Send email'} <span>↗</span></button>
+          </form>
+        </>}
+      </section>
+    </div>
+  );
+}
+
 function AdminDashboard({ onPublicHub, onSignOut }) {
   const [, setDbVersion] = useState(0);
   const [page, setPage] = useState('overview');
@@ -1158,6 +1267,7 @@ function AdminDashboard({ onPublicHub, onSignOut }) {
   const [workerSearch, setWorkerSearch] = useState('');
   const [workerAvailabilityFilter, setWorkerAvailabilityFilter] = useState('all');
   const [workerVerificationFilter, setWorkerVerificationFilter] = useState('all');
+  const [verificationNotice, setVerificationNotice] = useState('');
 
   useEffect(() => {
     return db.subscribe(() => setDbVersion((v) => v + 1));
@@ -1190,6 +1300,10 @@ function AdminDashboard({ onPublicHub, onSignOut }) {
   const removeWorker = (id) => db.adminDeleteHealthWorker(id);
   const addUser = () => setActiveModal({ type: 'create-user' });
   const addWorker = () => setActiveModal({ type: 'create-worker' });
+  const resendUserVerification = async (userId) => {
+    const result = await db.resendVerificationForUser(userId);
+    setVerificationNotice(result.error || result.message || 'Verification email sent.');
+  };
 
   const appointmentsCount = db.getTable('Appointments').length;
   const openChatsCount = db.getTable('ChatSessions').filter((c) => c.status === 'Open').length;
@@ -1245,6 +1359,7 @@ function AdminDashboard({ onPublicHub, onSignOut }) {
                   </div>
                   <div className="admin-entity-badges">
                     <StatusBadge status={user.accountStatus} label={`Account: ${user.accountStatus}`} />
+                    <StatusBadge status={user.emailVerified ? 'Verified' : 'Pending verification'} type={user.emailVerified ? 'success' : 'warning'} label={`Email: ${user.emailVerified ? 'Verified' : 'Pending verification'}`} />
                     <StatusBadge status={user.careStatus} label={`Care: ${user.careStatus}`} />
                   </div>
                 </div>
@@ -1262,6 +1377,8 @@ function AdminDashboard({ onPublicHub, onSignOut }) {
                   </span>
                   <div className="admin-card-actions">
                     <button type="button" className="admin-btn" onClick={() => setActiveModal({ type: 'view-user', user })}>View Details & Services ↗</button>
+                    {db.useApi && <button type="button" className="admin-btn" onClick={() => setActiveModal({ type: 'email-user', user })}>Send email</button>}
+                    {db.useApi && !user.emailVerified && <button type="button" className="admin-btn" onClick={() => resendUserVerification(user.userId)}>Resend verification</button>}
                     <button type="button" className="admin-btn" onClick={() => setActiveModal({ type: 'edit-user', user })}>Edit</button>
                     <button type="button" className="admin-btn admin-btn-danger record-delete" onClick={() => setActiveModal({ type: 'confirm-delete', title: 'Delete User Account', message: `Are you sure you want to delete ${user.fullName} (${user.email})? All associated records will be permanently removed.`, onConfirm: () => { removeUser(user.userId); setActiveModal(null); } })}>Delete</button>
                   </div>
@@ -1272,6 +1389,7 @@ function AdminDashboard({ onPublicHub, onSignOut }) {
         ) : (
           <p className="empty-records">No registered users matching criteria.</p>
         )}
+        {verificationNotice && <p className="form-status" role="status">{verificationNotice}</p>}
       </PagePanel>
     ),
     workers: (
@@ -1307,6 +1425,7 @@ function AdminDashboard({ onPublicHub, onSignOut }) {
                     <span className="admin-entity-subtitle">{worker.specialty} · {worker.email}</span>
                   </div>
                   <div className="admin-entity-badges">
+                    <StatusBadge status={worker.emailVerified ? 'Verified' : 'Pending verification'} type={worker.emailVerified ? 'success' : 'warning'} label={`Email: ${worker.emailVerified ? 'Verified' : 'Pending verification'}`} />
                     <StatusBadge status={worker.availabilityStatus} />
                     <StatusBadge status={worker.verificationStatus} />
                     <StatusBadge status={worker.accountStatus} />
@@ -1324,6 +1443,7 @@ function AdminDashboard({ onPublicHub, onSignOut }) {
                   <span style={{ color: 'var(--muted)', fontSize: '12px' }}>{worker.bioSummary}</span>
                   <div className="admin-card-actions">
                     <button type="button" className="admin-btn" onClick={() => setActiveModal({ type: 'view-worker', worker })}>View Details & Workload ↗</button>
+                    {db.useApi && !worker.emailVerified && <button type="button" className="admin-btn" onClick={() => resendUserVerification(worker.userId)}>Resend verification</button>}
                     <button type="button" className="admin-btn" onClick={() => setActiveModal({ type: 'edit-worker', worker })}>Edit</button>
                     <button type="button" className="admin-btn admin-btn-danger record-delete" onClick={() => setActiveModal({ type: 'confirm-delete', title: 'Delete Health Worker', message: `Are you sure you want to delete health worker ${worker.fullName}?`, onConfirm: () => { removeWorker(worker.workerId); setActiveModal(null); } })}>Delete</button>
                   </div>
@@ -1389,6 +1509,7 @@ function AdminDashboard({ onPublicHub, onSignOut }) {
       {activeModal?.type === 'view-user' && <AdminUserDetailModal user={activeModal.user} onClose={() => setActiveModal(null)} onEdit={(u) => setActiveModal({ type: 'edit-user', user: u })} onDelete={(id, name) => setActiveModal({ type: 'confirm-delete', title: 'Delete User Account', message: `Are you sure you want to delete ${name}?`, onConfirm: () => { removeUser(id); setActiveModal(null); } })} />}
       {activeModal?.type === 'create-user' && <AdminUserFormModal onClose={() => setActiveModal(null)} onSave={() => setActiveModal(null)} />}
       {activeModal?.type === 'edit-user' && <AdminUserFormModal user={activeModal.user} onClose={() => setActiveModal(null)} onSave={() => setActiveModal(null)} />}
+      {activeModal?.type === 'email-user' && <AdminEmailModal user={activeModal.user} onClose={() => setActiveModal(null)} />}
       {activeModal?.type === 'view-worker' && <AdminHealthWorkerDetailModal worker={activeModal.worker} onClose={() => setActiveModal(null)} onEdit={(w) => setActiveModal({ type: 'edit-worker', worker: w })} onDelete={(id, name) => setActiveModal({ type: 'confirm-delete', title: 'Delete Health Worker', message: `Are you sure you want to delete ${name}?`, onConfirm: () => { removeWorker(id); setActiveModal(null); } })} />}
       {activeModal?.type === 'create-worker' && <AdminHealthWorkerFormModal onClose={() => setActiveModal(null)} onSave={() => setActiveModal(null)} />}
       {activeModal?.type === 'edit-worker' && <AdminHealthWorkerFormModal worker={activeModal.worker} onClose={() => setActiveModal(null)} onSave={() => setActiveModal(null)} />}

@@ -70,7 +70,12 @@ class DatabaseService {
       headers: { 'Content-Type': 'application/json', ...options.headers },
     });
     const result = await response.json().catch(() => ({}));
-    if (!response.ok) throw new Error(result.error || 'The server could not complete the request.');
+    if (!response.ok) {
+      const error = new Error(result.error || 'The server could not complete the request.');
+      error.details = result;
+      error.status = response.status;
+      throw error;
+    }
     return result;
   }
 
@@ -96,6 +101,36 @@ class DatabaseService {
     await this.apiRequest('/api/auth/logout', { method: 'POST' });
     this.data = initialDatabase;
     this.notify();
+  }
+
+  async sendAccountEmail(userId, subject, message) {
+    if (!this.useApi) return { error: 'Email delivery is only available when the backend API is enabled.' };
+    try {
+      return await this.apiRequest('/api/admin/email', {
+        method: 'POST',
+        body: JSON.stringify({ userId, subject, message }),
+      });
+    } catch (error) {
+      return { error: error.message };
+    }
+  }
+
+  async resendVerificationEmail(email) {
+    if (!this.useApi) return { error: 'Email verification is only available when the backend API is enabled.' };
+    try {
+      return await this.apiRequest('/api/auth/resend-verification', { method: 'POST', body: JSON.stringify({ email }) });
+    } catch (error) {
+      return { error: error.message };
+    }
+  }
+
+  async resendVerificationForUser(userId) {
+    if (!this.useApi) return { error: 'Email verification is only available when the backend API is enabled.' };
+    try {
+      return await this.apiRequest('/api/auth/resend-verification', { method: 'POST', body: JSON.stringify({ userId }) });
+    } catch (error) {
+      return { error: error.message };
+    }
   }
 
   async remoteMutation(method, tableName, id, record) {
@@ -231,10 +266,7 @@ class DatabaseService {
       return this.apiRequest('/api/auth/register', {
         method: 'POST',
         body: JSON.stringify({ firstName: firstName || nameParts.shift(), lastName: lastName || nameParts.join(' '), email, password, age, dateOfBirth, gender, contactNumber, termsAccepted }),
-      }).then(async (result) => {
-        await this.refresh();
-        return result;
-      }).catch((error) => ({ error: error.message }));
+      }).catch((error) => ({ error: error.message, verificationPending: Boolean(error.details?.verificationPending) }));
     }
     // 1. Data Type normalization and parsing
     const parsedAge = age ? parseInt(age, 10) : null;
@@ -612,6 +644,7 @@ class DatabaseService {
           fullName: u.full_name,
           name: u.full_name,
           email: u.email,
+          emailVerified: u.email_verified !== false,
           contactNumber: u.contact_number || 'Not provided',
           phone: u.contact_number || '',
           age: u.age || 'N/A',
@@ -660,6 +693,7 @@ class DatabaseService {
         fullName: u.full_name || 'Health Worker',
         name: u.full_name || 'Health Worker',
         email: u.email || 'worker@risinghiv.org',
+        emailVerified: u.email_verified !== false,
         contactNumber: u.contact_number || 'Not provided',
         phone: u.contact_number || '',
         specialty: w.specialty || 'HIV care support',

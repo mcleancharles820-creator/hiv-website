@@ -34,6 +34,12 @@ function send(res, status, body) {
   res.end(JSON.stringify(body));
 }
 
+function sendHtml(res, status, html) {
+  res.statusCode = status;
+  res.setHeader('Content-Type', 'text/html; charset=utf-8');
+  res.end(html);
+}
+
 function getBody(req) {
   if (req.body && typeof req.body === 'object') return req.body;
   return {};
@@ -68,13 +74,105 @@ async function currentUser(req) {
   let claims;
   try { claims = JSON.parse(Buffer.from(payload, 'base64url').toString('utf8')); } catch { return null; }
   if (!claims.sub || claims.exp <= Date.now() / 1000) return null;
-  const result = await pool.query('SELECT user_id, email, full_name, role, contact_number, age, date_of_birth, gender, is_active FROM users WHERE user_id = $1', [claims.sub]);
-  return result.rows[0]?.is_active ? result.rows[0] : null;
+  const result = await pool.query('SELECT user_id, email, full_name, role, contact_number, age, date_of_birth, gender, is_active, email_verified FROM users WHERE user_id = $1', [claims.sub]);
+  return result.rows[0]?.is_active && result.rows[0]?.email_verified ? result.rows[0] : null;
 }
 
 function setSessionCookie(res, token) {
   const secure = process.env.NODE_ENV === 'production' ? '; Secure' : '';
   res.setHeader('Set-Cookie', `${sessionCookie}=${encodeURIComponent(token)}; HttpOnly; Path=/; SameSite=Lax; Max-Age=28800${secure}`);
+}
+
+function escapeHtml(value) {
+  return String(value).replace(/[&<>"']/g, (character) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[character]));
+}
+
+async function sendRegisteredEmail(userId, { subject, text, title = subject, html: customHtml }) {
+  const recipient = await pool.query('SELECT email, full_name FROM users WHERE user_id = $1 AND is_active = TRUE', [userId]);
+  if (!recipient.rowCount) return { sent: false, error: 'Registered recipient not found.' };
+  if (!process.env.RESEND_API_KEY || !process.env.EMAIL_FROM) {
+    console.warn('Email delivery skipped: RESEND_API_KEY or EMAIL_FROM is not configured.');
+    return { sent: false, error: 'Email delivery is not configured.' };
+  }
+  const name = recipient.rows[0].full_name;
+  const safeTitle = escapeHtml(title);
+  const safeName = escapeHtml(name);
+  const safeText = escapeHtml(text).replace(/\n/g, '<br>');
+  try {
+    const response = await fetch('https://api.resend.com/emails', {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${process.env.RESEND_API_KEY}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        from: process.env.EMAIL_FROM,
+        to: [recipient.rows[0].email],
+        subject,
+        text: `Hello ${name},\n\n${text}\n\nHIVeLink`,
+        html: customHtml || `<div style="font-family:Arial,sans-serif;line-height:1.6;color:#54151b"><h1 style="font-size:22px">${safeTitle}</h1><p>Hello ${safeName},</p><p>${safeText}</p><p>HIVeLink</p></div>`,
+      }),
+    });
+    if (!response.ok) {
+      console.error('Email provider rejected a message:', response.status);
+      return { sent: false, error: 'Email provider rejected the message.' };
+    }
+    return { sent: true };
+  } catch (error) {
+    console.error('Email delivery failed:', error.message);
+    return { sent: false, error: 'Email delivery failed.' };
+  }
+}
+
+function applicationUrl() {
+  const configured = process.env.APP_URL || process.env.VERCEL_URL || process.env.VERCEL_PROJECT_PRODUCTION_URL;
+  if (configured) return `${configured.startsWith('http') ? configured : `https://${configured}`}`.replace(/\/$/, '');
+  return process.env.NODE_ENV === 'production' ? null : 'http://localhost:3000';
+}
+
+async function sendVerificationEmail(userId) {
+  const baseUrl = applicationUrl();
+  if (!baseUrl || !process.env.RESEND_API_KEY || !process.env.EMAIL_FROM) return { sent: false, error: 'Email verification is not configured.' };
+  const token = crypto.randomBytes(32).toString('base64url');
+  const tokenHash = crypto.createHash('sha256').update(token).digest('hex');
+  await pool.query('UPDATE email_verification_tokens SET consumed_at = NOW() WHERE user_id = $1 AND consumed_at IS NULL', [userId]);
+  await pool.query('INSERT INTO email_verification_tokens (user_id, token_hash, expires_at) VALUES ($1, $2, NOW() + INTERVAL \'24 hours\')', [userId, tokenHash]);
+  const verificationUrl = `${baseUrl}/api/auth/verify?token=${encodeURIComponent(token)}`;
+  const safeUrl = escapeHtml(verificationUrl);
+  return sendRegisteredEmail(userId, {
+    subject: 'Verify your HIVeLink email',
+    text: `Verify your email within 24 hours by opening this link: ${verificationUrl}`,
+    title: 'Verify your email',
+    html: `<div style="font-family:Arial,sans-serif;line-height:1.6;color:#54151b"><h1>Verify your HIVeLink email</h1><p>This link expires in 24 hours and can only be used once.</p><p><a href="${safeUrl}" style="background:#e21d2b;color:#fff;padding:12px 18px;text-decoration:none">Verify email</a></p><p>If you did not create this account, you can ignore this email.</p></div>`,
+  });
+}
+
+async function notifyPatientRecord(table, id, subject, text) {
+  const relation = table === 'Appointments'
+    ? 'SELECT p.user_id FROM appointments r JOIN patients p USING (patient_id) WHERE r.appointment_id = $1'
+    : 'SELECT p.user_id FROM medication_requests r JOIN patients p USING (patient_id) WHERE r.request_id = $1';
+  const result = await pool.query(relation, [id]);
+  if (result.rowCount) await sendRegisteredEmail(result.rows[0].user_id, { subject, text });
+}
+
+async function notifyChatCounterparty(chatSessionId, senderRole) {
+  const result = await pool.query(
+    `SELECT ${senderRole === 'patient' ? 'worker_user.user_id' : 'patient_user.user_id'} AS user_id
+     FROM chat_sessions session
+     JOIN patients patient ON patient.patient_id = session.patient_id
+     JOIN users patient_user ON patient_user.user_id = patient.user_id
+     LEFT JOIN health_workers worker ON worker.worker_id = COALESCE(session.worker_id, patient.assigned_worker_id)
+     LEFT JOIN users worker_user ON worker_user.user_id = worker.user_id
+     WHERE session.chat_session_id = $1`,
+    [chatSessionId],
+  );
+  if (result.rows[0]?.user_id) {
+    await sendRegisteredEmail(result.rows[0].user_id, {
+      subject: 'New private support message',
+      text: 'You have a new message in HIVeLink. Sign in to view and reply securely.',
+    });
+  }
+}
+
+async function bestEffort(task) {
+  try { await task(); } catch (error) { console.error('Email notification failed:', error.message); }
 }
 
 async function loadSnapshot(user) {
@@ -100,7 +198,7 @@ async function loadSnapshot(user) {
     for (const [key, config] of Object.entries(tableConfig)) {
       if (key === 'PublicInquiries') continue;
       queries.push((async () => {
-        const selection = key === 'Users' ? 'user_id, email, full_name, role, contact_number, date_of_birth, age, gender, terms_accepted, is_active, created_at, updated_at' : '*';
+        const selection = key === 'Users' ? 'user_id, email, full_name, role, contact_number, date_of_birth, age, gender, terms_accepted, is_active, email_verified, created_at, updated_at' : '*';
         const rows = await pool.query(`SELECT ${selection} FROM ${config.sql}`);
         snapshot[key] = rows.rows;
       })());
@@ -116,7 +214,7 @@ async function loadSnapshot(user) {
     queries.push((async () => { snapshot.ChatMessages = (await pool.query('SELECT m.* FROM chat_messages m JOIN chat_sessions c USING (chat_session_id) JOIN patients p USING (patient_id) WHERE p.user_id = $1 ORDER BY sent_at', [user.user_id])).rows; })());
     queries.push((async () => { snapshot.SupportGroupMembers = (await pool.query('SELECT sgm.* FROM support_group_members sgm JOIN patients p USING (patient_id) WHERE p.user_id = $1', [user.user_id])).rows; })());
   } else if (user.role === 'health-worker') {
-    queries.push((async () => { snapshot.Users = [user, ...(await pool.query("SELECT u.user_id, u.email, u.full_name, u.role, u.contact_number, u.date_of_birth, u.age, u.gender, u.is_active FROM users u JOIN patients p USING (user_id) JOIN health_workers h ON h.worker_id = p.assigned_worker_id WHERE h.user_id = $1", [user.user_id])).rows]; })());
+    queries.push((async () => { snapshot.Users = [user, ...(await pool.query("SELECT u.user_id, u.email, u.full_name, u.role, u.contact_number, u.date_of_birth, u.age, u.gender, u.is_active, u.email_verified FROM users u JOIN patients p USING (user_id) JOIN health_workers h ON h.worker_id = p.assigned_worker_id WHERE h.user_id = $1", [user.user_id])).rows]; })());
     queries.push((async () => { snapshot.HealthWorkers = (await pool.query('SELECT * FROM health_workers WHERE user_id = $1', [user.user_id])).rows; })());
     queries.push((async () => { snapshot.Patients = (await pool.query('SELECT p.* FROM patients p JOIN health_workers h ON h.worker_id = p.assigned_worker_id WHERE h.user_id = $1', [user.user_id])).rows; })());
     queries.push((async () => { snapshot.Appointments = (await pool.query('SELECT a.* FROM appointments a JOIN health_workers h ON h.worker_id = a.worker_id OR h.worker_id = (SELECT assigned_worker_id FROM patients WHERE patient_id = a.patient_id) WHERE h.user_id = $1', [user.user_id])).rows; })());
@@ -291,7 +389,29 @@ module.exports = async function handler(req, res) {
     }
   }
   try {
+    if (pathname === '/api/auth/verify' && req.method === 'GET') {
+      const token = new URL(req.url, 'http://localhost').searchParams.get('token') || '';
+      const tokenHash = crypto.createHash('sha256').update(token).digest('hex');
+      const client = await pool.connect();
+      try {
+        await client.query('BEGIN');
+        const record = await client.query('SELECT user_id FROM email_verification_tokens WHERE token_hash = $1 AND consumed_at IS NULL AND expires_at > NOW() FOR UPDATE', [tokenHash]);
+        if (!record.rowCount) {
+          await client.query('ROLLBACK');
+          return sendHtml(res, 400, '<!doctype html><html><head><meta name="viewport" content="width=device-width, initial-scale=1"><title>Link expired · HIVeLink</title></head><body><main><h1>Verification link unavailable</h1><p>This link is invalid, expired, or already used. Return to HIVeLink and request another verification email.</p><a href="/">Return to HIVeLink</a></main></body></html>');
+        }
+        const userId = record.rows[0].user_id;
+        await client.query('UPDATE users SET email_verified = TRUE, updated_at = NOW() WHERE user_id = $1', [userId]);
+        await client.query('UPDATE email_verification_tokens SET consumed_at = NOW() WHERE token_hash = $1', [tokenHash]);
+        await client.query('COMMIT');
+        return sendHtml(res, 200, '<!doctype html><html><head><meta name="viewport" content="width=device-width, initial-scale=1"><title>Email verified · HIVeLink</title></head><body><main><h1>Email verified</h1><p>Your HIVeLink account is ready. Return to the sign-in page to continue.</p><a href="/">Sign in to HIVeLink</a></main></body></html>');
+      } catch (error) {
+        await client.query('ROLLBACK');
+        throw error;
+      } finally { client.release(); }
+    }
     if (pathname === '/api/auth/register' && req.method === 'POST') {
+      if (!applicationUrl() || !process.env.RESEND_API_KEY || !process.env.EMAIL_FROM) return send(res, 503, { error: 'Email verification is not configured.' });
       const body = getBody(req);
       const fullName = `${String(body.firstName || '').trim()} ${String(body.lastName || '').trim()}`.trim();
       const email = String(body.email || '').trim().toLowerCase();
@@ -301,13 +421,13 @@ module.exports = async function handler(req, res) {
       try {
         await client.query('BEGIN');
         const passwordHash = await bcrypt.hash(password, 12);
-        const inserted = await client.query('INSERT INTO users (email, password_hash, full_name, role, contact_number, date_of_birth, age, gender, terms_accepted) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9) RETURNING user_id, email, full_name, role, contact_number, date_of_birth, age, gender, is_active', [email, passwordHash, fullName, 'patient', body.contactNumber || null, body.dateOfBirth || null, body.age || null, body.gender || null, Boolean(body.termsAccepted)]);
+        const inserted = await client.query('INSERT INTO users (email, password_hash, full_name, role, contact_number, date_of_birth, age, gender, terms_accepted, email_verified) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,FALSE) RETURNING user_id, email, full_name, role, contact_number, date_of_birth, age, gender, is_active, email_verified', [email, passwordHash, fullName, 'patient', body.contactNumber || null, body.dateOfBirth || null, body.age || null, body.gender || null, Boolean(body.termsAccepted)]);
         const patient = await client.query("INSERT INTO patients (user_id, preferred_facility_id, care_status, medical_notes) VALUES ($1, 1, 'Active care plan', 'Newly registered patient account.') RETURNING *", [inserted.rows[0].user_id]);
         await client.query("INSERT INTO chat_sessions (patient_id, subject, status, preview) VALUES ($1, 'Welcome to private support', 'Open', 'A health worker will be ready to answer your questions.')", [patient.rows[0].patient_id]);
         await client.query('COMMIT');
         const user = inserted.rows[0];
-        setSessionCookie(res, signSession(user));
-        return send(res, 201, { user, patient: patient.rows[0], worker: null });
+        const verification = await sendVerificationEmail(user.user_id);
+        return send(res, verification.sent ? 201 : 503, { verificationRequired: true, verificationPending: !verification.sent, email: user.email, error: verification.sent ? undefined : 'Your account was created, but the verification email could not be sent. Use resend verification before signing in.' });
       } catch (error) {
         await client.query('ROLLBACK');
         if (error.code === '23505') return send(res, 409, { error: 'An account with this email already exists.' });
@@ -318,26 +438,61 @@ module.exports = async function handler(req, res) {
     if (pathname === '/api/auth/login' && req.method === 'POST') {
       const body = getBody(req);
       const email = String(body.email || '').trim().toLowerCase();
-      const result = await pool.query('SELECT user_id, email, full_name, role, contact_number, date_of_birth, age, gender, is_active, password_hash FROM users WHERE email = $1', [email]);
+      const result = await pool.query('SELECT user_id, email, full_name, role, contact_number, date_of_birth, age, gender, is_active, email_verified, password_hash FROM users WHERE email = $1', [email]);
       const user = result.rows[0];
       if (!user || !user.is_active || !(await bcrypt.compare(String(body.password || ''), user.password_hash))) return send(res, 401, { error: 'Email or password is incorrect.' });
+      if (!user.email_verified) return send(res, 403, { error: 'Please verify your email before signing in.' });
       delete user.password_hash;
       setSessionCookie(res, signSession(user));
       const patient = user.role === 'patient' ? (await pool.query('SELECT * FROM patients WHERE user_id = $1', [user.user_id])).rows[0] : null;
       const worker = user.role === 'health-worker' ? (await pool.query('SELECT * FROM health_workers WHERE user_id = $1', [user.user_id])).rows[0] : null;
       return send(res, 200, { user, patient: patient || null, worker: worker || null });
     }
+    if (pathname === '/api/auth/resend-verification' && req.method === 'POST') {
+      if (!applicationUrl() || !process.env.RESEND_API_KEY || !process.env.EMAIL_FROM) return send(res, 503, { error: 'Email verification is not configured.' });
+      const body = getBody(req);
+      let result;
+      if (body.userId !== undefined) {
+        const requester = await currentUser(req);
+        if (requester?.role !== 'admin') return send(res, requester ? 403 : 401, { error: 'Administrator access required.' });
+        const userId = Number(body.userId);
+        if (!Number.isSafeInteger(userId) || userId < 1) return send(res, 400, { error: 'A valid registered user ID is required.' });
+        result = await pool.query('SELECT user_id, email_verified FROM users WHERE user_id = $1 AND is_active = TRUE', [userId]);
+      } else {
+        const email = String(body.email || '').trim().toLowerCase();
+        result = await pool.query('SELECT user_id, email_verified FROM users WHERE email = $1 AND is_active = TRUE', [email]);
+      }
+      if (result.rows[0] && !result.rows[0].email_verified) {
+        const delivery = await sendVerificationEmail(result.rows[0].user_id);
+        if (!delivery.sent) return send(res, 502, { error: 'The verification email could not be sent. Try again later.' });
+      }
+      return send(res, 200, { ok: true, message: 'If the account needs verification, a new link has been sent.' });
+    }
     if (pathname === '/api/auth/logout' && req.method === 'POST') {
       res.setHeader('Set-Cookie', `${sessionCookie}=; HttpOnly; Path=/; SameSite=Lax; Max-Age=0${process.env.NODE_ENV === 'production' ? '; Secure' : ''}`);
       return send(res, 200, { ok: true });
     }
     const user = await currentUser(req);
+    if (pathname === '/api/admin/email' && req.method === 'POST') {
+      if (user?.role !== 'admin') return send(res, user ? 403 : 401, { error: 'Administrator access required.' });
+      const body = getBody(req);
+      const userId = Number(body.userId);
+      const subject = String(body.subject || '').trim();
+      const text = String(body.message || '').trim();
+      if (!Number.isSafeInteger(userId) || userId < 1 || !subject || subject.length > 160 || !text || text.length > 5000) {
+        return send(res, 400, { error: 'Choose a registered user and provide a subject and message (up to 5,000 characters).' });
+      }
+      if (!process.env.RESEND_API_KEY || !process.env.EMAIL_FROM) return send(res, 503, { error: 'Email delivery is not configured.' });
+      const result = await sendRegisteredEmail(userId, { subject, text });
+      return result.sent ? send(res, 200, { sent: true }) : send(res, 502, { error: result.error });
+    }
     const adminUserRoute = pathname.match(/^\/api\/admin\/(users|workers)(?:\/(\d+))?$/);
     if (adminUserRoute) {
       if (user?.role !== 'admin') return send(res, user ? 403 : 401, { error: 'Administrator access required.' });
       const kind = adminUserRoute[1];
       const id = adminUserRoute[2];
       const body = getBody(req);
+      if (req.method === 'POST' && (!applicationUrl() || !process.env.RESEND_API_KEY || !process.env.EMAIL_FROM)) return send(res, 503, { error: 'Email verification is not configured.' });
       const client = await pool.connect();
       try {
         await client.query('BEGIN');
@@ -346,35 +501,40 @@ module.exports = async function handler(req, res) {
           const email = String(body.email || '').trim().toLowerCase();
           const password = String(body.password || '');
           if (!fullName || !email || password.length < 12) { await client.query('ROLLBACK'); return send(res, 400, { error: 'Name, email, and a password of at least 12 characters are required.' }); }
-          const created = await client.query('INSERT INTO users (email, password_hash, full_name, role, contact_number, date_of_birth, age, gender, is_active, terms_accepted) VALUES ($1,$2,$3,\'patient\',$4,$5,$6,$7,$8,TRUE) RETURNING user_id, email, full_name, role, contact_number, date_of_birth, age, gender, is_active', [email, await bcrypt.hash(password, 12), fullName, body.contactNumber || null, body.dateOfBirth || null, body.age || null, body.gender || null, body.isActive !== false]);
+          const created = await client.query('INSERT INTO users (email, password_hash, full_name, role, contact_number, date_of_birth, age, gender, is_active, terms_accepted, email_verified) VALUES ($1,$2,$3,\'patient\',$4,$5,$6,$7,$8,TRUE,FALSE) RETURNING user_id, email, full_name, role, contact_number, date_of_birth, age, gender, is_active, email_verified', [email, await bcrypt.hash(password, 12), fullName, body.contactNumber || null, body.dateOfBirth || null, body.age || null, body.gender || null, body.isActive !== false]);
           const patient = await client.query('INSERT INTO patients (user_id, care_status, medical_notes, preferred_facility_id, emergency_contact, emergency_phone) VALUES ($1,$2,$3,$4,$5,$6) RETURNING *', [created.rows[0].user_id, body.careStatus || 'Active care plan', body.medicalNotes || 'Managed patient account', body.preferredFacilityId || 1, body.emergencyContact || null, body.emergencyPhone || null]);
           await client.query("INSERT INTO chat_sessions (patient_id, subject, status, preview) VALUES ($1, 'Welcome to private support', 'Open', 'A health worker will be ready to answer your questions.')", [patient.rows[0].patient_id]);
           await client.query('INSERT INTO activity_logs (actor_user_id, actor_name, action, category, details) VALUES ($1,$2,$3,$4,$5)', [user.user_id, user.full_name, `Created user account: ${fullName}`, 'User Management', `Created patient account ${email}`]);
           await client.query('COMMIT');
-          return send(res, 201, { user: created.rows[0], patient: patient.rows[0] });
+          const verification = await sendVerificationEmail(created.rows[0].user_id);
+          return send(res, 201, { user: created.rows[0], patient: patient.rows[0], verificationRequired: true, verificationEmailSent: verification.sent });
         }
         if (kind === 'workers' && req.method === 'POST') {
           const fullName = String(body.fullName || '').trim();
           const email = String(body.email || '').trim().toLowerCase();
           const password = String(body.password || '');
           if (!fullName || !email || password.length < 12) { await client.query('ROLLBACK'); return send(res, 400, { error: 'Name, email, and a password of at least 12 characters are required.' }); }
-          const created = await client.query('INSERT INTO users (email, password_hash, full_name, role, contact_number, is_active, terms_accepted) VALUES ($1,$2,$3,\'health-worker\',$4,$5,TRUE) RETURNING user_id, email, full_name, role, contact_number, is_active', [email, await bcrypt.hash(password, 12), fullName, body.contactNumber || null, body.isActive !== false]);
+          const created = await client.query('INSERT INTO users (email, password_hash, full_name, role, contact_number, is_active, terms_accepted, email_verified) VALUES ($1,$2,$3,\'health-worker\',$4,$5,TRUE,FALSE) RETURNING user_id, email, full_name, role, contact_number, is_active, email_verified', [email, await bcrypt.hash(password, 12), fullName, body.contactNumber || null, body.isActive !== false]);
           const worker = await client.query('INSERT INTO health_workers (user_id, specialty, license_number, primary_facility_id, is_verified, is_available, bio_summary) VALUES ($1,$2,$3,$4,$5,$6,$7) RETURNING *', [created.rows[0].user_id, body.specialty || 'HIV care support', body.licenseNumber || null, body.primaryFacilityId || 1, body.isVerified !== false, body.isAvailable !== false, body.bioSummary || 'Licensed Health Worker']);
           await client.query('INSERT INTO activity_logs (actor_user_id, actor_name, action, category, details) VALUES ($1,$2,$3,$4,$5)', [user.user_id, user.full_name, `Created health worker: ${fullName}`, 'Care Team Management', `Created health worker ${email}`]);
           await client.query('COMMIT');
-          return send(res, 201, { user: created.rows[0], worker: worker.rows[0] });
+          const verification = await sendVerificationEmail(created.rows[0].user_id);
+          return send(res, 201, { user: created.rows[0], worker: worker.rows[0], verificationRequired: true, verificationEmailSent: verification.sent });
         }
         if (req.method === 'PATCH' && id) {
           const isWorker = kind === 'workers';
           const profile = isWorker
-            ? await client.query('SELECT h.worker_id, h.user_id FROM health_workers h WHERE h.worker_id = $1', [id])
-            : await client.query('SELECT p.patient_id, p.user_id FROM patients p WHERE p.user_id = $1', [id]);
+            ? await client.query('SELECT h.worker_id, h.user_id, u.email FROM health_workers h JOIN users u USING (user_id) WHERE h.worker_id = $1', [id])
+            : await client.query('SELECT p.patient_id, p.user_id, u.email FROM patients p JOIN users u USING (user_id) WHERE p.user_id = $1', [id]);
           if (!profile.rowCount) { await client.query('ROLLBACK'); return send(res, 404, { error: 'Record not found.' }); }
           const userId = profile.rows[0].user_id;
           const userFields = { fullName: 'full_name', email: 'email', contactNumber: 'contact_number', isActive: 'is_active', age: 'age', dateOfBirth: 'date_of_birth', gender: 'gender' };
-          const patches = Object.entries(userFields).filter(([key]) => Object.prototype.hasOwnProperty.call(body, key));
+          const patches = Object.entries(userFields).filter(([key]) => Object.prototype.hasOwnProperty.call(body, key)
+            && (key !== 'email' || String(body.email).trim().toLowerCase() !== profile.rows[0].email));
           if (patches.length) {
             const clauses = patches.map(([, column], index) => `${column} = $${index + 1}`);
+            const emailChanged = patches.some(([key]) => key === 'email');
+            if (emailChanged) clauses.push('email_verified = FALSE');
             clauses.push('updated_at = NOW()');
             await client.query(`UPDATE users SET ${clauses.join(', ')} WHERE user_id = $${patches.length + 1}`, [...patches.map(([key]) => key === 'email' ? String(body[key]).trim().toLowerCase() : key === 'fullName' ? String(body[key]).trim() : body[key]), userId]);
           }
@@ -391,7 +551,9 @@ module.exports = async function handler(req, res) {
             await client.query(`UPDATE ${table} SET ${clauses.join(', ')} WHERE ${tableId} = $${updates.length + 1}`, [...updates.map(([key]) => body[key]), relationId]);
           }
           await client.query('COMMIT');
-          return send(res, 200, { ok: true });
+          const emailChanged = patches.some(([key]) => key === 'email');
+          const verification = emailChanged ? await sendVerificationEmail(userId) : null;
+          return send(res, 200, { ok: true, emailVerificationRequired: emailChanged, verificationEmailSent: verification?.sent ?? null });
         }
         if (req.method === 'DELETE' && id) {
           let removed;
@@ -424,7 +586,23 @@ module.exports = async function handler(req, res) {
     const match = pathname.match(/^\/api\/records\/([A-Za-z]+)(?:\/(\d+))?$/);
     if (match) {
       if (!user) return send(res, 401, { error: 'Sign in required.' });
-      const result = await mutate(req, user, match[1], match[2]);
+      const table = match[1];
+      const id = match[2];
+      const record = getBody(req).record || getBody(req);
+      const result = await mutate(req, user, table, id);
+      if (result.status >= 200 && result.status < 300) {
+        if (table === 'Appointments' && req.method === 'POST') {
+          const patient = await pool.query('SELECT user_id FROM patients WHERE patient_id = $1', [result.body.record.patient_id]);
+          if (patient.rows[0]) await bestEffort(() => sendRegisteredEmail(patient.rows[0].user_id, { subject: 'Appointment request received', text: 'Your appointment request was received. Sign in to HIVeLink to review its current status.' }));
+        }
+        if (table === 'Appointments' && req.method === 'PATCH' && record.status) await bestEffort(() => notifyPatientRecord(table, id, 'Appointment status updated', `Your appointment status is now ${record.status}. Sign in to HIVeLink for details.`));
+        if (table === 'MedicationRequests' && req.method === 'POST') {
+          const patient = await pool.query('SELECT user_id FROM patients WHERE patient_id = $1', [result.body.record.patient_id]);
+          if (patient.rows[0]) await bestEffort(() => sendRegisteredEmail(patient.rows[0].user_id, { subject: 'Medication request received', text: 'Your medication request was received. Sign in to HIVeLink to review its current status.' }));
+        }
+        if (table === 'MedicationRequests' && req.method === 'PATCH' && record.status) await bestEffort(() => notifyPatientRecord(table, id, 'Medication request updated', `Your medication request status is now ${record.status}. Sign in to HIVeLink for details.`));
+        if (table === 'ChatMessages' && req.method === 'POST') await bestEffort(() => notifyChatCounterparty(result.body.record.chat_session_id, user.role));
+      }
       return send(res, result.status, result.body);
     }
     return send(res, 404, { error: 'API route not found.' });
