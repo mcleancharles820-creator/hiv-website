@@ -59,7 +59,58 @@ const initialDatabase = {
 class DatabaseService {
   constructor() {
     this.listeners = [];
+    this.useApi = process.env.NODE_ENV === 'production' || process.env.REACT_APP_USE_API === 'true';
     this.data = this.loadDatabase();
+  }
+
+  async apiRequest(path, options = {}) {
+    const response = await fetch(path, {
+      ...options,
+      credentials: 'same-origin',
+      headers: { 'Content-Type': 'application/json', ...options.headers },
+    });
+    const result = await response.json().catch(() => ({}));
+    if (!response.ok) throw new Error(result.error || 'The server could not complete the request.');
+    return result;
+  }
+
+  async refresh() {
+    if (!this.useApi) return this.data;
+    const snapshot = await this.apiRequest('/api/bootstrap');
+    this.data = { ...initialDatabase, ...snapshot };
+    this.notify();
+    return this.data;
+  }
+
+  async restoreSession() {
+    if (!this.useApi) return null;
+    const session = await this.apiRequest('/api/auth/session');
+    await this.refresh();
+    const patient = this.getTable('Patients').find((record) => record.user_id === session.user.user_id) || null;
+    const worker = this.getTable('HealthWorkers').find((record) => record.user_id === session.user.user_id) || null;
+    return { user: session.user, patient, worker };
+  }
+
+  async logout() {
+    if (!this.useApi) return;
+    await this.apiRequest('/api/auth/logout', { method: 'POST' });
+    this.data = initialDatabase;
+    this.notify();
+  }
+
+  async remoteMutation(method, tableName, id, record) {
+    try {
+      const url = `/api/records/${tableName}${id === undefined ? '' : `/${encodeURIComponent(id)}`}`;
+      const result = await this.apiRequest(url, { method, body: method === 'DELETE' ? undefined : JSON.stringify({ record }) });
+      if (tableName !== 'PublicInquiries') await this.refresh();
+      this.lastError = null;
+      return result.record || result.deleted;
+    } catch (error) {
+      this.lastError = error.message;
+      console.error('API request failed:', error.message);
+      this.notify();
+      return { error: error.message };
+    }
   }
 
   subscribe(listener) {
@@ -80,6 +131,7 @@ class DatabaseService {
   }
 
   loadDatabase() {
+    if (this.useApi) return initialDatabase;
     try {
       const stored = localStorage.getItem(DB_STORAGE_KEY);
       if (stored) {
@@ -94,6 +146,10 @@ class DatabaseService {
 
   saveDatabase(database = this.data) {
     this.data = database;
+    if (this.useApi) {
+      this.notify();
+      return;
+    }
     try {
       localStorage.setItem(DB_STORAGE_KEY, JSON.stringify(database));
     } catch (e) {
@@ -120,6 +176,7 @@ class DatabaseService {
   }
 
   insert(tableName, record) {
+    if (this.useApi) return this.remoteMutation('POST', tableName, undefined, record);
     const pk = DatabaseSchema[tableName]?.primaryKey || 'id';
     const items = this.getTable(tableName);
     const maxId = items.reduce((max, cur) => (cur[pk] > max ? cur[pk] : max), 0);
@@ -136,6 +193,7 @@ class DatabaseService {
   }
 
   update(tableName, id, patch) {
+    if (this.useApi) return this.remoteMutation('PATCH', tableName, id, patch);
     const pk = DatabaseSchema[tableName]?.primaryKey || 'id';
     const items = this.getTable(tableName);
     const updated = items.map((item) => {
@@ -155,6 +213,7 @@ class DatabaseService {
   }
 
   delete(tableName, id) {
+    if (this.useApi) return this.remoteMutation('DELETE', tableName, id);
     const pk = DatabaseSchema[tableName]?.primaryKey || 'id';
     const items = this.getTable(tableName);
     const filtered = items.filter((item) => item[pk] !== id);
@@ -166,12 +225,22 @@ class DatabaseService {
   /**
    * Registration & Authentication Database Encoding
    */
-  registerUser({ fullName, email, password, role = 'patient', age, dateOfBirth, gender, contactNumber, termsAccepted = true }) {
+  registerUser({ fullName, firstName, lastName, email, password, role = 'patient', age, dateOfBirth, gender, contactNumber, termsAccepted = true }) {
+    if (this.useApi) {
+      const nameParts = String(fullName || '').trim().split(/\s+/);
+      return this.apiRequest('/api/auth/register', {
+        method: 'POST',
+        body: JSON.stringify({ firstName: firstName || nameParts.shift(), lastName: lastName || nameParts.join(' '), email, password, age, dateOfBirth, gender, contactNumber, termsAccepted }),
+      }).then(async (result) => {
+        await this.refresh();
+        return result;
+      }).catch((error) => ({ error: error.message }));
+    }
     // 1. Data Type normalization and parsing
     const parsedAge = age ? parseInt(age, 10) : null;
     const formattedDob = dateOfBirth ? String(dateOfBirth) : null;
     const formattedEmail = String(email || '').trim().toLowerCase();
-    const formattedName = String(fullName || '').trim();
+    const formattedName = String(fullName || `${firstName || ''} ${lastName || ''}`).trim();
     const formattedPhone = contactNumber ? String(contactNumber).trim() : null;
     const cleanPassword = String(password || '');
 
@@ -267,6 +336,14 @@ class DatabaseService {
   }
 
   login({ email, password, role = 'patient' }) {
+    if (this.useApi) {
+      return this.apiRequest('/api/auth/login', { method: 'POST', body: JSON.stringify({ email, password }) })
+        .then(async (result) => {
+          await this.refresh();
+          return result;
+        })
+        .catch((error) => ({ error: error.message }));
+    }
     const formattedEmail = String(email || '').trim().toLowerCase();
     const formattedPassword = String(password || '');
 
@@ -298,6 +375,7 @@ class DatabaseService {
    * Appointments Database Operations
    */
   bookAppointment({ patient_id, worker_id = 1, facility_id = 1, appointment_date, appointment_time, appointment_type = 'HIV care consultation', status = 'Requested', notes = '' }) {
+    if (this.useApi) return this.insert('Appointments', { patient_id, worker_id, facility_id, appointment_date, appointment_time, appointment_type, status, notes });
     return this.insert('Appointments', {
       patient_id: parseInt(patient_id, 10),
       worker_id: worker_id ? parseInt(worker_id, 10) : null,
@@ -314,6 +392,7 @@ class DatabaseService {
    * Medication Request Operations
    */
   requestMedication({ patient_id, medication_id = null, medication_name, dosage = 'As prescribed', schedule = 'Ask your health worker', availability = 'In stock', status = 'Pending' }) {
+    if (this.useApi) return this.insert('MedicationRequests', { patient_id, medication_id, medication_name, dosage, schedule, availability, status });
     return this.insert('MedicationRequests', {
       patient_id: parseInt(patient_id, 10),
       medication_id: medication_id ? parseInt(medication_id, 10) : null,
@@ -334,6 +413,7 @@ class DatabaseService {
   sendChatMessage({ chat_session_id = 1, sender_user_id, sender_role = 'patient', message_text }) {
     const text = String(message_text || '').trim();
     if (!text) return null;
+    if (this.useApi) return this.insert('ChatMessages', { chat_session_id, sender_user_id, sender_role, message_text: text });
 
     const msg = this.insert('ChatMessages', {
       chat_session_id: parseInt(chat_session_id, 10),
@@ -607,6 +687,11 @@ class DatabaseService {
    * Admin CRUD Operations
    */
   adminCreateUser({ fullName, email, password, contactNumber, age, dateOfBirth, gender, careStatus = 'Active care plan', medicalNotes = '', preferredFacilityId = 1, emergencyContact = '', emergencyPhone = '', isActive = true }) {
+    if (this.useApi) {
+      return this.apiRequest('/api/admin/users', { method: 'POST', body: JSON.stringify({ fullName, email, password, contactNumber, age, dateOfBirth, gender, careStatus, medicalNotes, preferredFacilityId, emergencyContact, emergencyPhone, isActive }) })
+        .then(async (result) => { await this.refresh(); return result; })
+        .catch((error) => ({ error: error.message }));
+    }
     const regResult = this.registerUser({
       fullName,
       email,
@@ -648,6 +733,11 @@ class DatabaseService {
   }
 
   adminUpdateUser(userId, { fullName, email, contactNumber, age, dateOfBirth, gender, careStatus, medicalNotes, preferredFacilityId, assignedWorkerId, emergencyContact, emergencyPhone, isActive }) {
+    if (this.useApi) {
+      return this.apiRequest(`/api/admin/users/${encodeURIComponent(userId)}`, { method: 'PATCH', body: JSON.stringify({ fullName, email, contactNumber, age, dateOfBirth, gender, careStatus, medicalNotes, preferredFacilityId, assignedWorkerId, emergencyContact, emergencyPhone, isActive }) })
+        .then(async (result) => { await this.refresh(); return result; })
+        .catch((error) => ({ error: error.message }));
+    }
     const id = parseInt(userId, 10);
     const existing = this.findById('Users', id);
     if (!existing) return { error: 'User not found.' };
@@ -689,6 +779,11 @@ class DatabaseService {
   }
 
   adminDeleteUser(userId) {
+    if (this.useApi) {
+      return this.apiRequest(`/api/admin/users/${encodeURIComponent(userId)}`, { method: 'DELETE' })
+        .then(async (result) => { await this.refresh(); return result.deleted; })
+        .catch((error) => ({ error: error.message }));
+    }
     const id = parseInt(userId, 10);
     const user = this.findById('Users', id);
     if (!user) return false;
@@ -720,6 +815,11 @@ class DatabaseService {
   }
 
   adminCreateHealthWorker({ fullName, email, password, contactNumber, specialty = 'HIV care support', licenseNumber = '', primaryFacilityId = 1, isVerified = true, isAvailable = true, bioSummary = '', isActive = true }) {
+    if (this.useApi) {
+      return this.apiRequest('/api/admin/workers', { method: 'POST', body: JSON.stringify({ fullName, email, password, contactNumber, specialty, licenseNumber, primaryFacilityId, isVerified, isAvailable, bioSummary, isActive }) })
+        .then(async (result) => { await this.refresh(); return result; })
+        .catch((error) => ({ error: error.message }));
+    }
     const regResult = this.registerUser({
       fullName,
       email,
@@ -759,6 +859,11 @@ class DatabaseService {
   }
 
   adminUpdateHealthWorker(workerId, { fullName, email, contactNumber, specialty, licenseNumber, primaryFacilityId, isVerified, isAvailable, bioSummary, isActive }) {
+    if (this.useApi) {
+      return this.apiRequest(`/api/admin/workers/${encodeURIComponent(workerId)}`, { method: 'PATCH', body: JSON.stringify({ fullName, email, contactNumber, specialty, licenseNumber, primaryFacilityId, isVerified, isAvailable, bioSummary, isActive }) })
+        .then(async (result) => { await this.refresh(); return result; })
+        .catch((error) => ({ error: error.message }));
+    }
     const wid = parseInt(workerId, 10);
     const worker = this.findById('HealthWorkers', wid);
     if (!worker) return { error: 'Health Worker not found.' };
@@ -795,6 +900,11 @@ class DatabaseService {
   }
 
   adminDeleteHealthWorker(workerId) {
+    if (this.useApi) {
+      return this.apiRequest(`/api/admin/workers/${encodeURIComponent(workerId)}`, { method: 'DELETE' })
+        .then(async (result) => { await this.refresh(); return result.deleted; })
+        .catch((error) => ({ error: error.message }));
+    }
     const wid = parseInt(workerId, 10);
     const worker = this.findById('HealthWorkers', wid);
     if (!worker) return false;
@@ -832,6 +942,7 @@ class DatabaseService {
   }
 
   adminCreateService({ name, service_key, detail, is_enabled = true }) {
+    if (this.useApi) return this.insert('PlatformServices', { service_key: service_key || name.toLowerCase().replace(/[^a-z0-9]/g, '_'), name, detail, is_enabled, display_order: this.getTable('PlatformServices').length + 1 });
     const key = (service_key || name.toLowerCase().replace(/[^a-z0-9]/g, '_')).trim();
     const newService = this.insert('PlatformServices', {
       service_key: key,
@@ -851,6 +962,7 @@ class DatabaseService {
   }
 
   adminUpdateService(serviceId, { name, service_key, detail, is_enabled }) {
+    if (this.useApi) return this.update('PlatformServices', serviceId, { name, service_key, detail, is_enabled });
     const sid = parseInt(serviceId, 10);
     const patch = {};
     if (name !== undefined) patch.name = name;
@@ -869,6 +981,7 @@ class DatabaseService {
   }
 
   adminDeleteService(serviceId) {
+    if (this.useApi) return this.delete('PlatformServices', serviceId);
     const sid = parseInt(serviceId, 10);
     const target = this.findById('PlatformServices', sid);
     if (!target) return false;

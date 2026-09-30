@@ -90,8 +90,10 @@ test('switching from sign in to sign up clears entered credentials and account t
   userEvent.click(screen.getByRole('button', { name: /new here\? sign up/i }));
 
   expect(screen.getByLabelText(/email address/i)).toHaveValue('');
-  expect(screen.getByLabelText(/account type/i)).toHaveValue('patient');
   expect(screen.getByLabelText(/^password$/i)).toHaveValue('');
+  userEvent.click(screen.getByRole('button', { name: /already have an account\? log in/i }));
+  expect(screen.getByLabelText(/account type/i)).toHaveValue('patient');
+  expect(screen.getByLabelText(/email address/i)).toHaveValue('');
 });
 
 test('navigating between guest pages scrolls smoothly', () => {

@@ -80,14 +80,16 @@ function AuthScreen({ onEnter }) {
   const [mode, setMode] = useState('login');
   const [error, setError] = useState('');
   const [role, setRole] = useState('patient');
+  const [isSubmitting, setIsSubmitting] = useState(false);
 
   useEffect(() => {
     scrollPageToTop();
   }, [mode]);
 
-  const handleSubmit = (event) => {
+  const handleSubmit = async (event) => {
     event.preventDefault();
     setError('');
+    setIsSubmitting(true);
     const form = event.currentTarget;
     const password = form.elements.password.value;
     const email = form.elements.email.value;
@@ -95,48 +97,43 @@ function AuthScreen({ onEnter }) {
     if (mode === 'register') {
       if (password.toLowerCase() === email.trim().toLowerCase()) {
         setError('Password cannot be the same as your email address.');
+        setIsSubmitting(false);
         return;
       }
 
       if (password !== form.elements.confirmPassword.value) {
         setError('Passwords do not match. Please check them and try again.');
+        setIsSubmitting(false);
         return;
       }
 
       const firstName = form.elements.firstName.value.trim();
       const lastName = form.elements.lastName.value.trim();
-      const fullName = `${firstName} ${lastName}`.trim();
       const age = form.elements.age && form.elements.age.value ? parseInt(form.elements.age.value, 10) : null;
       const dateOfBirth = form.elements.dateOfBirth ? form.elements.dateOfBirth.value : null;
       const gender = form.elements.gender ? form.elements.gender.value : null;
       const contactNumber = form.elements.contactNumber ? form.elements.contactNumber.value : null;
       const termsAccepted = form.elements.terms ? form.elements.terms.checked : true;
 
-      const registered = db.registerUser({
-        fullName,
-        email,
-        password,
-        role,
-        age,
-        dateOfBirth,
-        gender,
-        contactNumber,
-        termsAccepted,
-      });
+      const registration = db.registerUser({ firstName, lastName, email, password, role, age, dateOfBirth, gender, contactNumber, termsAccepted });
+      const registered = db.useApi ? await registration : registration;
 
       if (registered.error) {
         setError(registered.error);
+        setIsSubmitting(false);
         return;
       }
 
-      onEnter(role, false, registered);
+      onEnter(registered.user?.role || role, false, registered);
     } else {
-      const auth = db.login({ email, password, role });
+      const authentication = db.login({ email, password, role });
+      const auth = db.useApi ? await authentication : authentication;
       if (auth.error) {
         setError(auth.error);
+        setIsSubmitting(false);
         return;
       }
-      onEnter(role, false, auth);
+      onEnter(auth.user?.role || role, false, auth);
     }
   };
 
@@ -155,15 +152,15 @@ function AuthScreen({ onEnter }) {
           <form key={mode} className={`auth-form ${mode === 'register' ? 'registration-form' : ''}`} onSubmit={handleSubmit} autoComplete="off">
             {mode === 'register' && <div className="field-row registration-name-row"><label>First Name<input name="firstName" required type="text" autoComplete="given-name" placeholder="First name" /></label><label>Last Name<input name="lastName" required type="text" autoComplete="family-name" placeholder="Last name" /></label></div>}
             <label>Email Address<input name="email" required type="email" autoComplete="off" placeholder="you@example.com" /></label>
-            <label>Account type<select name="role" value={role} onChange={(event) => setRole(event.target.value)} required><option value="patient">Patient / User</option><option value="health-worker">Health Worker</option><option value="admin">Admin</option></select></label>
+            {mode === 'login' && !db.useApi && <label>Account type<select name="role" value={role} onChange={(event) => setRole(event.target.value)} required><option value="patient">Patient / User</option><option value="health-worker">Health Worker</option><option value="admin">Admin</option></select></label>}
             {mode === 'register' && <div className="field-row"><label>Age<input name="age" required type="number" min="13" max="120" placeholder="Age" /></label><label>Date of Birth<input name="dateOfBirth" required type="date" /></label></div>}
             {mode === 'register' && <label>Gender<select name="gender" defaultValue="" required><option value="" disabled>Select an option</option><option>Woman</option><option>Man</option><option>Non-binary</option><option>Prefer not to say</option><option>Self-describe</option></select></label>}
-            <label>Password<input name="password" required type="password" autoComplete="new-password" placeholder="Enter your password" /></label>
+            <label>Password<input name="password" required minLength={mode === 'register' ? 12 : undefined} type="password" autoComplete="new-password" placeholder="Enter your password" /></label>
             {mode === 'register' && <label>Confirm Password<input name="confirmPassword" required type="password" autoComplete="new-password" placeholder="Re-enter your password" /></label>}
             {mode === 'register' && <label>Contact Number <span className="optional">(optional)</span><input name="contactNumber" type="tel" autoComplete="off" placeholder="Your contact number" /></label>}
             {mode === 'register' && <label className="consent"><input name="terms" required type="checkbox" /><span>I agree to the <a href="#terms">Terms</a> and <a href="#privacy">Privacy Policy</a>.</span></label>}
             {error && <p className="form-error" role="alert">{error}</p>}
-            <button className="primary-button auth-submit" type="submit">{mode === 'login' ? 'Sign in' : 'Create my account'} <span>↗</span></button>
+            <button className="primary-button auth-submit" type="submit" disabled={isSubmitting}>{isSubmitting ? 'Please wait...' : mode === 'login' ? 'Sign in' : 'Create my account'} <span>↗</span></button>
           </form>
           {mode === 'login' && <button className="forgot-link">Forgot your password?</button>}
           <button className="auth-switch" onClick={() => { setMode(mode === 'login' ? 'register' : 'login'); setRole('patient'); setError(''); }}>{mode === 'login' ? 'New here? Sign up' : 'Already have an account? Log in'} <span>↗</span></button>
@@ -571,7 +568,7 @@ function AdminConfirmDeleteModal({ title, message, onConfirm, onClose }) {
   );
 }
 
-function AdminUserDetailModal({ user, onClose, onEdit, onDelete }) {
+function AdminUserDetailModal({ user, onClose, onEdit, onDelete, canDelete = true }) {
   const [activeTab, setActiveTab] = useState('services');
   const freshUser = db.getUsersListDetailed().find((u) => u.userId === (user.userId || user.id)) || user;
   const servicesAvailed = db.getUserServicesAvailed(freshUser.userId || freshUser.id);
@@ -633,7 +630,7 @@ function AdminUserDetailModal({ user, onClose, onEdit, onDelete }) {
         )}
 
         <div style={{ borderTop: '1px solid var(--line)', marginTop: '28px', paddingTop: '20px', display: 'flex', gap: '12px', justifyContent: 'flex-end', alignItems: 'center' }}>
-          <button type="button" className="admin-btn admin-btn-danger" onClick={() => onDelete(user.userId, user.fullName)}>Delete User</button>
+          {canDelete && <button type="button" className="admin-btn admin-btn-danger" onClick={() => onDelete(user.userId, user.fullName)}>Delete User</button>}
           <button type="button" className="admin-btn admin-btn-primary" onClick={() => onEdit(user)}>Edit User Profile <span>↗</span></button>
         </div>
       </div>
@@ -738,7 +735,7 @@ function AdminUserFormModal({ user, onClose, onSave }) {
     return { id: w.worker_id, name: u?.full_name || `Worker #${w.worker_id}` };
   });
 
-  const handleSubmit = (e) => {
+  const handleSubmit = async (e) => {
     e.preventDefault();
     setError('');
     if (!formData.fullName.trim() || !formData.email.trim()) {
@@ -751,13 +748,15 @@ function AdminUserFormModal({ user, onClose, onSave }) {
     }
 
     if (isEdit) {
-      const result = db.adminUpdateUser(user.userId || user.id, formData);
+      const pending = db.adminUpdateUser(user.userId || user.id, formData);
+      const result = db.useApi ? await pending : pending;
       if (result.error) {
         setError(result.error);
         return;
       }
     } else {
-      const result = db.adminCreateUser(formData);
+      const pending = db.adminCreateUser(formData);
+      const result = db.useApi ? await pending : pending;
       if (result.error) {
         setError(result.error);
         return;
@@ -782,7 +781,7 @@ function AdminUserFormModal({ user, onClose, onSave }) {
           </label>
           {!isEdit && (
             <label>Password
-              <input required type="password" value={formData.password} onChange={(e) => setFormData({ ...formData, password: e.target.value })} placeholder="Create password" />
+              <input required minLength={12} type="password" value={formData.password} onChange={(e) => setFormData({ ...formData, password: e.target.value })} placeholder="Create password" />
             </label>
           )}
           <div className="field-row">
@@ -874,7 +873,7 @@ function AdminHealthWorkerFormModal({ worker, onClose, onSave }) {
 
   const facilities = db.getTable('TestingFacilities');
 
-  const handleSubmit = (e) => {
+  const handleSubmit = async (e) => {
     e.preventDefault();
     setError('');
     if (!formData.fullName.trim() || !formData.email.trim()) {
@@ -893,13 +892,15 @@ function AdminHealthWorkerFormModal({ worker, onClose, onSave }) {
     };
 
     if (isEdit) {
-      const result = db.adminUpdateHealthWorker(worker.workerId || worker.id, payload);
+      const pending = db.adminUpdateHealthWorker(worker.workerId || worker.id, payload);
+      const result = db.useApi ? await pending : pending;
       if (result.error) {
         setError(result.error);
         return;
       }
     } else {
-      const result = db.adminCreateHealthWorker(payload);
+      const pending = db.adminCreateHealthWorker(payload);
+      const result = db.useApi ? await pending : pending;
       if (result.error) {
         setError(result.error);
         return;
@@ -924,7 +925,7 @@ function AdminHealthWorkerFormModal({ worker, onClose, onSave }) {
           </label>
           {!isEdit && (
             <label>Password
-              <input required type="password" value={formData.password} onChange={(e) => setFormData({ ...formData, password: e.target.value })} placeholder="Create password" />
+              <input required minLength={12} type="password" value={formData.password} onChange={(e) => setFormData({ ...formData, password: e.target.value })} placeholder="Create password" />
             </label>
           )}
           <div className="field-row">
@@ -987,16 +988,18 @@ function AdminServiceFormModal({ service, onClose, onSave }) {
   });
   const [error, setError] = useState('');
 
-  const handleSubmit = (e) => {
+  const handleSubmit = async (e) => {
     e.preventDefault();
     if (!formData.name.trim()) {
       setError('Service name is required.');
       return;
     }
     if (isEdit) {
-      db.adminUpdateService(service.id, formData);
+      const pending = db.adminUpdateService(service.id, formData);
+      if (db.useApi) await pending;
     } else {
-      db.adminCreateService(formData);
+      const pending = db.adminCreateService(formData);
+      if (db.useApi) await pending;
     }
     onSave();
   };
@@ -1096,13 +1099,12 @@ function HealthWorkerDashboard({ currentUser, currentWorker, onPublicHub, onSign
   const updateRequest = (id, status) => db.update('MedicationRequests', id, { status });
   const updateAppointment = (id, status) => db.update('Appointments', id, { status });
   const removeGroup = (id) => confirmDeleteAction('Are you sure you want to remove this support group?', () => db.delete('SupportGroups', id));
-  const deletePatient = (id) => confirmDeleteAction('Are you sure you want to delete this patient and their associated records?', () => db.adminDeleteUser(id));
   const savePatient = (patient) => {
     if (patient.id || patient.patient_id || patient.userId) {
       const pid = patient.patient_id || patient.id;
       db.update('Patients', pid, { care_status: patient.status || patient.careStatus || 'Stable', medical_notes: patient.detail || patient.medicalNotes });
       if (patient.user_id || patient.userId) db.update('Users', patient.user_id || patient.userId, { full_name: patient.name || patient.fullName });
-    } else {
+    } else if (!db.useApi) {
       db.adminCreateUser({ fullName: patient.name || 'New Patient', email: `patient.${Date.now()}@example.com`, careStatus: patient.status || 'Active care plan' });
     }
     setPatientEditor(null);
@@ -1118,7 +1120,7 @@ function HealthWorkerDashboard({ currentUser, currentWorker, onPublicHub, onSign
 
   const content = {
     overview: <><p className="eyebrow"><span className="pulse-dot" /> Health worker overview</p><h1>Care that<br /><i>connects.</i></h1><p className="dashboard-intro">Support patients with trusted information, treatment follow-up, and compassionate care.</p><div className="dashboard-tiles worker-tiles"><DashboardTile label="Patients needing care" value={`${workerPatients.length} active`} detail="View patient support" /><DashboardTile label="Medication requests" value={`${requests.filter((r) => r.status === 'Pending').length} pending`} detail="Review requests" /><DashboardTile label="Today’s appointments" value={`${appointments.length} scheduled`} detail="Open schedule" /><DashboardTile label="Support groups" value={`${groups.length} managed`} detail="Manage groups" /></div><h2 className="quick-heading">Quick actions</h2><div className="care-grid"><PatientAction title="Open patient chats" text="Respond to confidential patient questions." action={() => navigate('patientsChats')} /><PatientAction title="Review medication" text="Process medication requests and updates." action={() => navigate('medications')} /><PatientAction title="Manage appointments" text="Confirm and organize patient visits." action={() => navigate('appointments')} /></div></>,
-    patientsChats: <PagePanel eyebrow="Patient care and private support" title={<>Patients and<br /><i>chats.</i></>}><button className="primary-button panel-action" onClick={() => setPatientEditor({ type: 'worker-patient', name: '', detail: '', status: 'New' })}>Add patient <span>+</span></button><div className="worker-list">{workerPatients.map((patient) => <article key={patient.userId || patient.id}><div><strong>{patient.fullName || patient.name}</strong><span>{patient.email} · {patient.medicalNotes || patient.detail}{patient.userId === 1 && latestMessage ? ` · “${latestMessage}”` : ''} · <strong style={{ color: 'var(--coral)', fontWeight: 400 }}>{patient.servicesAvailedCount || 0} services availed</strong></span></div><div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}><StatusBadge status={patient.careStatus || patient.status} /><StatusBadge status={patient.accountStatus || 'Active'} /></div><div className="worker-actions"><button type="button" className="card-link" onClick={() => setInspectingUser(patient)}>View Services ↗</button><button className="card-link" onClick={() => setPatientEditor({ type: 'worker-patient', ...patient, id: patient.patientId, user_id: patient.userId, name: patient.fullName })}>Edit</button><button className="record-delete" onClick={() => deletePatient(patient.userId)}>Delete</button></div></article>)}</div></PagePanel>,
+    patientsChats: <PagePanel eyebrow="Patient care and private support" title={<>Patients and<br /><i>chats.</i></>}><div className="worker-list">{workerPatients.map((patient) => <article key={patient.userId || patient.id}><div><strong>{patient.fullName || patient.name}</strong><span>{patient.email} · {patient.medicalNotes || patient.detail}{patient.userId === 1 && latestMessage ? ` · “${latestMessage}”` : ''} · <strong style={{ color: 'var(--coral)', fontWeight: 400 }}>{patient.servicesAvailedCount || 0} services availed</strong></span></div><div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}><StatusBadge status={patient.careStatus || patient.status} /><StatusBadge status={patient.accountStatus || 'Active'} /></div><div className="worker-actions"><button type="button" className="card-link" onClick={() => setInspectingUser(patient)}>View Services ↗</button><button className="card-link" onClick={() => setPatientEditor({ type: 'worker-patient', ...patient, id: patient.patientId, user_id: patient.userId, name: patient.fullName })}>Edit</button></div></article>)}</div>{db.useApi && <p className="admin-note">Patients create their own accounts; assigned patients appear here for care management.</p>}</PagePanel>,
     medications: <PagePanel eyebrow="Treatment support" title={<>Medication<br /><i>requests.</i></>}><div className="worker-list">{requests.map((request) => <article key={request.id}><div><strong>{request.medication}</strong><span>Requested by {request.patient} · {request.dosage} · {request.schedule}</span></div><StatusBadge status={request.status} /><div className="worker-actions"><button className="card-link" onClick={() => updateRequest(request.id, 'Approved')}>Approve</button><button className="card-link" onClick={() => updateRequest(request.id, 'Needs information')}>Request info</button></div></article>)}</div></PagePanel>,
     appointments: <PagePanel eyebrow="Care schedule" title={<>Manage<br /><i>appointments.</i></>}><div className="worker-list">{appointments.map((appointment) => <article key={appointment.id}><div><strong>{appointment.patient}</strong><span>{appointment.date} · {appointment.time} · {appointment.type} ({appointment.facilityName})</span></div><StatusBadge status={appointment.status} /><div className="worker-actions"><button className="card-link" onClick={() => updateAppointment(appointment.id, 'Completed')}>Mark Completed</button><button className="card-link" onClick={() => updateAppointment(appointment.id, 'Cancelled')}>Cancel</button></div></article>)}</div></PagePanel>,
     groups: <PagePanel eyebrow="Community care" title={<>Support<br /><i>groups.</i></>}><button className="primary-button panel-action" onClick={() => db.insert('SupportGroups', { name: 'New support group', detail: 'Community peer circle', schedule: 'Set a schedule', member_count: 0, is_active: true })}>Create group <span>+</span></button><div className="worker-list">{groups.map((group) => <article key={group.id}><div><strong>{group.name}</strong><span>{group.members} members · {group.schedule}</span></div><button className="card-link">Edit <span>↗</span></button><button className="record-delete" onClick={() => removeGroup(group.id)}>Remove</button></article>)}</div></PagePanel>,
@@ -1141,7 +1143,7 @@ function HealthWorkerDashboard({ currentUser, currentWorker, onPublicHub, onSign
       <main key={page} className="patient-main route-transition">{content[page]}</main>
       <footer><span className="footer-brand">HIVeLink</span><button className="patient-public-link" onClick={onPublicHub}>Public awareness hub ↗</button><button className="footer-back" onClick={() => navigate('overview')}>Back to top ↑</button></footer>
       {patientEditor && <PatientForm data={patientEditor} onClose={() => setPatientEditor(null)} onSave={savePatient} />}
-      {inspectingUser && <AdminUserDetailModal user={inspectingUser} onClose={() => setInspectingUser(null)} onEdit={(u) => { setInspectingUser(null); setPatientEditor({ type: 'worker-patient', ...u, id: u.patientId, user_id: u.userId, name: u.fullName }); }} onDelete={(id) => { deletePatient(id); setInspectingUser(null); }} />}
+      {inspectingUser && <AdminUserDetailModal user={inspectingUser} canDelete={false} onClose={() => setInspectingUser(null)} onEdit={(u) => { setInspectingUser(null); setPatientEditor({ type: 'worker-patient', ...u, id: u.patientId, user_id: u.userId, name: u.fullName }); }} />}
     </div>
   );
 }
@@ -1411,6 +1413,21 @@ function App() {
   const [isGuest, setIsGuest] = useState(false);
 
   useEffect(() => {
+    let mounted = true;
+    if (db.useApi) {
+      db.restoreSession().then((session) => {
+        if (!mounted || !session) return;
+        setCurrentUser(session.user);
+        setCurrentPatient(session.patient);
+        setCurrentWorker(session.worker);
+        setUserRole(session.user.role);
+        setHasEntered(true);
+      }).catch(() => {});
+    }
+    return () => { mounted = false; };
+  }, []);
+
+  useEffect(() => {
     scrollPageToTop();
   }, [hasEntered, isGuest, userRole]);
 
@@ -1418,6 +1435,18 @@ function App() {
     setSent(false);
     setShowForm(true);
   };
+
+  const signOut = () => {
+    if (db.useApi) db.logout().catch(() => {});
+    setCurrentUser(null);
+    setCurrentPatient(null);
+    setCurrentWorker(null);
+    setHasEntered(false);
+    setIsGuest(false);
+    setUserRole('patient');
+  };
+
+  const openPublicHub = () => setIsGuest(true);
 
   const handleSubmit = (event) => {
     event.preventDefault();
@@ -1452,7 +1481,7 @@ function App() {
   }
 
   if (isGuest) {
-    return <GuestHub onExit={() => { setIsGuest(false); setHasEntered(false); }} />;
+    return <GuestHub onExit={signOut} />;
   }
 
   if (userRole === 'health-worker') {
@@ -1460,12 +1489,8 @@ function App() {
       <HealthWorkerDashboard
         currentUser={currentUser}
         currentWorker={currentWorker}
-        onPublicHub={() => setUserRole('patient')}
-        onSignOut={() => {
-          setHasEntered(false);
-          setIsGuest(false);
-          setUserRole('patient');
-        }}
+        onPublicHub={openPublicHub}
+        onSignOut={signOut}
       />
     );
   }
@@ -1474,12 +1499,8 @@ function App() {
     return (
       <AdminDashboard
         currentUser={currentUser}
-        onPublicHub={() => setUserRole('patient')}
-        onSignOut={() => {
-          setHasEntered(false);
-          setIsGuest(false);
-          setUserRole('patient');
-        }}
+        onPublicHub={openPublicHub}
+        onSignOut={signOut}
       />
     );
   }
@@ -1489,12 +1510,8 @@ function App() {
       <PatientDashboard
         currentUser={currentUser}
         currentPatient={currentPatient}
-        onPublicHub={() => setUserRole('patient')}
-        onSignOut={() => {
-          setHasEntered(false);
-          setIsGuest(false);
-          setUserRole('patient');
-        }}
+        onPublicHub={openPublicHub}
+        onSignOut={signOut}
       />
     );
   }

@@ -65,6 +65,44 @@ This section has moved here: [https://facebook.github.io/create-react-app/docs/a
 
 This section has moved here: [https://facebook.github.io/create-react-app/docs/deployment](https://facebook.github.io/create-react-app/docs/deployment)
 
+## Backend API (Vercel + Supabase)
+
+Production builds use the Vercel functions in `api/` instead of browser `localStorage`. The API uses PostgreSQL and a signed, `HttpOnly` session cookie. Public signup always creates a patient account; an administrator must be provisioned separately. Passwords are hashed with bcrypt and role checks are enforced by the API.
+
+### Supabase setup
+
+1. Create a new Supabase project and open its SQL Editor.
+2. Run `api/schema.sql` once against the empty project. This script does not drop tables, but it is still a one-time schema initializer and will fail if those tables already exist.
+3. Copy the PostgreSQL connection string from Supabase. Use a connection pooler URL supported by Vercel and include `sslmode=require`.
+4. Create a long random session secret (at least 32 characters). Do not commit it or put it in React source.
+
+### Vercel setup
+
+Import the GitHub repository with `hiv-website` as its Root Directory. The included `vercel.json` configures Create React App's `npm run build` and `build` output. Add these Project Environment Variables for Preview and Production:
+
+- `DATABASE_URL`: Supabase PostgreSQL connection string
+- `SESSION_SECRET`: unique random secret of at least 32 characters
+
+Deploy, then check `/api/health`; it should return `{"status":"ok"}`. The frontend automatically uses the API in production builds.
+
+### Create the first administrator
+
+Public registration intentionally cannot create an administrator. Run this from the `hiv-website` folder on a trusted machine, with `DATABASE_URL` set in the terminal. The script prompts for the administrator password without echoing it:
+
+```powershell
+npm run create-admin
+```
+
+Sign in through the app using the provisioned email and password. Do not create administrator accounts through public signup.
+
+### Local API development
+
+The CRA development server does not run Vercel functions. For local API work, install/use the Vercel CLI and run `vercel dev` from this folder with `DATABASE_URL`, `SESSION_SECRET`, and `REACT_APP_USE_API=true` in an ignored `.env.local` file. Do not use real patient data during development.
+
+### Security status
+
+This is an initial API integration, not a certification or compliance claim. Before handling real health information, add and test production-grade login rate limiting, account recovery and verification, operational monitoring, backups and restore drills, and a formal privacy/security review. Keep the site in demo use until those controls and applicable legal requirements have been reviewed.
+
 ### `npm run build` fails to minify
 
 This section has moved here: [https://facebook.github.io/create-react-app/docs/troubleshooting#npm-run-build-fails-to-minify](https://facebook.github.io/create-react-app/docs/troubleshooting#npm-run-build-fails-to-minify)
