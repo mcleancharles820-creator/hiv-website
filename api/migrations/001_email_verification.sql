@@ -7,6 +7,12 @@ ALTER TABLE users
 ALTER TABLE users
   ALTER COLUMN email_verified SET DEFAULT FALSE;
 
+ALTER TABLE users
+  ADD COLUMN IF NOT EXISTS supabase_user_id UUID UNIQUE REFERENCES auth.users(id) ON DELETE CASCADE;
+
+ALTER TABLE users
+  ALTER COLUMN password_hash DROP NOT NULL;
+
 CREATE TABLE IF NOT EXISTS email_verification_tokens (
   token_id BIGSERIAL PRIMARY KEY,
   user_id INT NOT NULL REFERENCES users(user_id) ON DELETE CASCADE,

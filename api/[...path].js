@@ -1,6 +1,7 @@
 const { Pool } = require('pg');
 const bcrypt = require('bcryptjs');
 const crypto = require('crypto');
+const { createClient } = require('@supabase/supabase-js');
 
 const pool = globalThis.hivelinkPool || new Pool({
   connectionString: process.env.DATABASE_URL,
@@ -8,6 +9,20 @@ const pool = globalThis.hivelinkPool || new Pool({
   idleTimeoutMillis: 10000,
 });
 globalThis.hivelinkPool = pool;
+
+function supabaseClients() {
+  const url = process.env.SUPABASE_URL;
+  const anonKey = process.env.SUPABASE_ANON_KEY;
+  const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+  if (!url || !anonKey || !serviceRoleKey) throw new Error('Supabase Auth environment variables are not configured.');
+  if (!globalThis.hivelinkSupabasePublic) {
+    globalThis.hivelinkSupabasePublic = createClient(url, anonKey, { auth: { autoRefreshToken: false, persistSession: false, detectSessionInUrl: false } });
+  }
+  if (!globalThis.hivelinkSupabaseAdmin) {
+    globalThis.hivelinkSupabaseAdmin = createClient(url, serviceRoleKey, { auth: { autoRefreshToken: false, persistSession: false, detectSessionInUrl: false } });
+  }
+  return { publicClient: globalThis.hivelinkSupabasePublic, adminClient: globalThis.hivelinkSupabaseAdmin };
+}
 
 const sessionCookie = 'hivelink_session';
 const tableConfig = {
@@ -32,12 +47,6 @@ function send(res, status, body) {
   res.statusCode = status;
   res.setHeader('Content-Type', 'application/json; charset=utf-8');
   res.end(JSON.stringify(body));
-}
-
-function sendHtml(res, status, html) {
-  res.statusCode = status;
-  res.setHeader('Content-Type', 'text/html; charset=utf-8');
-  res.end(html);
 }
 
 function getBody(req) {
@@ -127,21 +136,22 @@ function applicationUrl() {
   return process.env.NODE_ENV === 'production' ? null : 'http://localhost:3000';
 }
 
-async function sendVerificationEmail(userId) {
+async function sendVerificationEmail(userId, type = 'signup') {
   const baseUrl = applicationUrl();
-  if (!baseUrl || !process.env.RESEND_API_KEY || !process.env.EMAIL_FROM) return { sent: false, error: 'Email verification is not configured.' };
-  const token = crypto.randomBytes(32).toString('base64url');
-  const tokenHash = crypto.createHash('sha256').update(token).digest('hex');
-  await pool.query('UPDATE email_verification_tokens SET consumed_at = NOW() WHERE user_id = $1 AND consumed_at IS NULL', [userId]);
-  await pool.query('INSERT INTO email_verification_tokens (user_id, token_hash, expires_at) VALUES ($1, $2, NOW() + INTERVAL \'24 hours\')', [userId, tokenHash]);
-  const verificationUrl = `${baseUrl}/api/auth/verify?token=${encodeURIComponent(token)}`;
-  const safeUrl = escapeHtml(verificationUrl);
-  return sendRegisteredEmail(userId, {
-    subject: 'Verify your HIVeLink email',
-    text: `Verify your email within 24 hours by opening this link: ${verificationUrl}`,
-    title: 'Verify your email',
-    html: `<div style="font-family:Arial,sans-serif;line-height:1.6;color:#54151b"><h1>Verify your HIVeLink email</h1><p>This link expires in 24 hours and can only be used once.</p><p><a href="${safeUrl}" style="background:#e21d2b;color:#fff;padding:12px 18px;text-decoration:none">Verify email</a></p><p>If you did not create this account, you can ignore this email.</p></div>`,
+  if (!baseUrl) return { sent: false, error: 'APP_URL is not configured.' };
+  const profile = await pool.query('SELECT email, supabase_user_id FROM users WHERE user_id = $1 AND is_active = TRUE AND email_verified = FALSE', [userId]);
+  if (!profile.rowCount || !profile.rows[0].supabase_user_id) return { sent: false, error: 'Supabase Auth account was not found.' };
+  const { publicClient } = supabaseClients();
+  const { error } = await publicClient.auth.resend({
+    type,
+    email: profile.rows[0].email,
+    options: { emailRedirectTo: baseUrl },
   });
+  if (error) {
+    console.error('Supabase verification email failed:', error.message);
+    return { sent: false, error: 'Supabase could not send the verification email.' };
+  }
+  return { sent: true };
 }
 
 async function notifyPatientRecord(table, id, subject, text) {
@@ -297,6 +307,10 @@ async function mutate(req, user, table, id) {
 
   const values = {};
   for (const column of config.columns) if (Object.prototype.hasOwnProperty.call(record, column)) values[column] = record[column];
+  if (user.role === 'patient' && table === 'Users' && values.email) {
+    const current = await pool.query('SELECT email FROM users WHERE user_id = $1', [user.user_id]);
+    if (String(values.email).trim().toLowerCase() !== current.rows[0]?.email) return { status: 400, body: { error: 'Changing account email is not available yet. Contact an administrator.' } };
+  }
   if (user.role === 'health-worker') {
     if (table === 'HealthWorkers') {
       for (const key of Object.keys(values)) if (key !== 'is_available') delete values[key];
@@ -375,11 +389,13 @@ module.exports = async function handler(req, res) {
   if (req.method === 'OPTIONS') { res.statusCode = 204; return res.end(); }
   if (pathname === '/api/health' && req.method === 'GET') {
     if (!process.env.DATABASE_URL) return send(res, 503, { status: 'not-configured', error: 'DATABASE_URL is not configured.' });
+    if (!process.env.SUPABASE_URL || !process.env.SUPABASE_ANON_KEY || !process.env.SUPABASE_SERVICE_ROLE_KEY) return send(res, 503, { status: 'not-configured', error: 'Supabase Auth is not configured.' });
     try { await pool.query('SELECT 1'); return send(res, 200, { status: 'ok' }); }
     catch { return send(res, 503, { status: 'unavailable' }); }
   }
   if (!process.env.DATABASE_URL) return send(res, 503, { error: 'Backend database is not configured.' });
   if (!process.env.SESSION_SECRET || process.env.SESSION_SECRET.length < 32) return send(res, 503, { error: 'SESSION_SECRET must contain at least 32 characters.' });
+  if (!process.env.SUPABASE_URL || !process.env.SUPABASE_ANON_KEY || !process.env.SUPABASE_SERVICE_ROLE_KEY) return send(res, 503, { error: 'Supabase Auth environment variables are not configured.' });
   if (!['GET', 'HEAD', 'OPTIONS'].includes(req.method) && req.headers.origin) {
     const forwardedHost = req.headers['x-forwarded-host'] || req.headers.host;
     try {
@@ -389,47 +405,37 @@ module.exports = async function handler(req, res) {
     }
   }
   try {
-    if (pathname === '/api/auth/verify' && req.method === 'GET') {
-      const token = new URL(req.url, 'http://localhost').searchParams.get('token') || '';
-      const tokenHash = crypto.createHash('sha256').update(token).digest('hex');
-      const client = await pool.connect();
-      try {
-        await client.query('BEGIN');
-        const record = await client.query('SELECT user_id FROM email_verification_tokens WHERE token_hash = $1 AND consumed_at IS NULL AND expires_at > NOW() FOR UPDATE', [tokenHash]);
-        if (!record.rowCount) {
-          await client.query('ROLLBACK');
-          return sendHtml(res, 400, '<!doctype html><html><head><meta name="viewport" content="width=device-width, initial-scale=1"><title>Link expired · HIVeLink</title></head><body><main><h1>Verification link unavailable</h1><p>This link is invalid, expired, or already used. Return to HIVeLink and request another verification email.</p><a href="/">Return to HIVeLink</a></main></body></html>');
-        }
-        const userId = record.rows[0].user_id;
-        await client.query('UPDATE users SET email_verified = TRUE, updated_at = NOW() WHERE user_id = $1', [userId]);
-        await client.query('UPDATE email_verification_tokens SET consumed_at = NOW() WHERE token_hash = $1', [tokenHash]);
-        await client.query('COMMIT');
-        return sendHtml(res, 200, '<!doctype html><html><head><meta name="viewport" content="width=device-width, initial-scale=1"><title>Email verified · HIVeLink</title></head><body><main><h1>Email verified</h1><p>Your HIVeLink account is ready. Return to the sign-in page to continue.</p><a href="/">Sign in to HIVeLink</a></main></body></html>');
-      } catch (error) {
-        await client.query('ROLLBACK');
-        throw error;
-      } finally { client.release(); }
-    }
     if (pathname === '/api/auth/register' && req.method === 'POST') {
-      if (!applicationUrl() || !process.env.RESEND_API_KEY || !process.env.EMAIL_FROM) return send(res, 503, { error: 'Email verification is not configured.' });
+      if (!applicationUrl()) return send(res, 503, { error: 'APP_URL is not configured.' });
       const body = getBody(req);
       const fullName = `${String(body.firstName || '').trim()} ${String(body.lastName || '').trim()}`.trim();
       const email = String(body.email || '').trim().toLowerCase();
       const password = String(body.password || '');
       if (!fullName || !email || password.length < 12) return send(res, 400, { error: 'First name, last name, email, and a password of at least 12 characters are required.' });
+      const { publicClient, adminClient } = supabaseClients();
+      const { data: authData, error: authError } = await publicClient.auth.signUp({
+        email,
+        password,
+        options: { data: { full_name: fullName }, emailRedirectTo: applicationUrl() },
+      });
+      if (authError || !authData.user) return send(res, 400, { error: authError?.message || 'Could not create the Supabase Auth account.' });
+      if (authData.user.identities && authData.user.identities.length === 0) return send(res, 409, { error: 'An account with this email already exists.' });
+      const emailVerified = Boolean(authData.user.email_confirmed_at);
       const client = await pool.connect();
       try {
         await client.query('BEGIN');
-        const passwordHash = await bcrypt.hash(password, 12);
-        const inserted = await client.query('INSERT INTO users (email, password_hash, full_name, role, contact_number, date_of_birth, age, gender, terms_accepted, email_verified) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,FALSE) RETURNING user_id, email, full_name, role, contact_number, date_of_birth, age, gender, is_active, email_verified', [email, passwordHash, fullName, 'patient', body.contactNumber || null, body.dateOfBirth || null, body.age || null, body.gender || null, Boolean(body.termsAccepted)]);
+        const inserted = await client.query('INSERT INTO users (supabase_user_id, email, password_hash, full_name, role, contact_number, date_of_birth, age, gender, terms_accepted, email_verified) VALUES ($1,$2,NULL,$3,$4,$5,$6,$7,$8,$9,$10) RETURNING user_id, supabase_user_id, email, full_name, role, contact_number, date_of_birth, age, gender, is_active, email_verified', [authData.user.id, email, fullName, 'patient', body.contactNumber || null, body.dateOfBirth || null, body.age || null, body.gender || null, Boolean(body.termsAccepted), emailVerified]);
         const patient = await client.query("INSERT INTO patients (user_id, preferred_facility_id, care_status, medical_notes) VALUES ($1, 1, 'Active care plan', 'Newly registered patient account.') RETURNING *", [inserted.rows[0].user_id]);
         await client.query("INSERT INTO chat_sessions (patient_id, subject, status, preview) VALUES ($1, 'Welcome to private support', 'Open', 'A health worker will be ready to answer your questions.')", [patient.rows[0].patient_id]);
         await client.query('COMMIT');
         const user = inserted.rows[0];
-        const verification = await sendVerificationEmail(user.user_id);
-        return send(res, verification.sent ? 201 : 503, { verificationRequired: true, verificationPending: !verification.sent, email: user.email, error: verification.sent ? undefined : 'Your account was created, but the verification email could not be sent. Use resend verification before signing in.' });
+        if (emailVerified && authData.session) setSessionCookie(res, signSession(user));
+        return send(res, 201, emailVerified && authData.session
+          ? { user, patient: patient.rows[0], worker: null }
+          : { verificationRequired: true, email: user.email });
       } catch (error) {
         await client.query('ROLLBACK');
+        await adminClient.auth.admin.deleteUser(authData.user.id).catch(() => {});
         if (error.code === '23505') return send(res, 409, { error: 'An account with this email already exists.' });
         if (['23514', '22007', '22003'].includes(error.code)) return send(res, 400, { error: 'Some registration details are invalid.' });
         throw error;
@@ -438,10 +444,31 @@ module.exports = async function handler(req, res) {
     if (pathname === '/api/auth/login' && req.method === 'POST') {
       const body = getBody(req);
       const email = String(body.email || '').trim().toLowerCase();
-      const result = await pool.query('SELECT user_id, email, full_name, role, contact_number, date_of_birth, age, gender, is_active, email_verified, password_hash FROM users WHERE email = $1', [email]);
-      const user = result.rows[0];
-      if (!user || !user.is_active || !(await bcrypt.compare(String(body.password || ''), user.password_hash))) return send(res, 401, { error: 'Email or password is incorrect.' });
-      if (!user.email_verified) return send(res, 403, { error: 'Please verify your email before signing in.' });
+      const { publicClient, adminClient } = supabaseClients();
+      let profile = (await pool.query('SELECT * FROM users WHERE email = $1 AND is_active = TRUE', [email])).rows[0];
+      if (!profile) return send(res, 401, { error: 'Email or password is incorrect.' });
+      let supabaseUserId = profile.supabase_user_id;
+      if (!supabaseUserId) {
+        if (!profile.password_hash || !(await bcrypt.compare(String(body.password || ''), profile.password_hash))) return send(res, 401, { error: 'Email or password is incorrect.' });
+        const { data: legacyAuth, error: legacyError } = await adminClient.auth.admin.createUser({
+          email,
+          password: String(body.password || ''),
+          email_confirm: true,
+          user_metadata: { full_name: profile.full_name },
+        });
+        if (legacyError || !legacyAuth.user) return send(res, 401, { error: 'Email or password is incorrect.' });
+        supabaseUserId = legacyAuth.user.id;
+        profile = (await pool.query('UPDATE users SET supabase_user_id = $1, password_hash = NULL, email_verified = TRUE, updated_at = NOW() WHERE user_id = $2 RETURNING *', [supabaseUserId, profile.user_id])).rows[0];
+      } else {
+        const { data: authData, error: authError } = await publicClient.auth.signInWithPassword({ email, password: String(body.password || '') });
+        if (authError || !authData.user) {
+          if (/email not confirmed/i.test(authError?.message || '')) return send(res, 403, { error: 'Please verify your email before signing in.' });
+          return send(res, 401, { error: 'Email or password is incorrect.' });
+        }
+        if (!authData.user.email_confirmed_at) return send(res, 403, { error: 'Please verify your email before signing in.' });
+        profile = (await pool.query('UPDATE users SET email_verified = TRUE, password_hash = NULL, updated_at = NOW() WHERE user_id = $1 RETURNING *', [profile.user_id])).rows[0];
+      }
+      const user = { ...profile };
       delete user.password_hash;
       setSessionCookie(res, signSession(user));
       const patient = user.role === 'patient' ? (await pool.query('SELECT * FROM patients WHERE user_id = $1', [user.user_id])).rows[0] : null;
@@ -449,7 +476,7 @@ module.exports = async function handler(req, res) {
       return send(res, 200, { user, patient: patient || null, worker: worker || null });
     }
     if (pathname === '/api/auth/resend-verification' && req.method === 'POST') {
-      if (!applicationUrl() || !process.env.RESEND_API_KEY || !process.env.EMAIL_FROM) return send(res, 503, { error: 'Email verification is not configured.' });
+      if (!applicationUrl()) return send(res, 503, { error: 'APP_URL is not configured.' });
       const body = getBody(req);
       let result;
       if (body.userId !== undefined) {
@@ -492,8 +519,9 @@ module.exports = async function handler(req, res) {
       const kind = adminUserRoute[1];
       const id = adminUserRoute[2];
       const body = getBody(req);
-      if (req.method === 'POST' && (!applicationUrl() || !process.env.RESEND_API_KEY || !process.env.EMAIL_FROM)) return send(res, 503, { error: 'Email verification is not configured.' });
+      if (req.method === 'POST' && !applicationUrl()) return send(res, 503, { error: 'APP_URL is not configured.' });
       const client = await pool.connect();
+      let supabaseAuthUserId = null;
       try {
         await client.query('BEGIN');
         if (kind === 'users' && req.method === 'POST') {
@@ -501,7 +529,11 @@ module.exports = async function handler(req, res) {
           const email = String(body.email || '').trim().toLowerCase();
           const password = String(body.password || '');
           if (!fullName || !email || password.length < 12) { await client.query('ROLLBACK'); return send(res, 400, { error: 'Name, email, and a password of at least 12 characters are required.' }); }
-          const created = await client.query('INSERT INTO users (email, password_hash, full_name, role, contact_number, date_of_birth, age, gender, is_active, terms_accepted, email_verified) VALUES ($1,$2,$3,\'patient\',$4,$5,$6,$7,$8,TRUE,FALSE) RETURNING user_id, email, full_name, role, contact_number, date_of_birth, age, gender, is_active, email_verified', [email, await bcrypt.hash(password, 12), fullName, body.contactNumber || null, body.dateOfBirth || null, body.age || null, body.gender || null, body.isActive !== false]);
+          const { adminClient } = supabaseClients();
+          const { data: authData, error: authError } = await adminClient.auth.admin.createUser({ email, password, email_confirm: false, user_metadata: { full_name: fullName } });
+          if (authError || !authData.user) { await client.query('ROLLBACK'); return send(res, 400, { error: authError?.message || 'Could not create the Supabase Auth account.' }); }
+          supabaseAuthUserId = authData.user.id;
+          const created = await client.query('INSERT INTO users (supabase_user_id, email, password_hash, full_name, role, contact_number, date_of_birth, age, gender, is_active, terms_accepted, email_verified) VALUES ($1,$2,NULL,$3,\'patient\',$4,$5,$6,$7,$8,$9,FALSE) RETURNING user_id, supabase_user_id, email, full_name, role, contact_number, date_of_birth, age, gender, is_active, email_verified', [supabaseAuthUserId, email, fullName, body.contactNumber || null, body.dateOfBirth || null, body.age || null, body.gender || null, body.isActive !== false, true]);
           const patient = await client.query('INSERT INTO patients (user_id, care_status, medical_notes, preferred_facility_id, emergency_contact, emergency_phone) VALUES ($1,$2,$3,$4,$5,$6) RETURNING *', [created.rows[0].user_id, body.careStatus || 'Active care plan', body.medicalNotes || 'Managed patient account', body.preferredFacilityId || 1, body.emergencyContact || null, body.emergencyPhone || null]);
           await client.query("INSERT INTO chat_sessions (patient_id, subject, status, preview) VALUES ($1, 'Welcome to private support', 'Open', 'A health worker will be ready to answer your questions.')", [patient.rows[0].patient_id]);
           await client.query('INSERT INTO activity_logs (actor_user_id, actor_name, action, category, details) VALUES ($1,$2,$3,$4,$5)', [user.user_id, user.full_name, `Created user account: ${fullName}`, 'User Management', `Created patient account ${email}`]);
@@ -514,7 +546,11 @@ module.exports = async function handler(req, res) {
           const email = String(body.email || '').trim().toLowerCase();
           const password = String(body.password || '');
           if (!fullName || !email || password.length < 12) { await client.query('ROLLBACK'); return send(res, 400, { error: 'Name, email, and a password of at least 12 characters are required.' }); }
-          const created = await client.query('INSERT INTO users (email, password_hash, full_name, role, contact_number, is_active, terms_accepted, email_verified) VALUES ($1,$2,$3,\'health-worker\',$4,$5,TRUE,FALSE) RETURNING user_id, email, full_name, role, contact_number, is_active, email_verified', [email, await bcrypt.hash(password, 12), fullName, body.contactNumber || null, body.isActive !== false]);
+          const { adminClient } = supabaseClients();
+          const { data: authData, error: authError } = await adminClient.auth.admin.createUser({ email, password, email_confirm: false, user_metadata: { full_name: fullName } });
+          if (authError || !authData.user) { await client.query('ROLLBACK'); return send(res, 400, { error: authError?.message || 'Could not create the Supabase Auth account.' }); }
+          supabaseAuthUserId = authData.user.id;
+          const created = await client.query('INSERT INTO users (supabase_user_id, email, password_hash, full_name, role, contact_number, is_active, terms_accepted, email_verified) VALUES ($1,$2,NULL,$3,\'health-worker\',$4,$5,TRUE,FALSE) RETURNING user_id, supabase_user_id, email, full_name, role, contact_number, is_active, email_verified', [supabaseAuthUserId, email, fullName, body.contactNumber || null, body.isActive !== false]);
           const worker = await client.query('INSERT INTO health_workers (user_id, specialty, license_number, primary_facility_id, is_verified, is_available, bio_summary) VALUES ($1,$2,$3,$4,$5,$6,$7) RETURNING *', [created.rows[0].user_id, body.specialty || 'HIV care support', body.licenseNumber || null, body.primaryFacilityId || 1, body.isVerified !== false, body.isAvailable !== false, body.bioSummary || 'Licensed Health Worker']);
           await client.query('INSERT INTO activity_logs (actor_user_id, actor_name, action, category, details) VALUES ($1,$2,$3,$4,$5)', [user.user_id, user.full_name, `Created health worker: ${fullName}`, 'Care Team Management', `Created health worker ${email}`]);
           await client.query('COMMIT');
@@ -524,17 +560,19 @@ module.exports = async function handler(req, res) {
         if (req.method === 'PATCH' && id) {
           const isWorker = kind === 'workers';
           const profile = isWorker
-            ? await client.query('SELECT h.worker_id, h.user_id, u.email FROM health_workers h JOIN users u USING (user_id) WHERE h.worker_id = $1', [id])
-            : await client.query('SELECT p.patient_id, p.user_id, u.email FROM patients p JOIN users u USING (user_id) WHERE p.user_id = $1', [id]);
+            ? await client.query('SELECT h.worker_id, h.user_id, u.email, u.supabase_user_id FROM health_workers h JOIN users u USING (user_id) WHERE h.worker_id = $1', [id])
+            : await client.query('SELECT p.patient_id, p.user_id, u.email, u.supabase_user_id FROM patients p JOIN users u USING (user_id) WHERE p.user_id = $1', [id]);
           if (!profile.rowCount) { await client.query('ROLLBACK'); return send(res, 404, { error: 'Record not found.' }); }
           const userId = profile.rows[0].user_id;
           const userFields = { fullName: 'full_name', email: 'email', contactNumber: 'contact_number', isActive: 'is_active', age: 'age', dateOfBirth: 'date_of_birth', gender: 'gender' };
+          if (body.email !== undefined && String(body.email).trim().toLowerCase() !== profile.rows[0].email) {
+            await client.query('ROLLBACK');
+            return send(res, 400, { error: 'Changing account email is not available yet. Create a new account with the correct address.' });
+          }
           const patches = Object.entries(userFields).filter(([key]) => Object.prototype.hasOwnProperty.call(body, key)
             && (key !== 'email' || String(body.email).trim().toLowerCase() !== profile.rows[0].email));
           if (patches.length) {
             const clauses = patches.map(([, column], index) => `${column} = $${index + 1}`);
-            const emailChanged = patches.some(([key]) => key === 'email');
-            if (emailChanged) clauses.push('email_verified = FALSE');
             clauses.push('updated_at = NOW()');
             await client.query(`UPDATE users SET ${clauses.join(', ')} WHERE user_id = $${patches.length + 1}`, [...patches.map(([key]) => key === 'email' ? String(body[key]).trim().toLowerCase() : key === 'fullName' ? String(body[key]).trim() : body[key]), userId]);
           }
@@ -551,26 +589,33 @@ module.exports = async function handler(req, res) {
             await client.query(`UPDATE ${table} SET ${clauses.join(', ')} WHERE ${tableId} = $${updates.length + 1}`, [...updates.map(([key]) => body[key]), relationId]);
           }
           await client.query('COMMIT');
-          const emailChanged = patches.some(([key]) => key === 'email');
-          const verification = emailChanged ? await sendVerificationEmail(userId) : null;
-          return send(res, 200, { ok: true, emailVerificationRequired: emailChanged, verificationEmailSent: verification?.sent ?? null });
+          return send(res, 200, { ok: true });
         }
         if (req.method === 'DELETE' && id) {
           let removed;
           if (kind === 'workers') {
-            removed = await client.query('DELETE FROM users u USING health_workers h WHERE u.user_id = h.user_id AND h.worker_id = $1 RETURNING u.full_name', [id]);
+            removed = await client.query('DELETE FROM users u USING health_workers h WHERE u.user_id = h.user_id AND h.worker_id = $1 RETURNING u.full_name, u.supabase_user_id', [id]);
           } else {
-            removed = await client.query('DELETE FROM users WHERE user_id = $1 AND role = \'patient\' RETURNING full_name', [id]);
+            removed = await client.query('DELETE FROM users WHERE user_id = $1 AND role = \'patient\' RETURNING full_name, supabase_user_id', [id]);
           }
           if (!removed.rowCount) { await client.query('ROLLBACK'); return send(res, 404, { error: 'Record not found.' }); }
           await client.query('INSERT INTO activity_logs (actor_user_id, actor_name, action, category, details) VALUES ($1,$2,$3,$4,$5)', [user.user_id, user.full_name, `Deleted ${kind === 'workers' ? 'health worker' : 'user'}: ${removed.rows[0].full_name}`, 'Account Management', `Deleted record ${id}`]);
           await client.query('COMMIT');
+          if (removed.rows[0].supabase_user_id) {
+            const { adminClient } = supabaseClients();
+            const { error: deleteAuthError } = await adminClient.auth.admin.deleteUser(removed.rows[0].supabase_user_id);
+            if (deleteAuthError) console.error('Supabase Auth account cleanup failed:', deleteAuthError.message);
+          }
           return send(res, 200, { deleted: true });
         }
         await client.query('ROLLBACK');
         return send(res, 405, { error: 'Method not allowed.' });
       } catch (error) {
         await client.query('ROLLBACK');
+        if (supabaseAuthUserId) {
+          const { adminClient } = supabaseClients();
+          await adminClient.auth.admin.deleteUser(supabaseAuthUserId).catch(() => {});
+        }
         if (error.code === '23505') return send(res, 409, { error: 'An account with this email already exists.' });
         throw error;
       } finally { client.release(); }
@@ -611,3 +656,18 @@ module.exports = async function handler(req, res) {
     return send(res, 500, { error: 'The request could not be completed.' });
   }
 };
+
+function applicationUrl() {
+  const configured =
+    process.env.APP_URL ||
+    process.env.VERCEL_URL ||
+    process.env.VERCEL_PROJECT_PRODUCTION_URL;
+
+  if (configured) {
+    return `${configured.startsWith('http') ? configured : `https://${configured}`}`.replace(/\/$/, '');
+  }
+
+  return process.env.NODE_ENV === 'production'
+    ? null
+    : 'http://localhost:3000';
+}
