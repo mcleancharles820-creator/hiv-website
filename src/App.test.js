@@ -395,6 +395,59 @@ test('health worker gets a care management workspace', () => {
   expect(screen.getByRole('button', { name: /open Dr\. Evelyn Garcia's overview/i })).toHaveAttribute('aria-current', 'page');
 });
 
+test('health worker inbox shows assigned unread chats, marks messages read, and supports replies/status changes', () => {
+  const worker = db.registerUser({
+    fullName: 'Dr. Evelyn Garcia',
+    email: 'evelyn.chat@risinghiv.org',
+    password: 'password',
+    role: 'health-worker',
+  });
+  const unreadPatient = db.registerUser({
+    fullName: 'Alex Unread',
+    email: 'alex.unread@example.com',
+    password: 'password',
+    role: 'patient',
+  });
+  db.update('Patients', unreadPatient.patient.patient_id, { assigned_worker_id: worker.worker.worker_id });
+  const unreadChat = db.getTable('ChatSessions').find((session) => session.patient_id === unreadPatient.patient.patient_id);
+  db.update('ChatSessions', unreadChat.chat_session_id, { worker_id: worker.worker.worker_id });
+  const unreadMessage = db.sendChatMessage({ chat_session_id: unreadChat.chat_session_id, sender_user_id: unreadPatient.user.user_id, sender_role: 'patient', message_text: 'I have a private question.' });
+  db.update('ChatSessions', unreadChat.chat_session_id, { last_updated: '2026-01-01T00:00:00.000Z' });
+
+  const patient = db.registerUser({
+    fullName: 'Taylor Patient',
+    email: 'taylor.chat@example.com',
+    password: 'password',
+    role: 'patient',
+  });
+  db.update('Patients', patient.patient.patient_id, { assigned_worker_id: worker.worker.worker_id });
+  const chat = db.getTable('ChatSessions').find((session) => session.patient_id === patient.patient.patient_id);
+  db.update('ChatSessions', chat.chat_session_id, { worker_id: worker.worker.worker_id });
+  db.sendChatMessage({ chat_session_id: chat.chat_session_id, sender_user_id: patient.user.user_id, sender_role: 'patient', message_text: 'I would like to ask about my appointment.' });
+
+  render(<App />);
+  userEvent.selectOptions(screen.getByLabelText(/account type/i), 'health-worker');
+  userEvent.type(screen.getByLabelText(/email address/i), 'evelyn.chat@risinghiv.org');
+  userEvent.type(screen.getByLabelText(/^password$/i), 'password');
+  userEvent.click(screen.getByRole('button', { name: /^sign in/i }));
+  userEvent.click(screen.getByRole('button', { name: 'Chats' }));
+
+  expect(screen.getByRole('heading', { name: /conversation inbox/i })).toBeInTheDocument();
+  expect(screen.getAllByText('Taylor Patient').length).toBeGreaterThan(0);
+  expect(screen.getByText('Alex Unread')).toBeInTheDocument();
+  expect(screen.getByText('1')).toBeInTheDocument();
+  expect(screen.getAllByText('I would like to ask about my appointment.').length).toBeGreaterThan(0);
+
+  userEvent.type(screen.getByLabelText(/reply to patient/i), 'I can help with that.');
+  userEvent.click(screen.getByRole('button', { name: /^reply/i }));
+  userEvent.selectOptions(screen.getByLabelText(/conversation status/i), 'Resolved');
+
+  expect(screen.getAllByText('I can help with that.').length).toBeGreaterThan(0);
+  expect(db.findById('ChatSessions', chat.chat_session_id).status).toBe('Resolved');
+  expect(db.findById('ChatMessages', unreadMessage.message_id).is_read).toBe(false);
+  expect(db.getTable('ChatMessages').find((message) => message.chat_session_id === chat.chat_session_id && message.sender_role === 'patient').is_read).toBe(true);
+});
+
 test('admin gets platform management pages and service toggles', () => {
   db.registerUser({
     fullName: 'Platform Admin',

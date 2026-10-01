@@ -31,7 +31,7 @@ const tableConfig = {
   HealthWorkers: { sql: 'health_workers', id: 'worker_id', updated: true, columns: ['specialty', 'license_number', 'primary_facility_id', 'is_verified', 'is_available', 'bio_summary'] },
   Appointments: { sql: 'appointments', id: 'appointment_id', updated: true, columns: ['patient_id', 'worker_id', 'facility_id', 'appointment_date', 'appointment_time', 'appointment_type', 'status', 'notes'] },
   MedicationRequests: { sql: 'medication_requests', id: 'request_id', updated: true, columns: ['patient_id', 'medication_id', 'medication_name', 'dosage', 'schedule', 'availability', 'status', 'reviewed_by_worker_id', 'review_notes'] },
-  ChatSessions: { sql: 'chat_sessions', id: 'chat_session_id', updated: true, columns: ['patient_id', 'worker_id', 'subject', 'status', 'preview', 'last_updated'] },
+  ChatSessions: { sql: 'chat_sessions', id: 'chat_session_id', columns: ['patient_id', 'worker_id', 'subject', 'status', 'preview', 'last_updated'] },
   ChatMessages: { sql: 'chat_messages', id: 'message_id', columns: ['chat_session_id', 'sender_user_id', 'sender_role', 'message_text', 'is_read'] },
   SupportGroupMembers: { sql: 'support_group_members', id: 'membership_id', columns: ['group_id', 'patient_id', 'role_in_group'] },
   SupportGroups: { sql: 'support_groups', id: 'group_id', columns: ['name', 'detail', 'schedule', 'target_audience', 'facilitator_worker_id', 'member_count', 'is_active'] },
@@ -243,7 +243,7 @@ function allowed(role, table, operation) {
   if (role === 'health-worker') {
     if (table === 'HealthWorkers') return operation === 'update';
     if (table === 'SupportGroups') return ['insert', 'update', 'delete'].includes(operation);
-    if (table === 'ChatMessages') return operation === 'insert';
+    if (table === 'ChatMessages') return ['insert', 'update'].includes(operation);
     if (['Patients', 'Appointments', 'MedicationRequests', 'ChatSessions'].includes(table)) return operation === 'update';
     return false;
   }
@@ -251,7 +251,8 @@ function allowed(role, table, operation) {
     if (table === 'Users') return operation === 'update';
     if (['Appointments', 'MedicationRequests'].includes(table)) return ['insert', 'update', 'delete'].includes(operation);
     if (table === 'ChatSessions') return operation === 'update';
-    if (table === 'ChatMessages' || table === 'SupportGroupMembers') return operation === 'insert';
+    if (table === 'ChatMessages') return ['insert', 'update'].includes(operation);
+    if (table === 'SupportGroupMembers') return operation === 'insert';
   }
   return false;
 }
@@ -272,7 +273,8 @@ async function verifyRecordAccess(user, table, id, body) {
       return result.rows[0]?.patient_id === patientId;
     }
     if (table === 'ChatMessages') {
-      const result = await pool.query('SELECT 1 FROM chat_messages m JOIN chat_sessions c USING (chat_session_id) WHERE m.message_id = $1 AND c.patient_id = $2', [id, patientId]);
+      const incomingRole = user.role === 'patient' ? 'worker' : 'patient';
+      const result = await pool.query('SELECT 1 FROM chat_messages m JOIN chat_sessions c USING (chat_session_id) WHERE m.message_id = $1 AND c.patient_id = $2 AND m.sender_role = $3', [id, patientId, incomingRole]);
       return result.rowCount > 0;
     }
     return false;
@@ -286,6 +288,7 @@ async function verifyRecordAccess(user, table, id, body) {
     if (table === 'Appointments') return (await pool.query('SELECT 1 FROM appointments a JOIN patients p USING (patient_id) WHERE a.appointment_id = $1 AND (a.worker_id = $2 OR p.assigned_worker_id = $2)', [id, workerId])).rowCount > 0;
     if (table === 'MedicationRequests') return (await pool.query('SELECT 1 FROM medication_requests m JOIN patients p USING (patient_id) WHERE m.request_id = $1 AND p.assigned_worker_id = $2', [id, workerId])).rowCount > 0;
     if (table === 'ChatSessions') return (await pool.query('SELECT 1 FROM chat_sessions c JOIN patients p USING (patient_id) WHERE c.chat_session_id = $1 AND (c.worker_id = $2 OR p.assigned_worker_id = $2)', [id, workerId])).rowCount > 0;
+    if (table === 'ChatMessages') return (await pool.query("SELECT 1 FROM chat_messages m JOIN chat_sessions c USING (chat_session_id) JOIN patients p USING (patient_id) WHERE m.message_id = $1 AND m.sender_role = 'patient' AND (c.worker_id = $2 OR p.assigned_worker_id = $2)", [id, workerId])).rowCount > 0;
     if (table === 'SupportGroups') return (await pool.query('SELECT 1 FROM support_groups WHERE group_id = $1 AND facilitator_worker_id = $2', [id, workerId])).rowCount > 0;
   }
   return false;
@@ -338,6 +341,10 @@ async function mutate(req, user, table, id) {
       for (const key of Object.keys(values)) if (!['preview', 'last_updated'].includes(key)) delete values[key];
     }
   }
+  if (table === 'ChatMessages' && operation === 'update') {
+    for (const key of Object.keys(values)) if (key !== 'is_read') delete values[key];
+    if (values.is_read !== true) return { status: 403, body: { error: 'Messages may only be marked as read.' } };
+  }
   if (table === 'Appointments' && operation === 'insert') {
     if (user.role === 'patient') {
       values.patient_id = await patientIdForUser(user.user_id);
@@ -366,7 +373,7 @@ async function mutate(req, user, table, id) {
     const placeholders = keys.map((_, index) => `$${index + 1}`).join(', ');
     const result = await pool.query(`INSERT INTO ${config.sql} (${keys.join(', ')}) VALUES (${placeholders}) RETURNING *`, keys.map((key) => values[key]));
     if (table === 'ChatMessages') {
-      await pool.query('UPDATE chat_sessions SET preview = $1, last_updated = NOW(), updated_at = NOW() WHERE chat_session_id = $2', [values.message_text, values.chat_session_id]);
+      await pool.query('UPDATE chat_sessions SET preview = $1, last_updated = NOW() WHERE chat_session_id = $2', [values.message_text, values.chat_session_id]);
     }
     return { status: 201, body: { record: result.rows[0] } };
   }
@@ -431,7 +438,7 @@ module.exports = async function handler(req, res) {
         const user = inserted.rows[0];
         if (emailVerified && authData.session) setSessionCookie(res, signSession(user));
         return send(res, 201, emailVerified && authData.session
-          ? { user, patient: patient.rows[0], worker: null }
+          ? { user, patient: patient.rows[0], worker: null, realtimeSession: authData.session }
           : { verificationRequired: true, email: user.email });
       } catch (error) {
         await client.query('ROLLBACK');
@@ -448,6 +455,7 @@ module.exports = async function handler(req, res) {
       let profile = (await pool.query('SELECT * FROM users WHERE email = $1 AND is_active = TRUE', [email])).rows[0];
       if (!profile) return send(res, 401, { error: 'Email or password is incorrect.' });
       let supabaseUserId = profile.supabase_user_id;
+      let realtimeSession = null;
       if (!supabaseUserId) {
         if (!profile.password_hash || !(await bcrypt.compare(String(body.password || ''), profile.password_hash))) return send(res, 401, { error: 'Email or password is incorrect.' });
         const { data: legacyAuth, error: legacyError } = await adminClient.auth.admin.createUser({
@@ -459,6 +467,9 @@ module.exports = async function handler(req, res) {
         if (legacyError || !legacyAuth.user) return send(res, 401, { error: 'Email or password is incorrect.' });
         supabaseUserId = legacyAuth.user.id;
         profile = (await pool.query('UPDATE users SET supabase_user_id = $1, password_hash = NULL, email_verified = TRUE, updated_at = NOW() WHERE user_id = $2 RETURNING *', [supabaseUserId, profile.user_id])).rows[0];
+        const { data: legacySession, error: legacySessionError } = await publicClient.auth.signInWithPassword({ email, password: String(body.password || '') });
+        if (legacySessionError || !legacySession.session) return send(res, 500, { error: 'The account was migrated but its session could not be started. Try signing in again.' });
+        realtimeSession = legacySession.session;
       } else {
         const { data: authData, error: authError } = await publicClient.auth.signInWithPassword({ email, password: String(body.password || '') });
         if (authError || !authData.user) {
@@ -466,6 +477,7 @@ module.exports = async function handler(req, res) {
           return send(res, 401, { error: 'Email or password is incorrect.' });
         }
         if (!authData.user.email_confirmed_at) return send(res, 403, { error: 'Please verify your email before signing in.' });
+        realtimeSession = authData.session;
         profile = (await pool.query('UPDATE users SET email_verified = TRUE, password_hash = NULL, updated_at = NOW() WHERE user_id = $1 RETURNING *', [profile.user_id])).rows[0];
       }
       const user = { ...profile };
@@ -473,7 +485,7 @@ module.exports = async function handler(req, res) {
       setSessionCookie(res, signSession(user));
       const patient = user.role === 'patient' ? (await pool.query('SELECT * FROM patients WHERE user_id = $1', [user.user_id])).rows[0] : null;
       const worker = user.role === 'health-worker' ? (await pool.query('SELECT * FROM health_workers WHERE user_id = $1', [user.user_id])).rows[0] : null;
-      return send(res, 200, { user, patient: patient || null, worker: worker || null });
+      return send(res, 200, { user, patient: patient || null, worker: worker || null, realtimeSession });
     }
     if (pathname === '/api/auth/resend-verification' && req.method === 'POST') {
       if (!applicationUrl()) return send(res, 503, { error: 'APP_URL is not configured.' });
@@ -500,6 +512,22 @@ module.exports = async function handler(req, res) {
       return send(res, 200, { ok: true });
     }
     const user = await currentUser(req);
+    const markReadMatch = pathname.match(/^\/api\/chat\/sessions\/(\d+)\/read$/);
+    if (markReadMatch && req.method === 'POST') {
+      if (!user) return send(res, 401, { error: 'Sign in required.' });
+      const sessionId = Number(markReadMatch[1]);
+      const access = user.role === 'admin'
+        ? await pool.query('SELECT 1 FROM chat_sessions WHERE chat_session_id = $1', [sessionId])
+        : await pool.query(`SELECT 1 FROM chat_sessions c
+            JOIN patients p USING (patient_id)
+          LEFT JOIN health_workers h ON h.worker_id = c.worker_id OR h.worker_id = p.assigned_worker_id
+            LEFT JOIN users worker_user ON worker_user.user_id = h.user_id
+            WHERE c.chat_session_id = $1 AND (p.user_id = $2 OR worker_user.user_id = $2)`, [sessionId, user.user_id]);
+      if (!access.rowCount) return send(res, 404, { error: 'Chat session not found.' });
+      const incomingRole = user.role === 'health-worker' ? 'patient' : 'worker';
+      const updated = await pool.query('UPDATE chat_messages SET is_read = TRUE WHERE chat_session_id = $1 AND sender_role = $2 AND is_read = FALSE RETURNING message_id', [sessionId, incomingRole]);
+      return send(res, 200, { updatedCount: updated.rowCount });
+    }
     if (pathname === '/api/admin/email' && req.method === 'POST') {
       if (user?.role !== 'admin') return send(res, user ? 403 : 401, { error: 'Administrator access required.' });
       const body = getBody(req);
@@ -656,18 +684,3 @@ module.exports = async function handler(req, res) {
     return send(res, 500, { error: 'The request could not be completed.' });
   }
 };
-
-function applicationUrl() {
-  const configured =
-    process.env.APP_URL ||
-    process.env.VERCEL_URL ||
-    process.env.VERCEL_PROJECT_PRODUCTION_URL;
-
-  if (configured) {
-    return `${configured.startsWith('http') ? configured : `https://${configured}`}`.replace(/\/$/, '');
-  }
-
-  return process.env.NODE_ENV === 'production'
-    ? null
-    : 'http://localhost:3000';
-}

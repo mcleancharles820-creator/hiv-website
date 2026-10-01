@@ -2,6 +2,7 @@ import './App.css';
 import { CircleUser } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import db from './services/databaseService';
+import { clearChatRealtimeSession, setChatRealtimeSession, subscribeToChatChanges } from './services/chatRealtime';
 
 function scrollPageToTop() {
   const prefersReducedMotion = window.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
@@ -507,10 +508,20 @@ function PatientAction({ title, text, action }) { return <article className="das
 function ChatMessenger({ ticket, onUpdate, userId, patientId }) {
   const [, setDbVersion] = useState(0);
   const [draft, setDraft] = useState('');
+  const [sendError, setSendError] = useState('');
 
   useEffect(() => {
     return db.subscribe(() => setDbVersion((v) => v + 1));
   }, []);
+
+  const chatSessionId = ticket?.chat_session_id || ticket?.id;
+  const unreadIncomingCount = db.getTable('ChatMessages').filter((message) => (
+    message.chat_session_id === chatSessionId && message.sender_role === 'worker' && !message.is_read
+  )).length;
+
+  useEffect(() => {
+    if (chatSessionId) db.markChatRead(chatSessionId, 'patient');
+  }, [chatSessionId, unreadIncomingCount]);
 
   const assignedWorker = ticket?.worker_id ? db.findById('HealthWorkers', ticket.worker_id) : null;
   const assignedWorkerUser = assignedWorker ? db.findById('Users', assignedWorker.user_id) : db.getTable('Users').find((u) => u.role === 'health-worker');
@@ -524,19 +535,25 @@ function ChatMessenger({ ticket, onUpdate, userId, patientId }) {
       from: m.sender_role === 'worker' ? 'worker' : 'you',
       text: m.message_text || m.text,
       time: m.sent_at ? formatDateTime(m.sent_at) : (m.time || 'Not recorded'),
+      isRead: Boolean(m.is_read),
     }));
 
-  const sendMessage = (event) => {
+  const sendMessage = async (event) => {
     event.preventDefault();
     const text = draft.trim();
     if (!text) return;
-    db.sendChatMessage({
+    setSendError('');
+    const result = await db.sendChatMessage({
       chat_session_id: ticket?.chat_session_id || ticket?.id || 1,
       sender_user_id: userId || 1,
       sender_role: 'patient',
       message_text: text,
     });
-    if (onUpdate) onUpdate(text);
+    if (result?.error) {
+      setSendError(result.error);
+      return;
+    }
+    if (onUpdate && !db.useApi) onUpdate(text);
     setDraft('');
   };
 
@@ -555,17 +572,104 @@ function ChatMessenger({ ticket, onUpdate, userId, patientId }) {
           <div className={`message-row ${message.from === 'you' ? 'from-you' : ''}`} key={message.id}>
             <div className="message-bubble">
               <p>{message.text}</p>
-              <time>{message.time}</time>
+              <time>{message.time}{message.from === 'you' ? ` · ${message.isRead ? 'Read' : 'Sent'}` : ''}</time>
             </div>
           </div>
         )) : <p className="empty-records">No messages yet. Send a message to start confidential support.</p>}
       </div>
+      {sendError && <p className="form-error chat-error" role="alert">{sendError}</p>}
       <form className="message-compose" onSubmit={sendMessage}>
         <input disabled={!isChatEnabled} aria-label="Message health worker" value={draft} onChange={(event) => setDraft(event.target.value)} placeholder={isChatEnabled ? "Write a private message..." : "Chat is currently offline"} />
         <button disabled={!isChatEnabled} className="primary-button" type="submit" aria-label="Send message">Send <span>↗</span></button>
       </form>
       <div className="ticket-actions"><span>Private chat ticket</span></div>
     </div>
+  );
+}
+
+function HealthWorkerChatInbox({ userId }) {
+  const [, setDbVersion] = useState(0);
+  const [activeChatId, setActiveChatId] = useState(null);
+  const [draft, setDraft] = useState('');
+  const [error, setError] = useState('');
+
+  useEffect(() => db.subscribe(() => setDbVersion((version) => version + 1)), []);
+
+  const messages = db.getTable('ChatMessages');
+  const sessions = db.getTable('ChatSessions').map((session) => {
+    const patient = db.findById('Patients', session.patient_id);
+    const patientUser = patient ? db.findById('Users', patient.user_id) : null;
+    const sessionMessages = messages.filter((message) => message.chat_session_id === session.chat_session_id);
+    return {
+      ...session,
+      patientName: patientUser?.full_name || 'Patient',
+      messages: sessionMessages,
+      unreadCount: sessionMessages.filter((message) => message.sender_role === 'patient' && !message.is_read).length,
+    };
+  }).sort((left, right) => new Date(right.last_updated || 0) - new Date(left.last_updated || 0));
+  const activeSession = sessions.find((session) => session.chat_session_id === activeChatId) || sessions[0] || null;
+  const chatEnabled = db.getTable('PlatformServices').find((service) => service.service_key === 'chat_support')?.is_enabled ?? true;
+
+  useEffect(() => {
+    if (activeSession?.chat_session_id) db.markChatRead(activeSession.chat_session_id, 'health-worker');
+  }, [activeSession?.chat_session_id, activeSession?.unreadCount]);
+
+  const sendMessage = async (event) => {
+    event.preventDefault();
+    const text = draft.trim();
+    if (!text || !activeSession) return;
+    setError('');
+    const result = await db.sendChatMessage({
+      chat_session_id: activeSession.chat_session_id,
+      sender_user_id: userId,
+      sender_role: 'worker',
+      message_text: text,
+    });
+    if (result?.error) {
+      setError(result.error);
+      return;
+    }
+    setDraft('');
+  };
+
+  const setConversationStatus = async (status) => {
+    if (!activeSession) return;
+    const result = await db.update('ChatSessions', activeSession.chat_session_id, { status });
+    if (result?.error) setError(result.error);
+  };
+
+  return (
+    <section className="chat-inbox" aria-label="Assigned patient conversations">
+      <div className="chat-inbox-list">
+        <h2>Conversations</h2>
+        {sessions.length ? sessions.map((session) => (
+          <button type="button" key={session.chat_session_id} className={`chat-inbox-item ${activeSession?.chat_session_id === session.chat_session_id ? 'active' : ''}`} onClick={() => setActiveChatId(session.chat_session_id)}>
+            <span className="chat-inbox-item-top"><strong>{session.patientName}</strong>{session.unreadCount > 0 && <span className="chat-unread-count">{session.unreadCount}</span>}</span>
+            <span>{session.preview || session.subject || 'Private conversation'}</span>
+            <small>{session.status || 'Open'}</small>
+          </button>
+        )) : <p className="empty-records">No assigned patient conversations yet.</p>}
+      </div>
+      {activeSession ? <div className="chat-inbox-thread">
+        <header className="chat-inbox-header">
+          <div><h2>{activeSession.patientName}</h2><p>{activeSession.subject || 'Private support conversation'}</p></div>
+          <label>Conversation status<select aria-label="Conversation status" value={activeSession.status || 'Open'} onChange={(event) => setConversationStatus(event.target.value)}><option>Open</option><option>Pending</option><option>Closed</option><option>Resolved</option></select></label>
+        </header>
+        <div className="message-list">
+          {activeSession.messages.length ? activeSession.messages.map((message) => {
+            const fromWorker = message.sender_role === 'worker';
+            return <div className={`message-row ${fromWorker ? 'from-you' : ''}`} key={message.message_id}>
+              <div className="message-bubble"><p>{message.message_text}</p><time>{formatDateTime(message.sent_at)}{fromWorker ? ` · ${message.is_read ? 'Read' : 'Sent'}` : ''}</time></div>
+            </div>;
+          }) : <p className="empty-records">No messages yet. Send a reply to start the conversation.</p>}
+        </div>
+        {error && <p className="form-error chat-error" role="alert">{error}</p>}
+        <form className="message-compose" onSubmit={sendMessage}>
+          <input disabled={!chatEnabled} aria-label="Reply to patient" value={draft} onChange={(event) => setDraft(event.target.value)} placeholder={chatEnabled ? 'Write a private reply...' : 'Chat support is currently offline'} />
+          <button disabled={!chatEnabled || !draft.trim()} className="primary-button" type="submit">Reply <span>↗</span></button>
+        </form>
+      </div> : <div className="chat-inbox-empty"><p>Select a conversation to view messages.</p></div>}
+    </section>
   );
 }
 function DashboardTile({ label, value, detail }) { return <article className="dashboard-tile"><span>{label}</span><strong>{value}</strong><small>{detail}</small></article>; }
@@ -1183,7 +1287,8 @@ function HealthWorkerDashboard({ currentUser, currentWorker, onPublicHub, onSign
   const latestMessage = db.getTable('ChatMessages').filter((m) => m.sender_role === 'patient').at(-1)?.message_text || '';
 
   const content = {
-    overview: <><p className="eyebrow"><span className="pulse-dot" /> Health worker overview</p><h1>Care that<br /><i>connects.</i></h1><p className="dashboard-intro">Support patients with trusted information, treatment follow-up, and compassionate care.</p><div className="dashboard-tiles worker-tiles"><DashboardTile label="Patients needing care" value={`${workerPatients.length} active`} detail="View patient support" /><DashboardTile label="Medication requests" value={`${requests.filter((r) => r.status === 'Pending').length} pending`} detail="Review requests" /><DashboardTile label="Today’s appointments" value={`${appointments.length} scheduled`} detail="Open schedule" /><DashboardTile label="Support groups" value={`${groups.length} managed`} detail="Manage groups" /></div><h2 className="quick-heading">Quick actions</h2><div className="care-grid"><PatientAction title="Open patient chats" text="Respond to confidential patient questions." action={() => navigate('patientsChats')} /><PatientAction title="Review medication" text="Process medication requests and updates." action={() => navigate('medications')} /><PatientAction title="Manage appointments" text="Confirm and organize patient visits." action={() => navigate('appointments')} /></div></>,
+    overview: <><p className="eyebrow"><span className="pulse-dot" /> Health worker overview</p><h1>Care that<br /><i>connects.</i></h1><p className="dashboard-intro">Support patients with trusted information, treatment follow-up, and compassionate care.</p><div className="dashboard-tiles worker-tiles"><DashboardTile label="Patients needing care" value={`${workerPatients.length} active`} detail="View patient support" /><DashboardTile label="Medication requests" value={`${requests.filter((r) => r.status === 'Pending').length} pending`} detail="Review requests" /><DashboardTile label="Today’s appointments" value={`${appointments.length} scheduled`} detail="Open schedule" /><DashboardTile label="Support groups" value={`${groups.length} managed`} detail="Manage groups" /></div><h2 className="quick-heading">Quick actions</h2><div className="care-grid"><PatientAction title="Open patient chats" text="Respond to confidential patient questions." action={() => navigate('chat')} /><PatientAction title="Review medication" text="Process medication requests and updates." action={() => navigate('medications')} /><PatientAction title="Manage appointments" text="Confirm and organize patient visits." action={() => navigate('appointments')} /></div></>,
+    chat: <PagePanel eyebrow="Private patient support" title={<>Conversation<br /><i>inbox.</i></>}><HealthWorkerChatInbox userId={workerUser.user_id} /></PagePanel>,
     patientsChats: <PagePanel eyebrow="Patient care and private support" title={<>Patients and<br /><i>chats.</i></>}><div className="worker-list">{workerPatients.map((patient) => <article key={patient.userId || patient.id}><div><strong>{patient.fullName || patient.name}</strong><span>{patient.email} · {patient.medicalNotes || patient.detail}{patient.userId === 1 && latestMessage ? ` · “${latestMessage}”` : ''} · <strong style={{ color: 'var(--coral)', fontWeight: 400 }}>{patient.servicesAvailedCount || 0} services availed</strong></span></div><div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}><StatusBadge status={patient.careStatus || patient.status} /><StatusBadge status={patient.accountStatus || 'Active'} /></div><div className="worker-actions"><button type="button" className="card-link" onClick={() => setInspectingUser(patient)}>View Services ↗</button><button className="card-link" onClick={() => setPatientEditor({ type: 'worker-patient', ...patient, id: patient.patientId, user_id: patient.userId, name: patient.fullName })}>Edit</button></div></article>)}</div>{db.useApi && <p className="admin-note">Patients create their own accounts; assigned patients appear here for care management.</p>}</PagePanel>,
     medications: <PagePanel eyebrow="Treatment support" title={<>Medication<br /><i>requests.</i></>}><div className="worker-list">{requests.map((request) => <article key={request.id}><div><strong>{request.medication}</strong><span>Requested by {request.patient} · {request.dosage} · {request.schedule}</span></div><StatusBadge status={request.status} /><div className="worker-actions"><button className="card-link" onClick={() => updateRequest(request.id, 'Approved')}>Approve</button><button className="card-link" onClick={() => updateRequest(request.id, 'Needs information')}>Request info</button></div></article>)}</div></PagePanel>,
     appointments: <PagePanel eyebrow="Care schedule" title={<>Manage<br /><i>appointments.</i></>}><div className="worker-list">{appointments.map((appointment) => <article key={appointment.id}><div><strong>{appointment.patient}</strong><span>{appointment.date} · {appointment.time} · {appointment.type} ({appointment.facilityName})</span></div><StatusBadge status={appointment.status} /><div className="worker-actions"><button className="card-link" onClick={() => updateAppointment(appointment.id, 'Completed')}>Mark Completed</button><button className="card-link" onClick={() => updateAppointment(appointment.id, 'Cancelled')}>Cancel</button></div></article>)}</div></PagePanel>,
@@ -1195,7 +1300,7 @@ function HealthWorkerDashboard({ currentUser, currentWorker, onPublicHub, onSign
       <div className="topline"><span>WORLD AIDS DAY IS EVERY DAY</span><span className="topline-detail">Information. Care. Community.</span></div>
       <header className="site-header guest-header patient-header">
         <button className="brand brand-button" onClick={() => navigate('overview')} aria-label="HIVeLink home"><span>HIVeLink</span></button>
-        <nav className="nav-links worker-nav" aria-label="Health worker navigation">{[['patientsChats', 'Patients'], ['appointments', 'Appointments'], ['medications', 'Medications'], ['groups', 'Groups']].map(([key, label]) => <button className={`guest-nav-link ${page === key ? 'active' : ''}`} key={key} onClick={() => navigate(key)}>{label}</button>)}</nav>
+        <nav className="nav-links worker-nav" aria-label="Health worker navigation">{[['patientsChats', 'Patients'], ['chat', 'Chats'], ['appointments', 'Appointments'], ['medications', 'Medications'], ['groups', 'Groups']].map(([key, label]) => <button className={`guest-nav-link ${page === key ? 'active' : ''}`} key={key} onClick={() => navigate(key)}>{label}</button>)}</nav>
         <div className="patient-header-actions">
           <StatusBadge status={workerRecord.is_available ? 'Available' : 'On Leave'} />
           <button type="button" className="text-button" style={{ fontSize: '10px' }} onClick={toggleAvailability}>Toggle {workerRecord.is_available ? 'On Leave' : 'Available'}</button>
@@ -1549,6 +1654,22 @@ function App() {
   }, []);
 
   useEffect(() => {
+    if (!db.useApi || !hasEntered || isGuest) return undefined;
+    let mounted = true;
+    let unsubscribe;
+    subscribeToChatChanges(() => {
+      db.refresh().catch((error) => console.error('Could not refresh chat data:', error.message));
+    }).then((stop) => {
+      if (mounted) unsubscribe = stop;
+      else stop();
+    }).catch((error) => console.error('Could not subscribe to Supabase Realtime:', error.message));
+    return () => {
+      mounted = false;
+      if (unsubscribe) unsubscribe();
+    };
+  }, [hasEntered, isGuest]);
+
+  useEffect(() => {
     scrollPageToTop();
   }, [hasEntered, isGuest, userRole]);
 
@@ -1559,6 +1680,7 @@ function App() {
 
   const signOut = () => {
     if (db.useApi) db.logout().catch(() => {});
+    if (db.useApi) clearChatRealtimeSession().catch(() => {});
     setCurrentUser(null);
     setCurrentPatient(null);
     setCurrentWorker(null);
@@ -1587,7 +1709,11 @@ function App() {
   if (!hasEntered) {
     return (
       <AuthScreen
-        onEnter={(role, guest = false, authData = null) => {
+        onEnter={async (role, guest = false, authData = null) => {
+          if (authData?.realtimeSession) {
+            try { await setChatRealtimeSession(authData.realtimeSession); }
+            catch (error) { console.error('Could not initialize chat Realtime:', error.message); }
+          }
           setUserRole(role);
           setIsGuest(guest);
           if (authData) {

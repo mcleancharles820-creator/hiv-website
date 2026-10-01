@@ -133,6 +133,29 @@ class DatabaseService {
     }
   }
 
+  async markChatRead(chatSessionId, readerRole) {
+    if (this.useApi) {
+      try {
+        const result = await this.apiRequest(`/api/chat/sessions/${encodeURIComponent(chatSessionId)}/read`, { method: 'POST' });
+        await this.refresh();
+        return result;
+      } catch (error) {
+        return { error: error.message };
+      }
+    }
+    const incomingRole = readerRole === 'health-worker' || readerRole === 'worker' ? 'patient' : 'worker';
+    this.data = {
+      ...this.data,
+      ChatMessages: this.getTable('ChatMessages').map((message) => (
+        message.chat_session_id === chatSessionId && message.sender_role === incomingRole
+          ? { ...message, is_read: true }
+          : message
+      )),
+    };
+    this.saveDatabase(this.data);
+    return { updatedCount: true };
+  }
+
   async remoteMutation(method, tableName, id, record) {
     try {
       const url = `/api/records/${tableName}${id === undefined ? '' : `/${encodeURIComponent(id)}`}`;
