@@ -316,7 +316,7 @@ test('patient public pages match the guest experience', () => {
   expect(screen.getByRole('button', { name: /sign out/i })).toBeInTheDocument();
 });
 
-test('patient private chat works as a health worker messenger', () => {
+test('patient private chat works as a health worker messenger', async () => {
   db.registerUser({
     fullName: 'Elena Santos',
     email: 'elena.worker@risinghiv.org',
@@ -341,7 +341,52 @@ test('patient private chat works as a health worker messenger', () => {
   expect(screen.getByText(/health worker · available/i)).toBeInTheDocument();
   userEvent.type(screen.getByLabelText(/message health worker/i), 'I have a question.');
   userEvent.click(screen.getByRole('button', { name: /send message/i }));
-  expect(screen.getByText('I have a question.')).toBeInTheDocument();
+  expect(await screen.findByText('I have a question.')).toBeInTheDocument();
+});
+
+test('patient chat recreates a missing session before sending a message', async () => {
+  const patient = db.registerUser({
+    fullName: 'Morgan Lee',
+    email: 'morgan@example.com',
+    password: 'password',
+    role: 'patient',
+  });
+  const session = db.getTable('ChatSessions').find((item) => item.patient_id === patient.patient.patient_id);
+  db.delete('ChatSessions', session.chat_session_id);
+
+  render(<App />);
+  userEvent.type(screen.getByLabelText(/email address/i), 'morgan@example.com');
+  userEvent.type(screen.getByLabelText(/^password$/i), 'password');
+  userEvent.click(screen.getByRole('button', { name: /^sign in/i }));
+  userEvent.click(screen.getByRole('button', { name: 'Care' }));
+  userEvent.click(screen.getByRole('button', { name: /open private chat/i }));
+  userEvent.type(screen.getByLabelText(/message health worker/i), 'I have a question.');
+  userEvent.click(screen.getByRole('button', { name: /send message/i }));
+
+  expect(await screen.findByText('I have a question.')).toBeInTheDocument();
+  expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+  expect(db.getTable('ChatSessions')).toHaveLength(1);
+  expect(db.getTable('ChatMessages')).toHaveLength(1);
+});
+
+test('API chat session recovery refreshes the signed-in patient snapshot', async () => {
+  const previousApiMode = db.useApi;
+  const session = { chat_session_id: 73, patient_id: 12, status: 'Open' };
+  db.useApi = true;
+  const fetchMock = jest.spyOn(global, 'fetch')
+    .mockResolvedValueOnce({ ok: true, json: async () => ({ session }) })
+    .mockResolvedValueOnce({ ok: true, json: async () => ({ ChatSessions: [session] }) });
+
+  try {
+    await expect(db.ensurePatientChatSession(12, 999)).resolves.toEqual(session);
+    expect(fetchMock).toHaveBeenNthCalledWith(1, '/api/chat/session', expect.objectContaining({
+      method: 'POST',
+      body: JSON.stringify({ preferredChatSessionId: 999 }),
+    }));
+    expect(fetchMock).toHaveBeenNthCalledWith(2, '/api/bootstrap', expect.objectContaining({ credentials: 'same-origin' }));
+  } finally {
+    db.useApi = previousApiMode;
+  }
 });
 
 test('patient medication page shows availability status', () => {

@@ -542,13 +542,21 @@ function ChatMessenger({ ticket, onUpdate, userId, patientId }) {
     event.preventDefault();
     const text = draft.trim();
     if (!text) return;
-    if (!chatSessionId) {
+    setSendError('');
+
+    const session = await db.ensurePatientChatSession(patientId, chatSessionId);
+    if (session?.error) {
+      setSendError(session.error);
+      return;
+    }
+    const sessionId = Number(session?.chat_session_id);
+    if (!Number.isSafeInteger(sessionId) || sessionId < 1) {
       setSendError('No chat session is assigned to this conversation.');
       return;
     }
-    setSendError('');
+
     const result = await db.sendChatMessage({
-      chat_session_id: chatSessionId,
+      chat_session_id: sessionId,
       sender_user_id: userId || 1,
       sender_role: 'patient',
       message_text: text,

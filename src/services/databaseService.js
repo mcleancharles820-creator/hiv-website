@@ -514,13 +514,52 @@ class DatabaseService {
   /**
    * Chat Operations
    */
-  sendChatMessage({ chat_session_id = 1, sender_user_id, sender_role = 'patient', message_text }) {
+  async ensurePatientChatSession(patientId, preferredSessionId) {
+    if (this.useApi) {
+      try {
+        const result = await this.apiRequest('/api/chat/session', {
+          method: 'POST',
+          body: JSON.stringify({ preferredChatSessionId: preferredSessionId }),
+        });
+        await this.refresh();
+        return result.session;
+      } catch (error) {
+        this.lastError = error.message;
+        return { error: error.message };
+      }
+    }
+
+    const normalizedPatientId = Number(patientId);
+    const patient = this.getTable('Patients').find((record) => Number(record.patient_id) === normalizedPatientId);
+    if (!patient) return { error: 'Patient profile not found.' };
+
+    const sessions = this.getTable('ChatSessions').filter((session) => Number(session.patient_id) === normalizedPatientId);
+    const preferredSession = sessions.find((session) => Number(session.chat_session_id) === Number(preferredSessionId));
+    if (preferredSession) return preferredSession;
+    if (sessions.length) return sessions[0];
+
+    return this.insert('ChatSessions', {
+      patient_id: normalizedPatientId,
+      worker_id: patient.assigned_worker_id || null,
+      subject: 'Welcome to private support',
+      status: 'Open',
+      preview: 'A health worker will be ready to answer your questions.',
+      last_updated: new Date().toISOString(),
+    });
+  }
+
+  sendChatMessage({ chat_session_id, sender_user_id, sender_role = 'patient', message_text }) {
     const text = String(message_text || '').trim();
     if (!text) return null;
-    if (this.useApi) return this.insert('ChatMessages', { chat_session_id, sender_user_id, sender_role, message_text: text });
+    const sessionId = Number(chat_session_id);
+    if (!Number.isSafeInteger(sessionId) || sessionId < 1) return { error: 'A valid chat session is required.' };
+    if (this.useApi) return this.insert('ChatMessages', { chat_session_id: sessionId, sender_user_id, sender_role, message_text: text });
+    if (!this.getTable('ChatSessions').some((session) => Number(session.chat_session_id) === sessionId)) {
+      return { error: 'Chat session not found.' };
+    }
 
     const msg = this.insert('ChatMessages', {
-      chat_session_id: parseInt(chat_session_id, 10),
+      chat_session_id: sessionId,
       sender_user_id: parseInt(sender_user_id, 10),
       sender_role: String(sender_role),
       message_text: text,
@@ -528,7 +567,7 @@ class DatabaseService {
       sent_at: new Date().toISOString(),
     });
 
-    this.update('ChatSessions', parseInt(chat_session_id, 10), {
+    this.update('ChatSessions', sessionId, {
       preview: text,
       last_updated: new Date().toISOString(),
       status: 'Open',

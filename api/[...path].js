@@ -548,6 +548,60 @@ module.exports = async function handler(req, res) {
       await pool.query('INSERT INTO activity_logs (actor_user_id, actor_name, action, category, details) VALUES ($1,$2,$3,$4,$5)', [user.user_id, user.full_name, 'Claimed patient assignment', 'Care Team Management', `Claimed patient ID #${patientId}`]);
       return send(res, 200, { patient: claimed.rows[0] });
     }
+    if (pathname === '/api/chat/session' && req.method === 'POST') {
+      if (!user) return send(res, 401, { error: 'Sign in required.' });
+      if (user.role !== 'patient') return send(res, 403, { error: 'Patient access required.' });
+
+      const client = await pool.connect();
+      try {
+        await client.query('BEGIN');
+        const patientResult = await client.query(
+          'SELECT patient_id, assigned_worker_id FROM patients WHERE user_id = $1 FOR UPDATE',
+          [user.user_id],
+        );
+        const patient = patientResult.rows[0];
+        if (!patient) {
+          await client.query('ROLLBACK');
+          return send(res, 404, { error: 'Patient profile not found.' });
+        }
+
+        const preferredSessionId = Number(getBody(req).preferredChatSessionId);
+        if (Number.isSafeInteger(preferredSessionId) && preferredSessionId > 0) {
+          const preferred = await client.query(
+            'SELECT * FROM chat_sessions WHERE chat_session_id = $1 AND patient_id = $2',
+            [preferredSessionId, patient.patient_id],
+          );
+          if (preferred.rowCount) {
+            await client.query('COMMIT');
+            return send(res, 200, { session: preferred.rows[0] });
+          }
+        }
+
+        const existing = await client.query(
+          'SELECT * FROM chat_sessions WHERE patient_id = $1 ORDER BY last_updated DESC, chat_session_id DESC LIMIT 1',
+          [patient.patient_id],
+        );
+        if (existing.rowCount) {
+          await client.query('COMMIT');
+          return send(res, 200, { session: existing.rows[0] });
+        }
+
+        const created = await client.query(
+          `INSERT INTO chat_sessions (patient_id, worker_id, subject, status, preview)
+           VALUES ($1, $2, 'Welcome to private support', 'Open', 'A health worker will be ready to answer your questions.')
+           RETURNING *`,
+          [patient.patient_id, patient.assigned_worker_id],
+        );
+        await client.query('COMMIT');
+        return send(res, 201, { session: created.rows[0] });
+      } catch (error) {
+        await client.query('ROLLBACK');
+        throw error;
+      } finally {
+        client.release();
+      }
+    }
+
     const markReadMatch = pathname.match(/^\/api\/chat\/sessions\/(\d+)\/read$/);
     if (markReadMatch && req.method === 'POST') {
       if (!user) return send(res, 401, { error: 'Sign in required.' });
