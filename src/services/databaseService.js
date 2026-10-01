@@ -156,6 +156,55 @@ class DatabaseService {
     return { updatedCount: true };
   }
 
+  async getClaimablePatients(workerId) {
+    if (this.useApi) {
+      try {
+        const result = await this.apiRequest('/api/worker/claimable-patients');
+        return result.patients || [];
+      } catch (error) {
+        this.lastError = error.message;
+        return [];
+      }
+    }
+    const worker = this.findById('HealthWorkers', workerId);
+    const workerUser = worker ? this.findById('Users', worker.user_id) : null;
+    const canClaim = Boolean(worker?.is_verified)
+      && Boolean(worker?.is_available)
+      && workerUser?.is_active !== false
+      && workerUser?.email_verified !== false;
+    if (!canClaim) return [];
+    return this.getUsersListDetailed()
+      .filter((patient) => !patient.assignedWorkerId
+        && patient.accountStatus === 'Active'
+        && patient.emailVerified
+        && (!worker.primary_facility_id || !patient.preferredFacilityId || Number(patient.preferredFacilityId) === Number(worker.primary_facility_id)))
+      .map((patient) => ({ patient_id: patient.patientId, full_name: patient.fullName, care_status: patient.careStatus, preferred_facility_id: patient.preferredFacilityId }));
+  }
+
+  async claimPatient(patientId, workerId) {
+    if (this.useApi) {
+      try {
+        const result = await this.apiRequest('/api/worker/claim-patient', { method: 'POST', body: JSON.stringify({ patientId }) });
+        await this.refresh();
+        return result;
+      } catch (error) {
+        return { error: error.message };
+      }
+    }
+    const patient = this.findById('Patients', patientId);
+    const worker = this.findById('HealthWorkers', workerId);
+    const workerUser = worker ? this.findById('Users', worker.user_id) : null;
+    if (!patient || !worker || !workerUser || patient.assigned_worker_id) return { error: 'This patient is no longer available to claim.' };
+    if (!worker.is_verified || !worker.is_available || workerUser.is_active === false || workerUser.email_verified === false) {
+      return { error: 'A verified and available health worker is required.' };
+    }
+    const patientUser = this.findById('Users', patient.user_id);
+    if (!patientUser || patientUser.is_active === false) return { error: 'This patient is no longer available to claim.' };
+    if (worker.primary_facility_id && patient.preferred_facility_id && Number(worker.primary_facility_id) !== Number(patient.preferred_facility_id)) return { error: 'This patient is outside your assigned facility.' };
+    this.update('Patients', patientId, { assigned_worker_id: workerId });
+    return { patient: this.findById('Patients', patientId) };
+  }
+
   async remoteMutation(method, tableName, id, record) {
     try {
       const url = `/api/records/${tableName}${id === undefined ? '' : `/${encodeURIComponent(id)}`}`;
@@ -743,9 +792,9 @@ class DatabaseService {
   /**
    * Admin CRUD Operations
    */
-  adminCreateUser({ fullName, email, password, contactNumber, age, dateOfBirth, gender, careStatus = 'Active care plan', medicalNotes = '', preferredFacilityId = 1, emergencyContact = '', emergencyPhone = '', isActive = true }) {
+  adminCreateUser({ fullName, email, password, contactNumber, age, dateOfBirth, gender, careStatus = 'Active care plan', medicalNotes = '', preferredFacilityId = 1, assignedWorkerId = null, emergencyContact = '', emergencyPhone = '', isActive = true }) {
     if (this.useApi) {
-      return this.apiRequest('/api/admin/users', { method: 'POST', body: JSON.stringify({ fullName, email, password, contactNumber, age, dateOfBirth, gender, careStatus, medicalNotes, preferredFacilityId, emergencyContact, emergencyPhone, isActive }) })
+      return this.apiRequest('/api/admin/users', { method: 'POST', body: JSON.stringify({ fullName, email, password, contactNumber, age, dateOfBirth, gender, careStatus, medicalNotes, preferredFacilityId, assignedWorkerId, emergencyContact, emergencyPhone, isActive }) })
         .then(async (result) => { await this.refresh(); return result; })
         .catch((error) => ({ error: error.message }));
     }
@@ -773,6 +822,7 @@ class DatabaseService {
         care_status: careStatus || 'Active care plan',
         medical_notes: medicalNotes || 'Managed patient account',
         preferred_facility_id: preferredFacilityId ? parseInt(preferredFacilityId, 10) : 1,
+        assigned_worker_id: assignedWorkerId ? parseInt(assignedWorkerId, 10) : null,
         emergency_contact: emergencyContact || null,
         emergency_phone: emergencyPhone || null,
       });

@@ -690,7 +690,7 @@ function PatientForm({ data, onClose, onSave }) {
       : record.type === 'medication'
         ? [['name', 'Medication name', 'text', 'e.g. Antiretroviral therapy'], ['dosage', 'Dosage', 'text', 'e.g. 1 tablet daily'], ['schedule', 'Schedule', 'text', 'e.g. Daily at bedtime']]
         : record.type === 'worker-patient'
-          ? [['name', 'Patient name', 'text', 'Patient full name'], ['detail', 'Care details', 'text', 'Care plan details']]
+          ? (db.useApi ? [['detail', 'Care details', 'text', 'Care plan details']] : [['name', 'Patient name', 'text', 'Patient full name'], ['detail', 'Care details', 'text', 'Care plan details']])
           : [['subject', 'Subject', 'text', 'Subject'], ['preview', 'Message', 'text', 'Write a message...']];
 
   return (
@@ -900,8 +900,12 @@ function AdminUserFormModal({ user, onClose, onSave }) {
   const facilities = db.getTable('TestingFacilities');
   const workers = db.getTable('HealthWorkers').map((w) => {
     const u = db.findById('Users', w.user_id);
-    return { id: w.worker_id, name: u?.full_name || `Worker #${w.worker_id}` };
-  });
+    return {
+      id: w.worker_id,
+      name: u?.full_name || `Worker #${w.worker_id}`,
+      eligible: Boolean(w.is_verified) && Boolean(w.is_available) && u?.is_active !== false && u?.email_verified !== false,
+    };
+  }).filter((worker) => worker.eligible || Number(worker.id) === Number(formData.assignedWorkerId));
 
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -1216,6 +1220,8 @@ function HealthWorkerDashboard({ currentUser, currentWorker, onPublicHub, onSign
   const [page, setPage] = useState('overview');
   const [patientEditor, setPatientEditor] = useState(null);
   const [inspectingUser, setInspectingUser] = useState(null);
+  const [claimablePatients, setClaimablePatients] = useState([]);
+  const [assignmentNotice, setAssignmentNotice] = useState('');
 
   useEffect(() => {
     return db.subscribe(() => setDbVersion((v) => v + 1));
@@ -1226,35 +1232,56 @@ function HealthWorkerDashboard({ currentUser, currentWorker, onPublicHub, onSign
   const workerRecord = currentWorker || db.getTable('HealthWorkers').find((w) => w.user_id === currentUser?.user_id) || db.getTable('HealthWorkers')[0] || { worker_id: 1, is_available: true, specialty: 'HIV care support' };
 
   const allPatients = db.getUsersListDetailed();
-  const workerPatients = allPatients;
+  const workerPatients = allPatients.filter((patient) => Number(patient.assignedWorkerId) === Number(workerRecord.worker_id));
+  const assignedPatientIds = new Set(workerPatients.map((patient) => Number(patient.patientId)));
 
-  const requests = db.getTable('MedicationRequests').map((r) => {
-    const p = db.findById('Patients', r.patient_id);
-    const u = p ? db.findById('Users', p.user_id) : null;
-    return {
-      id: r.request_id,
-      patient: u?.full_name || 'Patient',
-      medication: r.medication_name,
-      status: r.status,
-      dosage: r.dosage,
-      schedule: r.schedule,
+  useEffect(() => {
+    if (page !== 'patientsChats') return undefined;
+    let mounted = true;
+    const loadClaimablePatients = () => {
+      db.getClaimablePatients(workerRecord.worker_id).then((patients) => {
+        if (mounted) setClaimablePatients(patients);
+      });
     };
-  });
+    loadClaimablePatients();
+    const unsubscribe = db.subscribe(loadClaimablePatients);
+    return () => {
+      mounted = false;
+      unsubscribe();
+    };
+  }, [page, workerRecord.worker_id]);
 
-  const appointments = db.getTable('Appointments').map((a) => {
-    const p = db.findById('Patients', a.patient_id);
-    const u = p ? db.findById('Users', p.user_id) : null;
-    const facility = a.facility_id ? db.findById('TestingFacilities', a.facility_id) : null;
-    return {
-      id: a.appointment_id,
-      patient: u?.full_name || 'Patient',
-      date: a.appointment_date,
-      time: a.appointment_time,
-      type: a.appointment_type,
-      facilityName: facility?.name || 'Local Health Facility',
-      status: a.status || 'Confirmed',
-    };
-  });
+  const requests = db.getTable('MedicationRequests')
+    .filter((request) => assignedPatientIds.has(Number(request.patient_id)))
+    .map((r) => {
+      const p = db.findById('Patients', r.patient_id);
+      const u = p ? db.findById('Users', p.user_id) : null;
+      return {
+        id: r.request_id,
+        patient: u?.full_name || 'Patient',
+        medication: r.medication_name,
+        status: r.status,
+        dosage: r.dosage,
+        schedule: r.schedule,
+      };
+    });
+
+  const appointments = db.getTable('Appointments')
+    .filter((appointment) => assignedPatientIds.has(Number(appointment.patient_id)))
+    .map((a) => {
+      const p = db.findById('Patients', a.patient_id);
+      const u = p ? db.findById('Users', p.user_id) : null;
+      const facility = a.facility_id ? db.findById('TestingFacilities', a.facility_id) : null;
+      return {
+        id: a.appointment_id,
+        patient: u?.full_name || 'Patient',
+        date: a.appointment_date,
+        time: a.appointment_time,
+        type: a.appointment_type,
+        facilityName: facility?.name || 'Local Health Facility',
+        status: a.status || 'Confirmed',
+      };
+    });
 
   const groups = db.getTable('SupportGroups').map((g) => ({
     id: g.group_id,
@@ -1271,11 +1298,21 @@ function HealthWorkerDashboard({ currentUser, currentWorker, onPublicHub, onSign
     if (patient.id || patient.patient_id || patient.userId) {
       const pid = patient.patient_id || patient.id;
       db.update('Patients', pid, { care_status: patient.status || patient.careStatus || 'Stable', medical_notes: patient.detail || patient.medicalNotes });
-      if (patient.user_id || patient.userId) db.update('Users', patient.user_id || patient.userId, { full_name: patient.name || patient.fullName });
+      if (!db.useApi && (patient.user_id || patient.userId)) db.update('Users', patient.user_id || patient.userId, { full_name: patient.name || patient.fullName });
     } else if (!db.useApi) {
       db.adminCreateUser({ fullName: patient.name || 'New Patient', email: `patient.${Date.now()}@example.com`, careStatus: patient.status || 'Active care plan' });
     }
     setPatientEditor(null);
+  };
+
+  const claimPatient = async (patient) => {
+    setAssignmentNotice('');
+    const result = await db.claimPatient(patient.patient_id || patient.patientId, workerRecord.worker_id);
+    if (result?.error) {
+      setAssignmentNotice(result.error);
+      return;
+    }
+    setAssignmentNotice(`${patient.full_name || patient.fullName} is now assigned to you.`);
   };
 
   const toggleAvailability = () => {
@@ -1289,7 +1326,10 @@ function HealthWorkerDashboard({ currentUser, currentWorker, onPublicHub, onSign
   const content = {
     overview: <><p className="eyebrow"><span className="pulse-dot" /> Health worker overview</p><h1>Care that<br /><i>connects.</i></h1><p className="dashboard-intro">Support patients with trusted information, treatment follow-up, and compassionate care.</p><div className="dashboard-tiles worker-tiles"><DashboardTile label="Patients needing care" value={`${workerPatients.length} active`} detail="View patient support" /><DashboardTile label="Medication requests" value={`${requests.filter((r) => r.status === 'Pending').length} pending`} detail="Review requests" /><DashboardTile label="Today’s appointments" value={`${appointments.length} scheduled`} detail="Open schedule" /><DashboardTile label="Support groups" value={`${groups.length} managed`} detail="Manage groups" /></div><h2 className="quick-heading">Quick actions</h2><div className="care-grid"><PatientAction title="Open patient chats" text="Respond to confidential patient questions." action={() => navigate('chat')} /><PatientAction title="Review medication" text="Process medication requests and updates." action={() => navigate('medications')} /><PatientAction title="Manage appointments" text="Confirm and organize patient visits." action={() => navigate('appointments')} /></div></>,
     chat: <PagePanel eyebrow="Private patient support" title={<>Conversation<br /><i>inbox.</i></>}><HealthWorkerChatInbox userId={workerUser.user_id} /></PagePanel>,
-    patientsChats: <PagePanel eyebrow="Patient care and private support" title={<>Patients and<br /><i>chats.</i></>}><div className="worker-list">{workerPatients.map((patient) => <article key={patient.userId || patient.id}><div><strong>{patient.fullName || patient.name}</strong><span>{patient.email} · {patient.medicalNotes || patient.detail}{patient.userId === 1 && latestMessage ? ` · “${latestMessage}”` : ''} · <strong style={{ color: 'var(--coral)', fontWeight: 400 }}>{patient.servicesAvailedCount || 0} services availed</strong></span></div><div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}><StatusBadge status={patient.careStatus || patient.status} /><StatusBadge status={patient.accountStatus || 'Active'} /></div><div className="worker-actions"><button type="button" className="card-link" onClick={() => setInspectingUser(patient)}>View Services ↗</button><button className="card-link" onClick={() => setPatientEditor({ type: 'worker-patient', ...patient, id: patient.patientId, user_id: patient.userId, name: patient.fullName })}>Edit</button></div></article>)}</div>{db.useApi && <p className="admin-note">Patients create their own accounts; assigned patients appear here for care management.</p>}</PagePanel>,
+    patientsChats: <PagePanel eyebrow="Patient care and private support" title={<>Patients and<br /><i>chats.</i></>}>
+      {assignmentNotice && <p className="form-status" role="status">{assignmentNotice}</p>}
+      {claimablePatients.length > 0 && <section className="claimable-patients" aria-labelledby="claimable-heading"><div className="claimable-heading"><div><p className="eyebrow">Matching facility</p><h2 id="claimable-heading">Available patients</h2></div><span>{claimablePatients.length} unassigned</span></div><div className="worker-list">{claimablePatients.map((patient) => <article key={patient.patient_id}><div><strong>{patient.full_name}</strong><span>{patient.care_status || 'Active care plan'} · Patient #{patient.patient_id}</span></div><button className="admin-btn admin-btn-primary" type="button" onClick={() => claimPatient(patient)}>Assign to me</button></article>)}</div></section>}
+      <h2 className="quick-heading">Assigned patients</h2><div className="worker-list">{workerPatients.map((patient) => <article key={patient.userId || patient.id}><div><strong>{patient.fullName || patient.name}</strong><span>{patient.email} · {patient.medicalNotes || patient.detail}{patient.userId === 1 && latestMessage ? ` · “${latestMessage}”` : ''} · <strong style={{ color: 'var(--coral)', fontWeight: 400 }}>{patient.servicesAvailedCount || 0} services availed</strong></span></div><div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}><StatusBadge status={patient.careStatus || patient.status} /><StatusBadge status={patient.accountStatus || 'Active'} /></div><div className="worker-actions"><button type="button" className="card-link" onClick={() => setInspectingUser(patient)}>View Services ↗</button><button className="card-link" onClick={() => setPatientEditor({ type: 'worker-patient', ...patient, id: patient.patientId, user_id: patient.userId, name: patient.fullName })}>Edit Care Plan</button></div></article>)}</div>{!workerPatients.length && <p className="empty-records">No patients are currently assigned to you.</p>}</PagePanel>,
     medications: <PagePanel eyebrow="Treatment support" title={<>Medication<br /><i>requests.</i></>}><div className="worker-list">{requests.map((request) => <article key={request.id}><div><strong>{request.medication}</strong><span>Requested by {request.patient} · {request.dosage} · {request.schedule}</span></div><StatusBadge status={request.status} /><div className="worker-actions"><button className="card-link" onClick={() => updateRequest(request.id, 'Approved')}>Approve</button><button className="card-link" onClick={() => updateRequest(request.id, 'Needs information')}>Request info</button></div></article>)}</div></PagePanel>,
     appointments: <PagePanel eyebrow="Care schedule" title={<>Manage<br /><i>appointments.</i></>}><div className="worker-list">{appointments.map((appointment) => <article key={appointment.id}><div><strong>{appointment.patient}</strong><span>{appointment.date} · {appointment.time} · {appointment.type} ({appointment.facilityName})</span></div><StatusBadge status={appointment.status} /><div className="worker-actions"><button className="card-link" onClick={() => updateAppointment(appointment.id, 'Completed')}>Mark Completed</button><button className="card-link" onClick={() => updateAppointment(appointment.id, 'Cancelled')}>Cancel</button></div></article>)}</div></PagePanel>,
     groups: <PagePanel eyebrow="Community care" title={<>Support<br /><i>groups.</i></>}><button className="primary-button panel-action" onClick={() => db.insert('SupportGroups', { name: 'New support group', detail: 'Community peer circle', schedule: 'Set a schedule', member_count: 0, is_active: true })}>Create group <span>+</span></button><div className="worker-list">{groups.map((group) => <article key={group.id}><div><strong>{group.name}</strong><span>{group.members} members · {group.schedule}</span></div><button className="card-link">Edit <span>↗</span></button><button className="record-delete" onClick={() => removeGroup(group.id)}>Remove</button></article>)}</div></PagePanel>,

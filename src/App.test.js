@@ -448,6 +448,45 @@ test('health worker inbox shows assigned unread chats, marks messages read, and 
   expect(db.getTable('ChatMessages').find((message) => message.chat_session_id === chat.chat_session_id && message.sender_role === 'patient').is_read).toBe(true);
 });
 
+test('admin can assign a patient to a health worker', () => {
+  db.registerUser({ fullName: 'Admin Manager', email: 'assign.admin@example.com', password: 'securePassword123', role: 'admin' });
+  const worker = db.registerUser({ fullName: 'Dr. Assigned', email: 'assigned.worker@example.com', password: 'securePassword123', role: 'health-worker' });
+  const patient = db.registerUser({ fullName: 'Patient To Assign', email: 'patient.assign@example.com', password: 'securePassword123', role: 'patient' });
+
+  render(<App />);
+  userEvent.selectOptions(screen.getByLabelText(/account type/i), 'admin');
+  userEvent.type(screen.getByLabelText(/email address/i), 'assign.admin@example.com');
+  userEvent.type(screen.getByLabelText(/^password$/i), 'securePassword123');
+  userEvent.click(screen.getByRole('button', { name: /^sign in/i }));
+  userEvent.click(screen.getByRole('button', { name: 'Users' }));
+  const patientCard = screen.getByText('Patient To Assign').closest('article');
+  userEvent.click(within(patientCard).getByRole('button', { name: 'Edit' }));
+  userEvent.selectOptions(screen.getByLabelText(/assigned health worker/i), String(worker.worker.worker_id));
+  userEvent.click(screen.getByRole('button', { name: /save user record/i }));
+
+  expect(db.findById('Patients', patient.patient.patient_id).assigned_worker_id).toBe(worker.worker.worker_id);
+});
+
+test('health worker can claim an unassigned patient and access their chat', async () => {
+  const worker = db.registerUser({ fullName: 'Dr. Self Assign', email: 'self.assign@example.com', password: 'securePassword123', role: 'health-worker' });
+  const patient = db.registerUser({ fullName: 'Claimable Patient', email: 'claim.patient@example.com', password: 'securePassword123', role: 'patient' });
+
+  render(<App />);
+  userEvent.selectOptions(screen.getByLabelText(/account type/i), 'health-worker');
+  userEvent.type(screen.getByLabelText(/email address/i), 'self.assign@example.com');
+  userEvent.type(screen.getByLabelText(/^password$/i), 'securePassword123');
+  userEvent.click(screen.getByRole('button', { name: /^sign in/i }));
+  userEvent.click(screen.getByRole('button', { name: 'Patients' }));
+  expect(screen.getByText(/no patients are currently assigned to you/i)).toBeInTheDocument();
+  userEvent.click(await screen.findByRole('button', { name: /assign to me/i }));
+  expect(await screen.findByRole('status')).toHaveTextContent(/claimable patient is now assigned to you/i);
+
+  expect(db.findById('Patients', patient.patient.patient_id).assigned_worker_id).toBe(worker.worker.worker_id);
+  userEvent.click(screen.getByRole('button', { name: 'Chats' }));
+  expect(screen.getByRole('heading', { name: /conversation inbox/i })).toBeInTheDocument();
+  expect(screen.getAllByText('Claimable Patient').length).toBeGreaterThan(0);
+});
+
 test('admin gets platform management pages and service toggles', () => {
   db.registerUser({
     fullName: 'Platform Admin',

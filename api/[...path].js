@@ -168,7 +168,7 @@ async function notifyChatCounterparty(chatSessionId, senderRole) {
      FROM chat_sessions session
      JOIN patients patient ON patient.patient_id = session.patient_id
      JOIN users patient_user ON patient_user.user_id = patient.user_id
-     LEFT JOIN health_workers worker ON worker.worker_id = COALESCE(session.worker_id, patient.assigned_worker_id)
+    LEFT JOIN health_workers worker ON worker.worker_id = patient.assigned_worker_id
      LEFT JOIN users worker_user ON worker_user.user_id = worker.user_id
      WHERE session.chat_session_id = $1`,
     [chatSessionId],
@@ -227,10 +227,10 @@ async function loadSnapshot(user) {
     queries.push((async () => { snapshot.Users = [user, ...(await pool.query("SELECT u.user_id, u.email, u.full_name, u.role, u.contact_number, u.date_of_birth, u.age, u.gender, u.is_active, u.email_verified FROM users u JOIN patients p USING (user_id) JOIN health_workers h ON h.worker_id = p.assigned_worker_id WHERE h.user_id = $1", [user.user_id])).rows]; })());
     queries.push((async () => { snapshot.HealthWorkers = (await pool.query('SELECT * FROM health_workers WHERE user_id = $1', [user.user_id])).rows; })());
     queries.push((async () => { snapshot.Patients = (await pool.query('SELECT p.* FROM patients p JOIN health_workers h ON h.worker_id = p.assigned_worker_id WHERE h.user_id = $1', [user.user_id])).rows; })());
-    queries.push((async () => { snapshot.Appointments = (await pool.query('SELECT a.* FROM appointments a JOIN health_workers h ON h.worker_id = a.worker_id OR h.worker_id = (SELECT assigned_worker_id FROM patients WHERE patient_id = a.patient_id) WHERE h.user_id = $1', [user.user_id])).rows; })());
+    queries.push((async () => { snapshot.Appointments = (await pool.query('SELECT a.* FROM appointments a JOIN patients p USING (patient_id) JOIN health_workers h ON h.worker_id = p.assigned_worker_id WHERE h.user_id = $1', [user.user_id])).rows; })());
     queries.push((async () => { snapshot.MedicationRequests = (await pool.query('SELECT m.* FROM medication_requests m JOIN patients p USING (patient_id) JOIN health_workers h ON h.worker_id = p.assigned_worker_id WHERE h.user_id = $1', [user.user_id])).rows; })());
-    queries.push((async () => { snapshot.ChatSessions = (await pool.query('SELECT c.* FROM chat_sessions c JOIN health_workers h ON h.worker_id = c.worker_id OR h.worker_id = (SELECT assigned_worker_id FROM patients WHERE patient_id = c.patient_id) WHERE h.user_id = $1', [user.user_id])).rows; })());
-    queries.push((async () => { snapshot.ChatMessages = (await pool.query('SELECT m.* FROM chat_messages m JOIN chat_sessions c USING (chat_session_id) JOIN health_workers h ON h.worker_id = c.worker_id OR h.worker_id = (SELECT assigned_worker_id FROM patients WHERE patient_id = c.patient_id) WHERE h.user_id = $1 ORDER BY sent_at', [user.user_id])).rows; })());
+    queries.push((async () => { snapshot.ChatSessions = (await pool.query('SELECT c.* FROM chat_sessions c JOIN patients p USING (patient_id) JOIN health_workers h ON h.worker_id = p.assigned_worker_id WHERE h.user_id = $1', [user.user_id])).rows; })());
+    queries.push((async () => { snapshot.ChatMessages = (await pool.query('SELECT m.* FROM chat_messages m JOIN chat_sessions c USING (chat_session_id) JOIN patients p USING (patient_id) JOIN health_workers h ON h.worker_id = p.assigned_worker_id WHERE h.user_id = $1 ORDER BY sent_at', [user.user_id])).rows; })());
     queries.push((async () => { snapshot.SupportGroups = (await pool.query('SELECT * FROM support_groups')).rows; })());
   }
   await Promise.all(queries);
@@ -265,7 +265,7 @@ async function patientIdForUser(userId) {
 async function verifyRecordAccess(user, table, id, body) {
   if (user.role === 'admin') return true;
   if (table === 'Users') return String(id) === String(user.user_id);
-  const patientId = await patientIdForUser(user.user_id);
+   const patientId = await patientIdForUser(user.user_id);
   if (user.role === 'patient') {
     if (table === 'Appointments' || table === 'MedicationRequests' || table === 'ChatSessions') {
       const config = tableConfig[table];
@@ -285,10 +285,10 @@ async function verifyRecordAccess(user, table, id, body) {
     if (!workerId) return false;
     if (table === 'HealthWorkers') return String(id) === String(workerId);
     if (table === 'Patients') return (await pool.query('SELECT 1 FROM patients WHERE patient_id = $1 AND assigned_worker_id = $2', [id, workerId])).rowCount > 0;
-    if (table === 'Appointments') return (await pool.query('SELECT 1 FROM appointments a JOIN patients p USING (patient_id) WHERE a.appointment_id = $1 AND (a.worker_id = $2 OR p.assigned_worker_id = $2)', [id, workerId])).rowCount > 0;
+    if (table === 'Appointments') return (await pool.query('SELECT 1 FROM appointments a JOIN patients p USING (patient_id) WHERE a.appointment_id = $1 AND p.assigned_worker_id = $2', [id, workerId])).rowCount > 0;
     if (table === 'MedicationRequests') return (await pool.query('SELECT 1 FROM medication_requests m JOIN patients p USING (patient_id) WHERE m.request_id = $1 AND p.assigned_worker_id = $2', [id, workerId])).rowCount > 0;
-    if (table === 'ChatSessions') return (await pool.query('SELECT 1 FROM chat_sessions c JOIN patients p USING (patient_id) WHERE c.chat_session_id = $1 AND (c.worker_id = $2 OR p.assigned_worker_id = $2)', [id, workerId])).rowCount > 0;
-    if (table === 'ChatMessages') return (await pool.query("SELECT 1 FROM chat_messages m JOIN chat_sessions c USING (chat_session_id) JOIN patients p USING (patient_id) WHERE m.message_id = $1 AND m.sender_role = 'patient' AND (c.worker_id = $2 OR p.assigned_worker_id = $2)", [id, workerId])).rowCount > 0;
+    if (table === 'ChatSessions') return (await pool.query('SELECT 1 FROM chat_sessions c JOIN patients p USING (patient_id) WHERE c.chat_session_id = $1 AND p.assigned_worker_id = $2', [id, workerId])).rowCount > 0;
+    if (table === 'ChatMessages') return (await pool.query("SELECT 1 FROM chat_messages m JOIN chat_sessions c USING (chat_session_id) JOIN patients p USING (patient_id) WHERE m.message_id = $1 AND m.sender_role = 'patient' AND p.assigned_worker_id = $2", [id, workerId])).rowCount > 0;
     if (table === 'SupportGroups') return (await pool.query('SELECT 1 FROM support_groups WHERE group_id = $1 AND facilitator_worker_id = $2', [id, workerId])).rowCount > 0;
   }
   return false;
@@ -297,7 +297,7 @@ async function verifyRecordAccess(user, table, id, body) {
 async function mutate(req, user, table, id) {
   const config = tableConfig[table];
   if (!config) return { status: 404, body: { error: 'Unknown resource.' } };
-  const operation = req.method === 'POST' ? 'insert' : req.method === 'PATCH' ? 'update' : req.method === 'DELETE' ? 'delete' : null;
+   const operation = req.method === 'POST' ? 'insert' : req.method === 'PATCH' ? 'update' : req.method === 'DELETE' ? 'delete' : null;
   if (!operation || !allowed(user?.role, table, operation)) return { status: 403, body: { error: 'You are not allowed to modify this resource.' } };
   const body = getBody(req);
   const record = body.record || body;
@@ -363,7 +363,7 @@ async function mutate(req, user, table, id) {
     if (!values.message_text?.trim()) return { status: 400, body: { error: 'Message cannot be empty.' } };
     const access = user.role === 'patient'
       ? await pool.query('SELECT 1 FROM chat_sessions WHERE chat_session_id = $1 AND patient_id = $2', [values.chat_session_id, await patientIdForUser(user.user_id)])
-      : await pool.query('SELECT 1 FROM chat_sessions c JOIN health_workers h ON h.worker_id = c.worker_id OR h.worker_id = (SELECT assigned_worker_id FROM patients WHERE patient_id = c.patient_id) WHERE c.chat_session_id = $1 AND h.user_id = $2', [values.chat_session_id, user.user_id]);
+      : await pool.query('SELECT 1 FROM chat_sessions c JOIN patients p USING (patient_id) JOIN health_workers h ON h.worker_id = p.assigned_worker_id WHERE c.chat_session_id = $1 AND h.user_id = $2', [values.chat_session_id, user.user_id]);
     if (!access.rowCount) return { status: 404, body: { error: 'Chat session not found.' } };
   }
   if (operation === 'insert' && user.role === 'patient' && table === 'SupportGroupMembers') values.patient_id = await patientIdForUser(user.user_id);
@@ -512,6 +512,42 @@ module.exports = async function handler(req, res) {
       return send(res, 200, { ok: true });
     }
     const user = await currentUser(req);
+    if (pathname === '/api/worker/claimable-patients' && req.method === 'GET') {
+      if (user?.role !== 'health-worker') return send(res, user ? 403 : 401, { error: 'Health worker access required.' });
+      const result = await pool.query(
+        `SELECT p.patient_id, p.care_status, p.preferred_facility_id, p.created_at, u.full_name
+         FROM patients p JOIN users u USING (user_id)
+         JOIN health_workers h ON h.user_id = $1
+         JOIN users worker_user ON worker_user.user_id = h.user_id
+         WHERE p.assigned_worker_id IS NULL AND u.is_active = TRUE
+           AND h.is_verified = TRUE AND h.is_available = TRUE
+           AND worker_user.is_active = TRUE AND worker_user.email_verified = TRUE
+           AND (h.primary_facility_id IS NULL OR p.preferred_facility_id IS NULL OR p.preferred_facility_id = h.primary_facility_id)
+         ORDER BY p.created_at ASC`,
+        [user.user_id],
+      );
+      return send(res, 200, { patients: result.rows });
+    }
+    if (pathname === '/api/worker/claim-patient' && req.method === 'POST') {
+      if (user?.role !== 'health-worker') return send(res, user ? 403 : 401, { error: 'Health worker access required.' });
+      const patientId = Number(getBody(req).patientId);
+      if (!Number.isSafeInteger(patientId) || patientId < 1) return send(res, 400, { error: 'A valid patient ID is required.' });
+      const claimed = await pool.query(
+        `UPDATE patients p SET assigned_worker_id = h.worker_id, updated_at = NOW()
+         FROM health_workers h, users worker_user
+         WHERE h.user_id = $1 AND h.is_verified = TRUE AND h.is_available = TRUE
+           AND worker_user.is_active = TRUE AND worker_user.email_verified = TRUE
+           AND worker_user.user_id = h.user_id
+           AND p.patient_id = $2 AND p.assigned_worker_id IS NULL
+           AND EXISTS (SELECT 1 FROM users patient_user WHERE patient_user.user_id = p.user_id AND patient_user.is_active = TRUE)
+           AND (h.primary_facility_id IS NULL OR p.preferred_facility_id IS NULL OR p.preferred_facility_id = h.primary_facility_id)
+         RETURNING p.*`,
+        [user.user_id, patientId],
+      );
+      if (!claimed.rowCount) return send(res, 409, { error: 'This patient is no longer available to claim, or is outside your assigned facility.' });
+      await pool.query('INSERT INTO activity_logs (actor_user_id, actor_name, action, category, details) VALUES ($1,$2,$3,$4,$5)', [user.user_id, user.full_name, 'Claimed patient assignment', 'Care Team Management', `Claimed patient ID #${patientId}`]);
+      return send(res, 200, { patient: claimed.rows[0] });
+    }
     const markReadMatch = pathname.match(/^\/api\/chat\/sessions\/(\d+)\/read$/);
     if (markReadMatch && req.method === 'POST') {
       if (!user) return send(res, 401, { error: 'Sign in required.' });
@@ -520,7 +556,7 @@ module.exports = async function handler(req, res) {
         ? await pool.query('SELECT 1 FROM chat_sessions WHERE chat_session_id = $1', [sessionId])
         : await pool.query(`SELECT 1 FROM chat_sessions c
             JOIN patients p USING (patient_id)
-          LEFT JOIN health_workers h ON h.worker_id = c.worker_id OR h.worker_id = p.assigned_worker_id
+            LEFT JOIN health_workers h ON h.worker_id = p.assigned_worker_id
             LEFT JOIN users worker_user ON worker_user.user_id = h.user_id
             WHERE c.chat_session_id = $1 AND (p.user_id = $2 OR worker_user.user_id = $2)`, [sessionId, user.user_id]);
       if (!access.rowCount) return send(res, 404, { error: 'Chat session not found.' });
@@ -557,12 +593,18 @@ module.exports = async function handler(req, res) {
           const email = String(body.email || '').trim().toLowerCase();
           const password = String(body.password || '');
           if (!fullName || !email || password.length < 12) { await client.query('ROLLBACK'); return send(res, 400, { error: 'Name, email, and a password of at least 12 characters are required.' }); }
+          const assignedWorkerId = body.assignedWorkerId === '' || body.assignedWorkerId === undefined || body.assignedWorkerId === null ? null : Number(body.assignedWorkerId);
+          if (assignedWorkerId !== null) {
+            if (!Number.isSafeInteger(assignedWorkerId) || assignedWorkerId < 1) { await client.query('ROLLBACK'); return send(res, 400, { error: 'Select a valid health worker.' }); }
+            const eligible = await client.query('SELECT 1 FROM health_workers h JOIN users u USING (user_id) WHERE h.worker_id = $1 AND h.is_verified = TRUE AND h.is_available = TRUE AND u.is_active = TRUE AND u.email_verified = TRUE', [assignedWorkerId]);
+            if (!eligible.rowCount) { await client.query('ROLLBACK'); return send(res, 400, { error: 'The selected health worker is not verified and available.' }); }
+          }
           const { adminClient } = supabaseClients();
           const { data: authData, error: authError } = await adminClient.auth.admin.createUser({ email, password, email_confirm: false, user_metadata: { full_name: fullName } });
           if (authError || !authData.user) { await client.query('ROLLBACK'); return send(res, 400, { error: authError?.message || 'Could not create the Supabase Auth account.' }); }
           supabaseAuthUserId = authData.user.id;
           const created = await client.query('INSERT INTO users (supabase_user_id, email, password_hash, full_name, role, contact_number, date_of_birth, age, gender, is_active, terms_accepted, email_verified) VALUES ($1,$2,NULL,$3,\'patient\',$4,$5,$6,$7,$8,$9,FALSE) RETURNING user_id, supabase_user_id, email, full_name, role, contact_number, date_of_birth, age, gender, is_active, email_verified', [supabaseAuthUserId, email, fullName, body.contactNumber || null, body.dateOfBirth || null, body.age || null, body.gender || null, body.isActive !== false, true]);
-          const patient = await client.query('INSERT INTO patients (user_id, care_status, medical_notes, preferred_facility_id, emergency_contact, emergency_phone) VALUES ($1,$2,$3,$4,$5,$6) RETURNING *', [created.rows[0].user_id, body.careStatus || 'Active care plan', body.medicalNotes || 'Managed patient account', body.preferredFacilityId || 1, body.emergencyContact || null, body.emergencyPhone || null]);
+          const patient = await client.query('INSERT INTO patients (user_id, care_status, medical_notes, preferred_facility_id, assigned_worker_id, emergency_contact, emergency_phone) VALUES ($1,$2,$3,$4,$5,$6,$7) RETURNING *', [created.rows[0].user_id, body.careStatus || 'Active care plan', body.medicalNotes || 'Managed patient account', body.preferredFacilityId || 1, assignedWorkerId, body.emergencyContact || null, body.emergencyPhone || null]);
           await client.query("INSERT INTO chat_sessions (patient_id, subject, status, preview) VALUES ($1, 'Welcome to private support', 'Open', 'A health worker will be ready to answer your questions.')", [patient.rows[0].patient_id]);
           await client.query('INSERT INTO activity_logs (actor_user_id, actor_name, action, category, details) VALUES ($1,$2,$3,$4,$5)', [user.user_id, user.full_name, `Created user account: ${fullName}`, 'User Management', `Created patient account ${email}`]);
           await client.query('COMMIT');
@@ -610,6 +652,16 @@ module.exports = async function handler(req, res) {
           const fields = isWorker
             ? { specialty: 'specialty', licenseNumber: 'license_number', primaryFacilityId: 'primary_facility_id', isVerified: 'is_verified', isAvailable: 'is_available', bioSummary: 'bio_summary' }
             : { careStatus: 'care_status', medicalNotes: 'medical_notes', preferredFacilityId: 'preferred_facility_id', assignedWorkerId: 'assigned_worker_id', emergencyContact: 'emergency_contact', emergencyPhone: 'emergency_phone' };
+          if (!isWorker && Object.prototype.hasOwnProperty.call(body, 'assignedWorkerId')) {
+            const rawWorkerId = body.assignedWorkerId;
+            const assignedWorkerId = rawWorkerId === '' || rawWorkerId === null ? null : Number(rawWorkerId);
+            if (assignedWorkerId !== null) {
+              if (!Number.isSafeInteger(assignedWorkerId) || assignedWorkerId < 1) { await client.query('ROLLBACK'); return send(res, 400, { error: 'Select a valid health worker.' }); }
+              const eligible = await client.query('SELECT 1 FROM health_workers h JOIN users u USING (user_id) WHERE h.worker_id = $1 AND h.is_verified = TRUE AND h.is_available = TRUE AND u.is_active = TRUE AND u.email_verified = TRUE', [assignedWorkerId]);
+              if (!eligible.rowCount) { await client.query('ROLLBACK'); return send(res, 400, { error: 'The selected health worker is not verified and available.' }); }
+            }
+            body.assignedWorkerId = assignedWorkerId;
+          }
           const updates = Object.entries(fields).filter(([key]) => Object.prototype.hasOwnProperty.call(body, key));
           if (updates.length) {
             const clauses = updates.map(([, column], index) => `${column} = $${index + 1}`);
