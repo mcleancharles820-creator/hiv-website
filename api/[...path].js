@@ -18,10 +18,13 @@ function supabaseClients() {
   if (!globalThis.hivelinkSupabasePublic) {
     globalThis.hivelinkSupabasePublic = createClient(url, anonKey, { auth: { autoRefreshToken: false, persistSession: false, detectSessionInUrl: false } });
   }
+  if (!globalThis.hivelinkSupabaseRecovery) {
+    globalThis.hivelinkSupabaseRecovery = createClient(url, anonKey, { auth: { autoRefreshToken: false, persistSession: false, detectSessionInUrl: false, flowType: 'implicit' } });
+  }
   if (!globalThis.hivelinkSupabaseAdmin) {
     globalThis.hivelinkSupabaseAdmin = createClient(url, serviceRoleKey, { auth: { autoRefreshToken: false, persistSession: false, detectSessionInUrl: false } });
   }
-  return { publicClient: globalThis.hivelinkSupabasePublic, adminClient: globalThis.hivelinkSupabaseAdmin };
+  return { publicClient: globalThis.hivelinkSupabasePublic, recoveryClient: globalThis.hivelinkSupabaseRecovery, adminClient: globalThis.hivelinkSupabaseAdmin };
 }
 
 const sessionCookie = 'hivelink_session';
@@ -64,7 +67,8 @@ function signSession(user) {
   const secret = process.env.SESSION_SECRET;
   if (!secret || secret.length < 32) throw new Error('SESSION_SECRET must contain at least 32 characters.');
   const header = Buffer.from(JSON.stringify({ alg: 'HS256', typ: 'JWT' })).toString('base64url');
-  const payload = Buffer.from(JSON.stringify({ sub: user.user_id, role: user.role, exp: Math.floor(Date.now() / 1000) + 60 * 60 * 8 })).toString('base64url');
+  const passwordChangedAt = user.password_changed_at ? new Date(user.password_changed_at).getTime() : null;
+  const payload = Buffer.from(JSON.stringify({ sub: user.user_id, role: user.role, passwordChangedAt, exp: Math.floor(Date.now() / 1000) + 60 * 60 * 8 })).toString('base64url');
   const unsigned = `${header}.${payload}`;
   return `${unsigned}.${crypto.createHmac('sha256', secret).update(unsigned).digest('base64url')}`;
 }
@@ -83,13 +87,30 @@ async function currentUser(req) {
   let claims;
   try { claims = JSON.parse(Buffer.from(payload, 'base64url').toString('utf8')); } catch { return null; }
   if (!claims.sub || claims.exp <= Date.now() / 1000) return null;
-  const result = await pool.query('SELECT user_id, email, full_name, role, contact_number, age, date_of_birth, gender, is_active, email_verified FROM users WHERE user_id = $1', [claims.sub]);
-  return result.rows[0]?.is_active && result.rows[0]?.email_verified ? result.rows[0] : null;
+  const result = await pool.query('SELECT user_id, email, full_name, role, contact_number, age, date_of_birth, gender, is_active, email_verified, password_changed_at FROM users WHERE user_id = $1', [claims.sub]);
+  const profile = result.rows[0];
+  if (!profile?.is_active || !profile.email_verified) return null;
+  const currentPasswordChangedAt = profile.password_changed_at ? new Date(profile.password_changed_at).getTime() : null;
+  if ((claims.passwordChangedAt ?? null) !== currentPasswordChangedAt) return null;
+  delete profile.password_changed_at;
+  return profile;
 }
 
 function setSessionCookie(res, token) {
   const secure = process.env.NODE_ENV === 'production' ? '; Secure' : '';
   res.setHeader('Set-Cookie', `${sessionCookie}=${encodeURIComponent(token)}; HttpOnly; Path=/; SameSite=Lax; Max-Age=28800${secure}`);
+}
+
+function isPasswordRecoveryToken(accessToken) {
+  const [, payload] = String(accessToken || '').split('.');
+  if (!payload) return false;
+  try {
+    const claims = JSON.parse(Buffer.from(payload, 'base64url').toString('utf8'));
+    const methods = Array.isArray(claims.amr) ? claims.amr : [];
+    return methods.some((entry) => (typeof entry === 'string' ? entry : entry?.method) === 'recovery');
+  } catch {
+    return false;
+  }
 }
 
 function escapeHtml(value) {
@@ -486,6 +507,87 @@ module.exports = async function handler(req, res) {
       const patient = user.role === 'patient' ? (await pool.query('SELECT * FROM patients WHERE user_id = $1', [user.user_id])).rows[0] : null;
       const worker = user.role === 'health-worker' ? (await pool.query('SELECT * FROM health_workers WHERE user_id = $1', [user.user_id])).rows[0] : null;
       return send(res, 200, { user, patient: patient || null, worker: worker || null, realtimeSession });
+    }
+    if (pathname === '/api/auth/password-reset' && req.method === 'POST') {
+      if (!applicationUrl()) return send(res, 503, { error: 'APP_URL is not configured.' });
+      const email = String(getBody(req).email || '').trim().toLowerCase();
+      if (!email || email.length > 255) return send(res, 400, { error: 'Enter a valid email address.' });
+
+      try {
+        const profileResult = await pool.query(
+          'SELECT user_id, email, full_name, email_verified, supabase_user_id FROM users WHERE LOWER(email) = $1 AND is_active = TRUE LIMIT 1',
+          [email],
+        );
+        const profile = profileResult.rows[0];
+        if (profile?.email_verified) {
+          const { adminClient } = supabaseClients();
+          let supabaseUserId = profile.supabase_user_id;
+
+          if (!supabaseUserId) {
+            const createdAuth = await adminClient.auth.admin.createUser({
+              email: profile.email,
+              password: crypto.randomBytes(48).toString('base64url'),
+              email_confirm: true,
+              user_metadata: { full_name: profile.full_name },
+            });
+            if (createdAuth.error || !createdAuth.data.user) throw createdAuth.error || new Error('Could not prepare password recovery.');
+            supabaseUserId = createdAuth.data.user.id;
+            await pool.query(
+              'UPDATE users SET supabase_user_id = $1, password_hash = NULL, updated_at = NOW() WHERE user_id = $2 AND supabase_user_id IS NULL',
+              [supabaseUserId, profile.user_id],
+            );
+          }
+
+          const { recoveryClient } = supabaseClients();
+          const { error: resetError } = await recoveryClient.auth.resetPasswordForEmail(profile.email, {
+            redirectTo: `${applicationUrl()}/?password-reset=1`,
+          });
+          if (resetError) throw resetError;
+        }
+      } catch (error) {
+        console.error('Password reset email could not be requested:', error.message);
+      }
+
+      return send(res, 200, { ok: true, message: 'If an active account exists for that email, a password reset link has been sent.' });
+    }
+    if (pathname === '/api/auth/password-reset/confirm' && req.method === 'POST') {
+      const body = getBody(req);
+      const accessToken = String(body.accessToken || '');
+      const password = String(body.password || '');
+      if (!accessToken || password.length < 12) return send(res, 400, { error: 'The reset link and a password of at least 12 characters are required.' });
+      if (/^Bearer\s/i.test(accessToken)) return send(res, 400, { error: 'The password reset link is invalid or expired.' });
+
+      const { publicClient, adminClient } = supabaseClients();
+      const { data: authData, error: tokenError } = await publicClient.auth.getUser(accessToken);
+      if (tokenError || !authData.user?.id || !authData.user.email) {
+        return send(res, 400, { error: 'The password reset link is invalid or has expired. Request a new link and try again.' });
+      }
+      if (!isPasswordRecoveryToken(accessToken)) {
+        return send(res, 403, { error: 'Use a valid password reset link to change this password.' });
+      }
+      if (password.toLowerCase() === authData.user.email.toLowerCase()) {
+        return send(res, 400, { error: 'Password cannot be the same as your email address.' });
+      }
+
+      const profile = await pool.query(
+        'SELECT user_id, email FROM users WHERE supabase_user_id = $1 AND is_active = TRUE AND email_verified = TRUE',
+        [authData.user.id],
+      );
+      if (!profile.rowCount || profile.rows[0].email.toLowerCase() !== authData.user.email.toLowerCase()) {
+        return send(res, 400, { error: 'This reset link is not connected to an active account.' });
+      }
+
+      const { error: updateError } = await adminClient.auth.admin.updateUserById(authData.user.id, { password });
+      if (updateError) return send(res, 400, { error: 'The password could not be updated. Request a new reset link and try again.' });
+
+      await pool.query(
+        'UPDATE users SET password_hash = NULL, password_changed_at = NOW(), updated_at = NOW() WHERE user_id = $1',
+        [profile.rows[0].user_id],
+      );
+      const { error: revokeError } = await adminClient.auth.admin.signOut(accessToken, 'global');
+      if (revokeError) console.error('Could not revoke Supabase sessions after password reset:', revokeError.message);
+      res.setHeader('Set-Cookie', `${sessionCookie}=; HttpOnly; Path=/; SameSite=Lax; Max-Age=0${process.env.NODE_ENV === 'production' ? '; Secure' : ''}`);
+      return send(res, 200, { ok: true, message: 'Your password has been changed. Sign in with your new password.' });
     }
     if (pathname === '/api/auth/resend-verification' && req.method === 'POST') {
       if (!applicationUrl()) return send(res, 503, { error: 'APP_URL is not configured.' });

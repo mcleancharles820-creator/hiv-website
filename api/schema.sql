@@ -18,6 +18,7 @@ CREATE TABLE users (
     supabase_user_id UUID UNIQUE REFERENCES auth.users(id) ON DELETE CASCADE,
     email VARCHAR(255) NOT NULL UNIQUE,
     password_hash VARCHAR(255),
+    password_changed_at TIMESTAMPTZ,
     full_name VARCHAR(150) NOT NULL,
     role VARCHAR(20) NOT NULL CHECK (role IN ('patient', 'health-worker', 'admin')),
     contact_number VARCHAR(30),

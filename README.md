@@ -75,10 +75,11 @@ Production builds use the Vercel functions in `api/` instead of browser `localSt
 2. Run `api/schema.sql` once against the empty project. This script does not drop tables, but it is still a one-time schema initializer and will fail if those tables already exist.
 3. If the app tables already exist, run `api/migrations/001_email_verification.sql` instead. It preserves existing accounts as verified and requires verification for newly created accounts.
 4. Run `api/migrations/002_chat_realtime_rls.sql` after schema setup. It enables read-only, role-scoped Realtime access to chats; message writes still go through the Vercel API.
-5. Copy the PostgreSQL connection string from Supabase. Use a connection pooler URL supported by Vercel and include `sslmode=require`.
-6. Create a long random session secret (at least 32 characters). Do not commit it or put it in React source.
-7. In Supabase Dashboard > Authentication > Providers > Email, enable email confirmations. Under URL Configuration, set the Site URL to the deployed app and allow that URL under Redirect URLs.
-8. Supabase's built-in email service needs no custom domain and is suitable for capstone testing, but it is rate-limited and may only deliver to authorized/verified addresses in the Supabase organization. To verify arbitrary recipients, configure a custom SMTP provider.
+5. Run `api/migrations/003_password_recovery.sql` to track password changes and invalidate existing HIVeLink sessions after a reset.
+6. Copy the PostgreSQL connection string from Supabase. Use a connection pooler URL supported by Vercel and include `sslmode=require`.
+7. Create a long random session secret (at least 32 characters). Do not commit it or put it in React source.
+8. In Supabase Dashboard > Authentication > Providers > Email, enable email confirmations. Under URL Configuration, set the Site URL to the deployed app and allow that URL under Redirect URLs; password recovery redirects to the app root with `?password-reset=1`.
+9. Supabase's built-in email service needs no custom domain and is suitable for capstone testing, but it is rate-limited and may only deliver to authorized/verified addresses in the Supabase organization. To verify arbitrary recipients, configure a custom SMTP provider.
 
 ### Vercel setup
 
@@ -116,7 +117,7 @@ The CRA development server does not run Vercel functions. For local API work, in
 
 Email notifications contain no message body or clinical notes; private chat notices ask the recipient to sign in to view the message. Admin-composed email is sent only to the address stored for the selected account. Keep provider credentials in Vercel environment variables and never expose them through `REACT_APP_*` variables.
 
-This is an initial API integration, not a certification or compliance claim. Before handling real health information, add and test production-grade login rate limiting, account recovery and verification, operational monitoring, backups and restore drills, and a formal privacy/security review. Keep the site in demo use until those controls and applicable legal requirements have been reviewed.
+This is an initial API integration, not a certification or compliance claim. Before handling real health information, add and test production-grade authentication rate limiting, password-reset email delivery and recovery-link expiry/reuse behavior, operational monitoring, backups and restore drills, and a formal privacy/security review. Keep the site in demo use until those controls and applicable legal requirements have been reviewed.
 
 ### `npm run build` fails to minify
 

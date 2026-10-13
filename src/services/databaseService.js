@@ -124,6 +124,30 @@ class DatabaseService {
     }
   }
 
+  async requestPasswordReset(email) {
+    if (!this.useApi) return { error: 'Password recovery is only available when the backend API is enabled.' };
+    try {
+      return await this.apiRequest('/api/auth/password-reset', {
+        method: 'POST',
+        body: JSON.stringify({ email: String(email || '').trim().toLowerCase() }),
+      });
+    } catch (error) {
+      return { error: error.message };
+    }
+  }
+
+  async confirmPasswordReset({ accessToken, password }) {
+    if (!this.useApi) return { error: 'Password recovery is only available when the backend API is enabled.' };
+    try {
+      return await this.apiRequest('/api/auth/password-reset/confirm', {
+        method: 'POST',
+        body: JSON.stringify({ accessToken, password }),
+      });
+    } catch (error) {
+      return { error: error.message };
+    }
+  }
+
   async resendVerificationForUser(userId) {
     if (!this.useApi) return { error: 'Email verification is only available when the backend API is enabled.' };
     try {

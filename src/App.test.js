@@ -2,6 +2,7 @@ import { fireEvent, render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import App from './App';
 import db from './services/databaseService';
+import { consumePasswordRecoveryToken, isPasswordRecoveryRedirect } from './services/passwordRecovery';
 
 beforeEach(() => {
   jest.spyOn(window, 'scrollTo').mockImplementation(() => {});
@@ -180,6 +181,74 @@ test('API signup waits for email verification and supports resending the link', 
   } finally {
     db.useApi = previousApiMode;
   }
+});
+
+test('forgot-password sends an email request and displays a generic confirmation', async () => {
+  const previousApiMode = db.useApi;
+  db.useApi = true;
+  const fetchMock = jest.spyOn(global, 'fetch').mockImplementation(async (url) => {
+    if (url === '/api/auth/session') return { ok: false, json: async () => ({ error: 'Sign in required.' }) };
+    if (url === '/api/auth/password-reset') return { ok: true, json: async () => ({ ok: true, message: 'If an active account exists for that email, a password reset link has been sent.' }) };
+    throw new Error(`Unexpected request: ${url}`);
+  });
+
+  try {
+    render(<App />);
+    userEvent.click(screen.getByRole('button', { name: /forgot your password/i }));
+    expect(screen.getByRole('heading', { name: /reset your password/i })).toBeInTheDocument();
+    userEvent.type(screen.getByLabelText(/email address/i), 'person@example.com');
+    userEvent.click(screen.getByRole('button', { name: /send reset link/i }));
+
+    expect(await screen.findByRole('status')).toHaveTextContent(/if an active account exists/i);
+    expect(fetchMock).toHaveBeenCalledWith('/api/auth/password-reset', expect.objectContaining({
+      method: 'POST',
+      body: JSON.stringify({ email: 'person@example.com' }),
+    }));
+  } finally {
+    db.useApi = previousApiMode;
+  }
+});
+
+test('recovery link lets the user set a new password and returns to sign-in', async () => {
+  const previousApiMode = db.useApi;
+  db.useApi = true;
+  window.history.replaceState(window.history.state, '', '/#access_token=recovery-access-token&refresh_token=recovery-refresh-token&token_type=bearer&type=recovery');
+  const fetchMock = jest.spyOn(global, 'fetch').mockImplementation(async (url, options) => {
+    if (url === '/api/auth/password-reset/confirm') return { ok: true, json: async () => ({ ok: true, message: 'Your password has been changed. Sign in with your new password.' }) };
+    throw new Error(`Unexpected request: ${url} ${options?.method || 'GET'}`);
+  });
+
+  try {
+    render(<App />);
+    expect(screen.getByRole('heading', { name: /choose a new password/i })).toBeInTheDocument();
+    expect(window.location.hash).toBe('');
+    userEvent.type(screen.getByLabelText(/^new password$/i), 'a-new-secure-password');
+    userEvent.type(screen.getByLabelText(/confirm new password/i), 'a-new-secure-password');
+    userEvent.click(screen.getByRole('button', { name: /save new password/i }));
+
+    expect(await screen.findByRole('heading', { name: /password updated/i })).toBeInTheDocument();
+    expect(fetchMock).toHaveBeenCalledWith('/api/auth/password-reset/confirm', expect.objectContaining({
+      method: 'POST',
+      body: JSON.stringify({ accessToken: 'recovery-access-token', password: 'a-new-secure-password' }),
+    }));
+    userEvent.click(screen.getByRole('button', { name: /^sign in/i }));
+    expect(screen.getByRole('heading', { name: /good to see you/i })).toBeInTheDocument();
+  } finally {
+    db.useApi = previousApiMode;
+    window.history.replaceState(window.history.state, '', '/');
+  }
+});
+
+test('password recovery token reader only consumes a recovery hash', () => {
+  window.history.replaceState(window.history.state, '', '/#access_token=temporary&refresh_token=temporary&type=recovery');
+  expect(isPasswordRecoveryRedirect()).toBe(true);
+  expect(consumePasswordRecoveryToken()).toBe('temporary');
+  expect(window.location.hash).toBe('');
+
+  window.history.replaceState(window.history.state, '', '/#access_token=temporary&type=signup');
+  expect(isPasswordRecoveryRedirect()).toBe(false);
+  expect(consumePasswordRecoveryToken()).toBeNull();
+  window.history.replaceState(window.history.state, '', '/');
 });
 
 test('switching from sign in to sign up clears entered credentials and account type', () => {

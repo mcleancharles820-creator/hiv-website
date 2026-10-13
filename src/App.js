@@ -1,8 +1,9 @@
 import './App.css';
 import { CircleUser } from 'lucide-react';
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import db from './services/databaseService';
 import { clearChatRealtimeSession, setChatRealtimeSession, subscribeToChatChanges } from './services/chatRealtime';
+import { consumePasswordRecoveryToken, isPasswordRecoveryRedirect } from './services/passwordRecovery';
 
 function scrollPageToTop() {
   const prefersReducedMotion = window.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
@@ -77,8 +78,8 @@ function GuestHub({ onExit, patientMode = false, onPrivatePage, onAccount, initi
   </div>;
 }
 
-function AuthScreen({ onEnter }) {
-  const [mode, setMode] = useState('login');
+function AuthScreen({ onEnter, onPasswordRecoveryComplete }) {
+  const [mode, setMode] = useState(() => (isPasswordRecoveryRedirect() ? 'reset' : 'login'));
   const [error, setError] = useState('');
   const [role, setRole] = useState('patient');
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -86,6 +87,18 @@ function AuthScreen({ onEnter }) {
   const [verificationEmail, setVerificationEmail] = useState('');
   const [verificationMessage, setVerificationMessage] = useState('');
   const [resendingVerification, setResendingVerification] = useState(false);
+  const [resetEmail, setResetEmail] = useState('');
+  const [resetMessage, setResetMessage] = useState('');
+  const [recoveryToken, setRecoveryToken] = useState('');
+  const recoveryTokenHandled = useRef(false);
+
+  useEffect(() => {
+    if (!isPasswordRecoveryRedirect() || recoveryTokenHandled.current) return;
+    recoveryTokenHandled.current = true;
+    const token = consumePasswordRecoveryToken();
+    if (token) setRecoveryToken(token);
+    else setError('This password reset link is invalid or has expired. Request a new link and try again.');
+  }, []);
 
   useEffect(() => {
     if (!legalDocument) return undefined;
@@ -103,64 +116,102 @@ function AuthScreen({ onEnter }) {
   const handleSubmit = async (event) => {
     event.preventDefault();
     setError('');
+    setResetMessage('');
     setIsSubmitting(true);
     const form = event.currentTarget;
-    const password = form.elements.password.value;
-    const email = form.elements.email.value;
 
-    if (mode === 'register') {
-      if (password.toLowerCase() === email.trim().toLowerCase()) {
-        setError('Password cannot be the same as your email address.');
-        setIsSubmitting(false);
+    try {
+      if (mode === 'forgot') {
+        const email = form.elements.email.value.trim();
+        const result = await db.requestPasswordReset(email);
+        if (result.error) {
+          setError(result.error);
+          return;
+        }
+        setResetEmail(email);
+        setResetMessage(result.message || 'If an active account exists for that email, a password reset link has been sent.');
+        setMode('forgot-sent');
         return;
       }
 
-      if (password !== form.elements.confirmPassword.value) {
-        setError('Passwords do not match. Please check them and try again.');
-        setIsSubmitting(false);
+      if (mode === 'reset') {
+        const password = form.elements.password.value;
+        const confirmPassword = form.elements.confirmPassword.value;
+        if (password.length < 12) {
+          setError('Choose a password with at least 12 characters.');
+          return;
+        }
+        if (password !== confirmPassword) {
+          setError('Passwords do not match. Please check them and try again.');
+          return;
+        }
+        if (!recoveryToken) {
+          setError('This password reset link is invalid or has expired. Request a new link and try again.');
+          return;
+        }
+
+        const result = await db.confirmPasswordReset({ accessToken: recoveryToken, password });
+        if (result.error) {
+          setError(result.error);
+          return;
+        }
+        setRecoveryToken('');
+        setMode('reset-complete');
+        onPasswordRecoveryComplete?.();
         return;
       }
 
-      const firstName = form.elements.firstName.value.trim();
-      const lastName = form.elements.lastName.value.trim();
-      const age = form.elements.age && form.elements.age.value ? parseInt(form.elements.age.value, 10) : null;
-      const dateOfBirth = form.elements.dateOfBirth ? form.elements.dateOfBirth.value : null;
-      const gender = form.elements.gender ? form.elements.gender.value : null;
-      const contactNumber = form.elements.contactNumber ? form.elements.contactNumber.value : null;
-      const termsAccepted = form.elements.terms ? form.elements.terms.checked : true;
+      const password = form.elements.password?.value || '';
+      const email = form.elements.email.value;
+      if (mode === 'register') {
+        if (password.toLowerCase() === email.trim().toLowerCase()) {
+          setError('Password cannot be the same as your email address.');
+          return;
+        }
+        if (password !== form.elements.confirmPassword.value) {
+          setError('Passwords do not match. Please check them and try again.');
+          return;
+        }
 
-      const registration = db.registerUser({ firstName, lastName, email, password, role, age, dateOfBirth, gender, contactNumber, termsAccepted });
-      const registered = db.useApi ? await registration : registration;
+        const firstName = form.elements.firstName.value.trim();
+        const lastName = form.elements.lastName.value.trim();
+        const age = form.elements.age && form.elements.age.value ? parseInt(form.elements.age.value, 10) : null;
+        const dateOfBirth = form.elements.dateOfBirth ? form.elements.dateOfBirth.value : null;
+        const gender = form.elements.gender ? form.elements.gender.value : null;
+        const contactNumber = form.elements.contactNumber ? form.elements.contactNumber.value : null;
+        const termsAccepted = form.elements.terms ? form.elements.terms.checked : true;
 
-      if (registered.verificationRequired || registered.verificationPending) {
-        setVerificationEmail(email.trim());
-        setVerificationMessage(registered.error || 'We sent a verification link. Open it before signing in.');
-        setIsSubmitting(false);
+        const registration = db.registerUser({ firstName, lastName, email, password, role, age, dateOfBirth, gender, contactNumber, termsAccepted });
+        const registered = db.useApi ? await registration : registration;
+        if (registered.verificationRequired || registered.verificationPending) {
+          setVerificationEmail(email.trim());
+          setVerificationMessage(registered.error || 'We sent a verification link. Open it before signing in.');
+          return;
+        }
+        if (registered.error) {
+          setError(registered.error);
+          return;
+        }
+        onEnter(registered.user?.role || role, false, registered);
         return;
       }
 
-      if (registered.error) {
-        setError(registered.error);
-        setIsSubmitting(false);
-        return;
-      }
-
-      onEnter(registered.user?.role || role, false, registered);
-    } else {
       const authentication = db.login({ email, password, role });
       const auth = db.useApi ? await authentication : authentication;
       if (auth.error) {
         if (db.useApi && /verify your email/i.test(auth.error)) {
           setVerificationEmail(email.trim());
           setVerificationMessage(auth.error);
-          setIsSubmitting(false);
           return;
         }
         setError(auth.error);
-        setIsSubmitting(false);
         return;
       }
       onEnter(auth.user?.role || role, false, auth);
+    } catch (submitError) {
+      setError(submitError.message || 'We could not complete that request. Please try again.');
+    } finally {
+      setIsSubmitting(false);
     }
   };
 
@@ -171,6 +222,14 @@ function AuthScreen({ onEnter }) {
     setResendingVerification(false);
   };
 
+  const returnToSignIn = () => {
+    setMode('login');
+    setRole('patient');
+    setError('');
+    setResetMessage('');
+  };
+  const recoveryMode = ['forgot', 'forgot-sent', 'reset', 'reset-complete'].includes(mode);
+
   return (
     <div className="auth-shell">
       <div className="auth-visual">
@@ -180,34 +239,42 @@ function AuthScreen({ onEnter }) {
       <div className="auth-panel">
         <div className="auth-panel-top"><span>WELCOME</span><span>01 / 01</span></div>
         <div key={mode} className="auth-form-wrap route-transition">
-          <div className="auth-page-label"><span>{verificationEmail ? 'VERIFY EMAIL' : mode === 'login' ? 'LOG IN' : 'SIGN UP'}</span><span>01 / 01</span></div>
-          <h2>{verificationEmail ? <>Check your<br /><i>email.</i></> : mode === 'login' ? <>Good to<br /><i>see you.</i></> : <>Make space<br /><i>for care.</i></>}</h2>
-          <p className="auth-intro">{verificationEmail ? `We sent a verification link to ${verificationEmail}. Verify your address, then return here to sign in.` : mode === 'login' ? 'Sign in to keep your support journey in one private place.' : 'Create an account to save resources and connect with support.'}</p>
+          <div className="auth-page-label"><span>{verificationEmail ? 'VERIFY EMAIL' : mode === 'login' ? 'LOG IN' : mode === 'register' ? 'SIGN UP' : 'PASSWORD RECOVERY'}</span><span>01 / 01</span></div>
+          <h2>{verificationEmail || mode === 'forgot-sent' ? <>Check your<br /><i>email.</i></> : mode === 'reset' ? <>Choose a new<br /><i>password.</i></> : mode === 'reset-complete' ? <>Password<br /><i>updated.</i></> : mode === 'forgot' ? <>Reset your<br /><i>password.</i></> : mode === 'login' ? <>Good to<br /><i>see you.</i></> : <>Make space<br /><i>for care.</i></>}</h2>
+          <p className="auth-intro">{verificationEmail ? `We sent a verification link to ${verificationEmail}. Verify your address, then return here to sign in.` : mode === 'forgot' ? 'Enter the email address associated with your account. We will send a secure password reset link if it matches an active account.' : mode === 'forgot-sent' ? `If an active account exists for ${resetEmail}, a password reset link has been sent.` : mode === 'reset' ? 'Create a new password to secure your account. Use at least 12 characters.' : mode === 'reset-complete' ? 'Your password has been changed. You can now sign in with your new password.' : mode === 'login' ? 'Sign in to keep your support journey in one private place.' : 'Create an account to save resources and connect with support.'}</p>
           {verificationEmail ? <div className="verification-prompt">
             <p className="verification-address">{verificationEmail}</p>
             {verificationMessage && <p className="verification-feedback" role="status">{verificationMessage}</p>}
             <button className="primary-button" type="button" onClick={resendVerification} disabled={resendingVerification}>{resendingVerification ? 'Sending...' : 'Resend verification email'} <span>↗</span></button>
-            <button className="auth-switch" type="button" onClick={() => { setVerificationEmail(''); setVerificationMessage(''); setMode('login'); setRole('patient'); setError(''); }}>Back to sign in</button>
+            <button className="auth-switch" type="button" onClick={() => { setVerificationEmail(''); setVerificationMessage(''); returnToSignIn(); }}>Back to sign in</button>
+          </div> : mode === 'forgot-sent' ? <div className="verification-prompt">
+            {resetMessage && <p className="verification-feedback" role="status">{resetMessage}</p>}
+            <button className="primary-button" type="button" onClick={returnToSignIn}>Back to sign in <span>↗</span></button>
+          </div> : mode === 'reset-complete' ? <div className="verification-prompt">
+            <p className="verification-feedback" role="status">Your password is ready. For your security, sign in again with the new password.</p>
+            <button className="primary-button" type="button" onClick={returnToSignIn}>Sign in <span>↗</span></button>
           </div> : <>
           <form key={mode} className={`auth-form ${mode === 'register' ? 'registration-form' : ''}`} onSubmit={handleSubmit} autoComplete="off">
             {mode === 'register' && <div className="field-row registration-name-row"><label>First Name<input name="firstName" required type="text" autoComplete="given-name" placeholder="First name" /></label><label>Last Name<input name="lastName" required type="text" autoComplete="family-name" placeholder="Last name" /></label></div>}
-            <label>Email Address<input name="email" required type="email" autoComplete="off" placeholder="you@example.com" /></label>
+            {mode !== 'reset' && <label>Email Address<input name="email" required type="email" autoComplete="email" defaultValue={mode === 'forgot' ? resetEmail : ''} placeholder="you@example.com" /></label>}
             {mode === 'login' && !db.useApi && <label>Account type<select name="role" value={role} onChange={(event) => setRole(event.target.value)} required><option value="patient">Patient / User</option><option value="health-worker">Health Worker</option><option value="admin">Admin</option></select></label>}
             {mode === 'register' && <div className="field-row"><label>Age<input name="age" required type="number" min="13" max="120" placeholder="Age" /></label><label>Date of Birth<input name="dateOfBirth" required type="date" /></label></div>}
             {mode === 'register' && <label>Gender<select name="gender" defaultValue="" required><option value="" disabled>Select an option</option><option>Woman</option><option>Man</option><option>Non-binary</option><option>Prefer not to say</option><option>Self-describe</option></select></label>}
-            <label>Password<input name="password" required minLength={mode === 'register' ? 12 : undefined} type="password" autoComplete="new-password" placeholder="Enter your password" /></label>
-            {mode === 'register' && <label>Confirm Password<input name="confirmPassword" required type="password" autoComplete="new-password" placeholder="Re-enter your password" /></label>}
+            {(mode === 'login' || mode === 'register') && <label>Password<input name="password" required minLength={mode === 'register' ? 12 : undefined} type="password" autoComplete={mode === 'login' ? 'current-password' : 'new-password'} placeholder="Enter your password" /></label>}
+            {(mode === 'reset' || mode === 'register') && <label>{mode === 'reset' ? 'New Password' : 'Confirm Password'}<input name={mode === 'reset' ? 'password' : 'confirmPassword'} required minLength={12} type="password" autoComplete="new-password" placeholder={mode === 'reset' ? 'Create a new password' : 'Re-enter your password'} /></label>}
+            {mode === 'reset' && <label>Confirm New Password<input name="confirmPassword" required minLength={12} type="password" autoComplete="new-password" placeholder="Re-enter your new password" /></label>}
             {mode === 'register' && <label>Contact Number <span className="optional">(optional)</span><input name="contactNumber" type="tel" autoComplete="off" placeholder="Your contact number" /></label>}
             {mode === 'register' && <label className="consent"><input name="terms" required type="checkbox" /><span>I agree to the <button type="button" className="legal-link" onClick={() => setLegalDocument('terms')}>Terms of Use</button> and have read the <button type="button" className="legal-link" onClick={() => setLegalDocument('privacy')}>Privacy Notice</button>.</span></label>}
             {error && <p className="form-error" role="alert">{error}</p>}
-            <button className="primary-button auth-submit" type="submit" disabled={isSubmitting}>{isSubmitting ? 'Please wait...' : mode === 'login' ? 'Sign in' : 'Create my account'} <span>↗</span></button>
+            <button className="primary-button auth-submit" type="submit" disabled={isSubmitting}>{isSubmitting ? 'Please wait...' : mode === 'login' ? 'Sign in' : mode === 'register' ? 'Create my account' : mode === 'forgot' ? 'Send reset link' : 'Save new password'} <span>↗</span></button>
           </form>
-          {mode === 'login' && <button className="forgot-link">Forgot your password?</button>}
-          <button className="auth-switch" onClick={() => { setMode(mode === 'login' ? 'register' : 'login'); setRole('patient'); setError(''); }}>{mode === 'login' ? 'New here? Sign up' : 'Already have an account? Log in'} <span>↗</span></button>
-          <div className="guest-divider"><span>or</span></div>
-          <button className="guest-button" onClick={() => onEnter('patient', true)}>Continue as guest <span>→</span></button>
-          <p className="privacy-note">Your information is treated with care and never shared without your permission.</p>
-          </>}
+          {mode === 'login' && <button className="forgot-link" type="button" onClick={() => { setError(''); setResetMessage(''); setMode('forgot'); }}>Forgot your password?</button>}
+          {recoveryMode ? <button className="auth-switch" type="button" onClick={returnToSignIn}>Back to sign in <span>↗</span></button> : <>
+            <button className="auth-switch" type="button" onClick={() => { setMode(mode === 'login' ? 'register' : 'login'); setRole('patient'); setError(''); }}>{mode === 'login' ? 'New here? Sign up' : 'Already have an account? Log in'} <span>↗</span></button>
+            <div className="guest-divider"><span>or</span></div>
+            <button className="guest-button" type="button" onClick={() => onEnter('patient', true)}>Continue as guest <span>→</span></button>
+            <p className="privacy-note">Your information is treated with care and never shared without your permission.</p>
+          </>} </>}
         </div>
       </div>
       {legalDocument && <div className="modal-backdrop legal-backdrop" role="presentation" onClick={() => setLegalDocument(null)}>
@@ -1689,10 +1756,11 @@ function App() {
   const [currentPatient, setCurrentPatient] = useState(null);
   const [currentWorker, setCurrentWorker] = useState(null);
   const [isGuest, setIsGuest] = useState(false);
+  const [isPasswordRecovery, setIsPasswordRecovery] = useState(() => isPasswordRecoveryRedirect());
 
   useEffect(() => {
     let mounted = true;
-    if (db.useApi) {
+    if (db.useApi && !isPasswordRecovery) {
       db.restoreSession().then((session) => {
         if (!mounted || !session) return;
         setCurrentUser(session.user);
@@ -1703,7 +1771,7 @@ function App() {
       }).catch(() => {});
     }
     return () => { mounted = false; };
-  }, []);
+  }, [isPasswordRecovery]);
 
   useEffect(() => {
     if (!db.useApi || !hasEntered || isGuest) return undefined;
@@ -1761,6 +1829,7 @@ function App() {
   if (!hasEntered) {
     return (
       <AuthScreen
+        onPasswordRecoveryComplete={() => setIsPasswordRecovery(false)}
         onEnter={async (role, guest = false, authData = null) => {
           if (authData?.realtimeSession) {
             try { await setChatRealtimeSession(authData.realtimeSession); }

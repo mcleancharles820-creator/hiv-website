@@ -76,6 +76,10 @@ body, button, input, textarea, select { font-family: 'Headland One', Georgia, se
 .auth-page-label { border-bottom: 1px solid var(--line); color: var(--coral); display: flex; font: 11px 'Headland One', Georgia, serif; justify-content: space-between; letter-spacing: .08em; margin-bottom: 38px; padding-bottom: 13px; }
 .auth-switch { background: none; border: 0; color: var(--ink); cursor: pointer; display: block; font: 12px 'Headland One', Georgia, serif; margin: 21px 0 0; padding: 0; text-align: left; text-decoration: underline; text-underline-offset: 4px; }
 .auth-switch span { color: var(--coral); padding-left: 8px; }
+.verification-prompt { display: grid; gap: 16px; }
+.verification-feedback { background: rgba(226,29,43,.06); border-left: 2px solid var(--coral); color: var(--muted); font: 12px/1.55 'Headland One', Georgia, serif; margin: 0; overflow-wrap: anywhere; padding: 12px 14px; }
+.verification-prompt .auth-switch { margin-top: 2px; }
+.auth-form input:focus-visible { outline: 2px solid var(--coral); outline-offset: 3px; }
 h1, h2, h3, blockquote, .brand, .footer-brand, .art-label, .guest-hero-art strong, .map-caption strong, .org-list span, .success-state h2 { font-family: 'Headland One', Georgia, serif; }
 
 .patient-shell { background: var(--cream); }
