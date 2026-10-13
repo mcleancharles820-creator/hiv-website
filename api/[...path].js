@@ -562,9 +562,29 @@ module.exports = async function handler(req, res) {
       if (tokenError || !authData.user?.id || !authData.user.email) {
         return send(res, 400, { error: 'The password reset link is invalid or has expired. Request a new link and try again.' });
       }
-      if (!isPasswordRecoveryToken(accessToken)) {
-        return send(res, 403, { error: 'Use a valid password reset link to change this password.' });
-      }
+      
+const [, tokenPayload] = accessToken.split('.');
+let tokenClaims = {};
+
+try {
+  tokenClaims = JSON.parse(
+    Buffer.from(tokenPayload, 'base64url').toString('utf8')
+  );
+} catch {
+
+}
+
+console.log('Password recovery diagnostic:', {
+  amr: tokenClaims.amr,
+  issuedAt: tokenClaims.iat,
+  audience: tokenClaims.aud,
+});
+
+if (!isPasswordRecoveryToken(accessToken)) {
+  return send(res, 403, {
+    error: 'Use a valid password reset link to change this password.',
+  });
+}
       if (password.toLowerCase() === authData.user.email.toLowerCase()) {
         return send(res, 400, { error: 'Password cannot be the same as your email address.' });
       }
