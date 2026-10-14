@@ -1,6 +1,7 @@
 import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import App from './App';
+import AppointmentRequestForm from './components/AppointmentRequestForm';
 import { PatientSupportGroupPanel, SupervisorSupportGroupPanel } from './components/SupportGroupPanel';
 import db from './services/databaseService';
 import { consumePasswordRecoveryToken, isPasswordRecoveryRedirect } from './services/passwordRecovery';
@@ -334,40 +335,125 @@ test('navigating between guest pages scrolls smoothly', () => {
   expect(screen.getByRole('main')).toHaveClass('route-transition');
 });
 
-test('registered patient can log in, view dashboard, and create an appointment record', () => {
-  db.registerUser({
+test('patient submits an appointment request with a clinic, preferred time, and optional note', async () => {
+  const registered = db.registerUser({
     fullName: 'Morgan Lee',
     email: 'morgan@example.com',
     password: 'password',
     role: 'patient',
   });
+  const tomorrow = new Date();
+  tomorrow.setDate(tomorrow.getDate() + 1);
+  const preferredDate = `${tomorrow.getFullYear()}-${String(tomorrow.getMonth() + 1).padStart(2, '0')}-${String(tomorrow.getDate()).padStart(2, '0')}`;
 
   render(<App />);
   userEvent.type(screen.getByLabelText(/email address/i), 'morgan@example.com');
   userEvent.type(screen.getByLabelText(/^password$/i), 'password');
   userEvent.click(screen.getByRole('button', { name: /^sign in/i }));
-
-  expect(screen.getByRole('heading', { name: /start with what you know/i })).toBeInTheDocument();
-  expect(screen.getByText('Morgan Lee')).toBeInTheDocument();
-  const patientProfileButton = screen.getByRole('button', { name: /open .*care dashboard/i });
-  expect(patientProfileButton).toBeInTheDocument();
-  expect(patientProfileButton.querySelector('svg')).not.toBeNull();
   expect(screen.getByRole('button', { name: /sign out/i })).toBeInTheDocument();
   expect(screen.getByRole('button', { name: 'Care' })).toBeInTheDocument();
-  userEvent.click(patientProfileButton);
-  expect(screen.getByRole('heading', { name: /your care dashboard/i })).toBeInTheDocument();
-  userEvent.click(screen.getByRole('button', { name: 'Home' }));
-  userEvent.click(screen.getByRole('button', { name: 'Testing' }));
-  userEvent.click(screen.getByRole('button', { name: /book an appointment/i }));
-  userEvent.click(screen.getByRole('button', { name: /^book appointment/i }));
-  fireEvent.change(screen.getByLabelText(/^date$/i), { target: { value: '2026-09-20' } });
-  userEvent.type(screen.getByLabelText(/^time$/i), '2:00 PM');
-  userEvent.click(screen.getByRole('button', { name: /save record/i }));
 
-  expect(screen.getByText('2026-09-20 · 2:00 PM')).toBeInTheDocument();
+  userEvent.click(screen.getByRole('button', { name: 'Testing' }));
+  userEvent.click(screen.getByRole('button', { name: /request an appointment/i }));
+  userEvent.click(screen.getByRole('button', { name: /request an appointment/i }));
+  userEvent.selectOptions(screen.getByLabelText(/^clinic$/i), '1');
+  userEvent.selectOptions(screen.getByLabelText(/visit reason/i), 'HIV testing');
+  fireEvent.change(screen.getByLabelText(/preferred date/i), { target: { value: preferredDate } });
+  fireEvent.change(screen.getByLabelText(/preferred time/i), { target: { value: '14:00' } });
+  userEvent.type(screen.getByLabelText(/additional note/i), 'Please call if an earlier appointment becomes available.');
+  userEvent.click(screen.getByRole('button', { name: /^request appointment/i }));
+
+  expect(await screen.findByRole('heading', { name: /your request is in/i })).toBeInTheDocument();
+  expect(screen.getByRole('status')).toHaveTextContent(/submitted as requested/i);
+  userEvent.click(screen.getByRole('button', { name: /return to appointments/i }));
+
+  const appointment = db.getTable('Appointments').find((item) => item.patient_id === registered.patient.patient_id);
+  expect(appointment).toMatchObject({
+    patient_id: registered.patient.patient_id,
+    facility_id: 1,
+    appointment_date: preferredDate,
+    appointment_time: '14:00',
+    appointment_type: 'HIV testing',
+    notes: 'Please call if an earlier appointment becomes available.',
+    status: 'Requested',
+  });
+  expect(screen.getByText(`${preferredDate} · 2:00 PM`)).toBeInTheDocument();
+  expect(screen.getByText(/Rural Health Unit/)).toBeInTheDocument();
 });
 
-test('patient appointment deletion waits for confirmation', () => {
+test('appointment request form retains entries and shows API errors', async () => {
+  const onSubmit = jest.fn()
+    .mockResolvedValueOnce({ error: 'That clinic is unavailable. Choose another active clinic.' })
+    .mockResolvedValueOnce({ appointment_id: 22, status: 'Requested' });
+  const tomorrow = new Date();
+  tomorrow.setDate(tomorrow.getDate() + 1);
+  const preferredDate = `${tomorrow.getFullYear()}-${String(tomorrow.getMonth() + 1).padStart(2, '0')}-${String(tomorrow.getDate()).padStart(2, '0')}`;
+  render(<AppointmentRequestForm
+    facilities={[{ facility_id: 1, name: 'Rural Health Unit', address: 'Odiongan', operating_hours: 'Mon-Fri 8:00 AM - 5:00 PM', is_active: true }]}
+    onSubmit={onSubmit}
+    onClose={jest.fn()}
+  />);
+
+  userEvent.selectOptions(screen.getByLabelText(/^clinic$/i), '1');
+  userEvent.selectOptions(screen.getByLabelText(/visit reason/i), 'Routine follow-up');
+  fireEvent.change(screen.getByLabelText(/preferred date/i), { target: { value: preferredDate } });
+  fireEvent.change(screen.getByLabelText(/preferred time/i), { target: { value: '09:30' } });
+  userEvent.type(screen.getByLabelText(/additional note/i), 'Morning preferred.');
+  userEvent.click(screen.getByRole('button', { name: /^request appointment/i }));
+
+  expect(await screen.findByRole('alert')).toHaveTextContent(/clinic is unavailable/i);
+  expect(screen.getByLabelText(/additional note/i)).toHaveValue('Morning preferred.');
+  expect(onSubmit).toHaveBeenLastCalledWith(expect.objectContaining({
+    facilityId: 1,
+    appointmentType: 'Routine follow-up',
+    date: preferredDate,
+    time: '09:30',
+    notes: 'Morning preferred.',
+  }));
+
+  userEvent.click(screen.getByRole('button', { name: /^request appointment/i }));
+  expect(await screen.findByRole('heading', { name: /your request is in/i })).toBeInTheDocument();
+});
+
+test('health workers can confirm and complete patient appointment requests', () => {
+  const worker = db.registerUser({
+    fullName: 'Dr. Evelyn Garcia',
+    email: 'evelyn@risinghiv.org',
+    password: 'password',
+    role: 'health-worker',
+  });
+  const patient = db.registerUser({
+    fullName: 'Morgan Lee',
+    email: 'morgan@example.com',
+    password: 'password',
+    role: 'patient',
+  });
+  db.update('Patients', patient.patient.patient_id, { assigned_worker_id: worker.worker.worker_id });
+  const appointment = db.bookAppointment({
+    patient_id: patient.patient.patient_id,
+    facility_id: 1,
+    appointment_date: '2026-10-20',
+    appointment_time: '09:30',
+    appointment_type: 'Routine follow-up',
+    notes: 'Morning preferred.',
+  });
+
+  render(<App />);
+  userEvent.selectOptions(screen.getByLabelText(/account type/i), 'health-worker');
+  userEvent.type(screen.getByLabelText(/email address/i), 'evelyn@risinghiv.org');
+  userEvent.type(screen.getByLabelText(/^password$/i), 'password');
+  userEvent.click(screen.getByRole('button', { name: /^sign in/i }));
+  userEvent.click(screen.getByRole('button', { name: 'Appointments' }));
+
+  expect(screen.getByText(/patient note: morning preferred/i)).toBeInTheDocument();
+  expect(screen.getByText('Requested')).toBeInTheDocument();
+  userEvent.click(screen.getByRole('button', { name: /confirm request/i }));
+  expect(db.findById('Appointments', appointment.appointment_id).status).toBe('Confirmed');
+  userEvent.click(screen.getByRole('button', { name: /mark completed/i }));
+  expect(db.findById('Appointments', appointment.appointment_id).status).toBe('Completed');
+});
+
+test('patient appointment cancellation waits for confirmation', () => {
   const registered = db.registerUser({
     fullName: 'Morgan Lee',
     email: 'morgan@example.com',
@@ -376,9 +462,10 @@ test('patient appointment deletion waits for confirmation', () => {
   });
   const appointment = db.bookAppointment({
     patient_id: registered.patient.patient_id,
+    facility_id: 1,
     appointment_date: '2026-10-15',
-    appointment_time: '9:00 AM',
-    appointment_type: 'Care consultation',
+    appointment_time: '09:00',
+    appointment_type: 'Routine follow-up',
   });
   const confirmSpy = jest.spyOn(window, 'confirm').mockReturnValue(false);
 
@@ -387,15 +474,15 @@ test('patient appointment deletion waits for confirmation', () => {
   userEvent.type(screen.getByLabelText(/^password$/i), 'password');
   userEvent.click(screen.getByRole('button', { name: /^sign in/i }));
   userEvent.click(screen.getByRole('button', { name: 'Testing' }));
-  userEvent.click(screen.getByRole('button', { name: /book an appointment/i }));
-  userEvent.click(screen.getByRole('button', { name: 'Delete' }));
+  userEvent.click(screen.getByRole('button', { name: /request an appointment/i }));
+  userEvent.click(screen.getByRole('button', { name: /cancel request/i }));
 
   expect(confirmSpy).toHaveBeenCalled();
-  expect(db.findById('Appointments', appointment.appointment_id)).not.toBeNull();
+  expect(db.findById('Appointments', appointment.appointment_id).status).toBe('Requested');
 
   confirmSpy.mockReturnValue(true);
-  userEvent.click(screen.getByRole('button', { name: 'Delete' }));
-  expect(db.findById('Appointments', appointment.appointment_id)).toBeNull();
+  userEvent.click(screen.getByRole('button', { name: /cancel request/i }));
+  expect(db.findById('Appointments', appointment.appointment_id).status).toBe('Cancelled');
 });
 
 test('support-group privacy helpers validate aliases, messages, and supervisor eligibility', () => {
@@ -551,6 +638,51 @@ test('patient chat recreates a missing session before sending a message', async 
   expect(screen.queryByRole('alert')).not.toBeInTheDocument();
   expect(db.getTable('ChatSessions')).toHaveLength(1);
   expect(db.getTable('ChatMessages')).toHaveLength(1);
+});
+
+test('API appointment requests send only the selected clinic, visit details, notes, and Requested status', async () => {
+  const previousApiMode = db.useApi;
+  db.useApi = true;
+  const savedRecord = {
+    appointment_id: 22,
+    patient_id: 31,
+    facility_id: 2,
+    appointment_date: '2026-10-20',
+    appointment_time: '14:00',
+    appointment_type: 'HIV testing',
+    notes: 'Please call first.',
+    status: 'Requested',
+  };
+  const fetchMock = jest.spyOn(global, 'fetch')
+    .mockResolvedValueOnce({ ok: true, json: async () => ({ record: savedRecord }) })
+    .mockResolvedValueOnce({ ok: true, json: async () => ({}) });
+
+  try {
+    await expect(db.bookAppointment({
+      patient_id: 31,
+      facility_id: 2,
+      appointment_date: '2026-10-20',
+      appointment_time: '14:00',
+      appointment_type: 'HIV testing',
+      notes: 'Please call first.',
+      status: 'Requested',
+    })).resolves.toEqual(savedRecord);
+    expect(fetchMock).toHaveBeenNthCalledWith(1, '/api/records/Appointments', expect.objectContaining({
+      method: 'POST',
+      body: JSON.stringify({ record: {
+        patient_id: 31,
+        worker_id: null,
+        facility_id: 2,
+        appointment_date: '2026-10-20',
+        appointment_time: '14:00',
+        appointment_type: 'HIV testing',
+        status: 'Requested',
+        notes: 'Please call first.',
+      } }),
+    }));
+  } finally {
+    db.useApi = previousApiMode;
+  }
 });
 
 test('API support-group join sends only the alias and receives sanitized membership data', async () => {

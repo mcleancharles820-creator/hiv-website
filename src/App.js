@@ -2,6 +2,7 @@ import './App.css';
 import { CircleUser } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
 import { AdminSupportGroupSupervisor, PatientSupportGroupPanel, SupervisorSupportGroupPanel } from './components/SupportGroupPanel';
+import AppointmentRequestForm from './components/AppointmentRequestForm';
 import db from './services/databaseService';
 import { clearChatRealtimeSession, setChatRealtimeSession, subscribeToChatChanges } from './services/chatRealtime';
 import { consumePasswordRecoveryToken, isPasswordRecoveryRedirect } from './services/passwordRecovery';
@@ -73,7 +74,31 @@ const patientPrivateNavItems = [
   ['support', 'Support Groups'],
 ];
 
-function GuestHub({ onExit, patientMode = false, onPrivatePage, onAccount, initialPage = 'home', profileName = 'Your account' }) {
+function localDateValue(date = new Date()) {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, '0');
+  const day = String(date.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+}
+
+function timeToMinutes(value) {
+  const time = String(value || '').trim();
+  const twentyFourHour = time.match(/^(?:([01]\d|2[0-3])):([0-5]\d)$/);
+  if (twentyFourHour) return Number(twentyFourHour[1]) * 60 + Number(twentyFourHour[2]);
+  const twelveHour = time.match(/^(\d{1,2}):([0-5]\d)\s*(AM|PM)$/i);
+  if (!twelveHour) return Number.MAX_SAFE_INTEGER;
+  const hour = (Number(twelveHour[1]) % 12) + (twelveHour[3].toUpperCase() === 'PM' ? 12 : 0);
+  return hour * 60 + Number(twelveHour[2]);
+}
+
+function formatAppointmentTime(value) {
+  const time = String(value || '');
+  const match = time.match(/^(?:([01]\d|2[0-3])):([0-5]\d)$/);
+  if (!match) return time;
+  return new Date(2000, 0, 1, Number(match[1]), Number(match[2])).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
+}
+
+function GuestHub({ onExit, patientMode = false, appointmentsEnabled = true, onPrivatePage, onAccount, initialPage = 'home', profileName = 'Your account' }) {
   const firstPage = initialPage === 'information' ? 'knowledge' : initialPage;
   const [page, setPage] = useState(firstPage);
 
@@ -89,7 +114,7 @@ function GuestHub({ onExit, patientMode = false, onPrivatePage, onAccount, initi
   const pageContent = {
     home: <section className="guest-hero guest-page"><div><p className="eyebrow"><span className="pulse-dot" /> Public information and support</p><h1>Start with<br /><span>what you know.</span></h1><p>Clear HIV and AIDS information, local testing guidance, and trusted ways to help in Odiongan and beyond.</p><button className="primary-button" onClick={() => navigate('knowledge')}>Explore the essentials <span>↓</span></button></div><figure className="guest-hero-image"><img src="https://images.unsplash.com/photo-1576091160399-112ba8d25d1d?auto=format&fit=crop&w=1100&q=85" alt="Healthcare professional speaking with a patient" /><figcaption>Care starts with a conversation.</figcaption></figure></section>,
     knowledge: <section className="guest-knowledge guest-page" id="guest-knowledge"><div className="guest-section-intro"><p className="eyebrow">HIV / AIDS 101</p><h1>Knowledge<br /><i>without stigma.</i></h1><p>Reliable basics can make the next decision feel a little clearer.</p></div><div className="knowledge-grid">{guestKnowledge.map(([title, text], index) => <article key={title}><span>0{index + 1}</span><h2>{title}</h2><p>{text}</p></article>)}</div></section>,
-    testing: <section className="guest-testing guest-page" id="guest-testing"><div className="guest-section-intro"><p className="eyebrow">Find your next step</p><h1>Testing and<br /><i>treatment.</i></h1><p>Testing is confidential. Treatment is available, and early care makes a difference.</p><a className="text-button" href="https://www.google.com/maps/search/health+center+Odiongan+Romblon+Philippines" target="_blank" rel="noreferrer">Open in Google Maps ↗</a>{patientMode && <button className="primary-button patient-testing-button" onClick={() => onPrivatePage('appointments')}>Book an appointment <span>↗</span></button>}</div><div className="map-wrap"><iframe title="Map of Odiongan, Romblon, Philippines" src="https://www.openstreetmap.org/export/embed.html?bbox=121.970%2C12.380%2C122.025%2C12.425&layer=mapnik&marker=12.401%2C121.990" /><p className="map-caption"><strong>Odiongan, Romblon</strong><span>Search for the nearest Rural Health Unit or hospital before visiting.</span></p></div><div className="testing-facilities"><div className="facility-heading"><p className="eyebrow">Local care contacts</p><h2>Care to<br /><i>contact first.</i></h2><p>Call ahead and ask about HIV testing, treatment referral, and current clinic schedules.</p></div><div className="facility-list"><a href="https://www.google.com/maps/search/Rural+Health+Unit+Odiongan+Romblon" target="_blank" rel="noreferrer"><strong>Rural Health Unit</strong><span>Odiongan, Romblon · Find on map ↗</span></a><a href="https://www.google.com/maps/search/Romblon+Provincial+Hospital+Odiongan" target="_blank" rel="noreferrer"><strong>Romblon Provincial Hospital</strong><span>Romblon · Find on map ↗</span></a></div></div><div className="testing-notes"><div><span>01</span><h2>Where to begin</h2><p>Visit your local Rural Health Unit, municipal health office, or a hospital and ask about confidential HIV testing.</p></div><div><span>02</span><h2>Where to get treated</h2><p>Ask a health worker about referral to an HIV treatment hub. They can guide you to care, medicines, and follow-up.</p></div><div><span>03</span><h2>Need urgent help?</h2><p>PEP may prevent HIV after a recent exposure and works best as soon as possible. Visit a health facility or emergency department.</p></div></div></section>,
+    testing: <section className="guest-testing guest-page" id="guest-testing"><div className="guest-section-intro"><p className="eyebrow">Find your next step</p><h1>Testing and<br /><i>treatment.</i></h1><p>Testing is confidential. Treatment is available, and early care makes a difference.</p><a className="text-button" href="https://www.google.com/maps/search/health+center+Odiongan+Romblon+Philippines" target="_blank" rel="noreferrer">Open in Google Maps ↗</a>{patientMode && (appointmentsEnabled ? <button className="primary-button patient-testing-button" onClick={() => onPrivatePage('appointments')}>Request an appointment <span>↗</span></button> : <p className="form-error patient-testing-button" role="status">Online appointment requests are currently unavailable. Contact your clinic directly.</p>)}</div><div className="map-wrap"><iframe title="Map of Odiongan, Romblon, Philippines" src="https://www.openstreetmap.org/export/embed.html?bbox=121.970%2C12.380%2C122.025%2C12.425&layer=mapnik&marker=12.401%2C121.990" /><p className="map-caption"><strong>Odiongan, Romblon</strong><span>Search for the nearest Rural Health Unit or hospital before visiting.</span></p></div><div className="testing-facilities"><div className="facility-heading"><p className="eyebrow">Local care contacts</p><h2>Care to<br /><i>contact first.</i></h2><p>Call ahead and ask about HIV testing, treatment referral, and current clinic schedules.</p></div><div className="facility-list"><a href="https://www.google.com/maps/search/Rural+Health+Unit+Odiongan+Romblon" target="_blank" rel="noreferrer"><strong>Rural Health Unit</strong><span>Odiongan, Romblon · Find on map ↗</span></a><a href="https://www.google.com/maps/search/Romblon+Provincial+Hospital+Odiongan" target="_blank" rel="noreferrer"><strong>Romblon Provincial Hospital</strong><span>Romblon · Find on map ↗</span></a></div></div><div className="testing-notes"><div><span>01</span><h2>Where to begin</h2><p>Visit your local Rural Health Unit, municipal health office, or a hospital and ask about confidential HIV testing.</p></div><div><span>02</span><h2>Where to get treated</h2><p>Ask a health worker about referral to an HIV treatment hub. They can guide you to care, medicines, and follow-up.</p></div><div><span>03</span><h2>Need urgent help?</h2><p>PEP may prevent HIV after a recent exposure and works best as soon as possible. Visit a health facility or emergency department.</p></div></div></section>,
     donate: <section className="guest-donate guest-page" id="guest-donate"><div><p className="eyebrow">Support the work</p><h1>Help care<br /><i>travel further.</i></h1><p>Refer someone to a trusted organization or support programs providing HIV testing, treatment, and dignity.</p></div><div className="org-list"><a href="https://www.pamf.org.ph/" target="_blank" rel="noreferrer"><span>Philippine HIV & AIDS Support House</span><small>Community support and referrals ↗</small></a><a href="https://www.aidsdatahub.org/" target="_blank" rel="noreferrer"><span>AIDS Data Hub</span><small>HIV information and regional resources ↗</small></a><a href="https://www.globalfund.org/en/donate/" target="_blank" rel="noreferrer"><span>The Global Fund</span><small>Donate to end AIDS, TB, and malaria ↗</small></a></div></section>,
   };
 
@@ -479,6 +504,7 @@ function PatientDashboard({ currentUser, currentPatient, onPublicHub, onSignOut 
   const [, setDbVersion] = useState(0);
   const [page, setPage] = useState('home');
   const [editing, setEditing] = useState(null);
+  const [appointmentActionError, setAppointmentActionError] = useState('');
 
   useEffect(() => {
     return db.subscribe(() => setDbVersion((v) => v + 1));
@@ -490,7 +516,14 @@ function PatientDashboard({ currentUser, currentPatient, onPublicHub, onSignOut 
   const activePatientId = patientRecord.patient_id;
 
   const profileName = activeUser.full_name || 'Your Account';
-  const appointments = activePatientId ? db.getTable('Appointments').filter((a) => a.patient_id === activePatientId) : [];
+  const appointments = activePatientId ? db.getTable('Appointments')
+    .filter((appointment) => Number(appointment.patient_id) === Number(activePatientId))
+    .sort((a, b) => String(a.appointment_date || '').localeCompare(String(b.appointment_date || '')) || timeToMinutes(a.appointment_time) - timeToMinutes(b.appointment_time)) : [];
+  const upcomingAppointment = appointments.find((appointment) => (
+    !['cancelled', 'completed'].includes(String(appointment.status || '').toLowerCase())
+    && String(appointment.appointment_date || '') >= localDateValue()
+  ));
+  const activeFacilities = db.getTable('TestingFacilities').filter((facility) => facility.is_active !== false);
   const medications = activePatientId ? db.getTable('MedicationRequests').filter((m) => m.patient_id === activePatientId) : [];
   const chats = activePatientId ? db.getTable('ChatSessions').filter((c) => c.patient_id === activePatientId) : [];
   const activeSupportGroup = db.getTable('SupportGroups').find((group) => group.is_active) || null;
@@ -509,43 +542,40 @@ function PatientDashboard({ currentUser, currentPatient, onPublicHub, onSignOut 
     scrollPageToTop();
   };
 
-  const handleSaveForm = (record) => {
+  const handleSaveForm = async (record) => {
+    let result;
     if (record.type === 'profile') {
-      if (activeUser.user_id) {
-        db.update('Users', activeUser.user_id, {
-          full_name: record.name,
-          email: record.email,
-          contact_number: record.phone,
-        });
-      }
+      if (!activeUser.user_id) return { error: 'Your account could not be identified.' };
+      result = await db.update('Users', activeUser.user_id, {
+        full_name: record.name,
+        email: record.email,
+        contact_number: record.phone,
+      });
     } else if (record.type === 'appointment') {
-      if (record.id) {
-        db.update('Appointments', record.id, {
-          appointment_date: record.date,
-          appointment_time: record.time,
-          appointment_type: record.appointmentType,
-          status: record.status || 'Requested',
-        });
-      } else {
-        db.bookAppointment({
-          patient_id: activePatientId || 1,
-          appointment_date: record.date,
-          appointment_time: record.time,
-          appointment_type: record.appointmentType,
-          status: record.status || 'Requested',
-        });
-      }
+      if (!activePatientId) return { error: 'Your patient record could not be identified. Please sign in again.' };
+      const appointmentFields = {
+        facility_id: Number(record.facilityId),
+        appointment_date: record.date,
+        appointment_time: record.time,
+        appointment_type: record.appointmentType,
+        notes: record.notes || '',
+        status: 'Requested',
+      };
+      result = record.appointment_id || record.id
+        ? await db.update('Appointments', record.appointment_id || record.id, appointmentFields)
+        : await db.bookAppointment({ patient_id: activePatientId, worker_id: null, ...appointmentFields });
     } else if (record.type === 'medication') {
       if (record.id) {
-        db.update('MedicationRequests', record.id, {
+        result = await db.update('MedicationRequests', record.id, {
           medication_name: record.name,
           dosage: record.dosage,
           schedule: record.schedule,
           availability: record.availability || 'In stock',
         });
       } else {
-        db.requestMedication({
-          patient_id: activePatientId || 1,
+        if (!activePatientId) return { error: 'Your patient record could not be identified. Please sign in again.' };
+        result = await db.requestMedication({
+          patient_id: activePatientId,
           medication_name: record.name,
           dosage: record.dosage,
           schedule: record.schedule,
@@ -553,7 +583,16 @@ function PatientDashboard({ currentUser, currentPatient, onPublicHub, onSignOut 
         });
       }
     }
-    setEditing(null);
+    if (result?.error) return result;
+    if (!result) return { error: 'The change could not be saved. Please try again.' };
+    if (record.type !== 'appointment') setEditing(null);
+    return result;
+  };
+
+  const cancelAppointmentRequest = async (appointmentId) => {
+    setAppointmentActionError('');
+    const result = await db.update('Appointments', appointmentId, { status: 'Cancelled' });
+    if (result?.error) setAppointmentActionError(result.error);
   };
 
   const servicesAvailed = db.getUserServicesAvailed(activeUserId || activePatientId);
@@ -568,16 +607,40 @@ function PatientDashboard({ currentUser, currentPatient, onPublicHub, onSignOut 
     services: <PagePanel eyebrow="Your care history" title={<>Services<br /><i>availed.</i></>}><ServicesAvailedView servicesAvailed={servicesAvailed} emptyMessage="You have not availed any services yet. Book an appointment or request medication to get started." /></PagePanel>,
     information: <PagePanel eyebrow="HIV information" title={<>Care starts<br /><i>with clarity.</i></>}><div className="patient-info-grid"><article><span>01</span><h2>Know your status</h2><p>Testing is the only way to know. Confidential testing and treatment are available.</p></article><article><span>02</span><h2>Treatment works</h2><p>With the right treatment, people living with HIV can live long, healthy lives.</p></article><article><span>03</span><h2>U=U</h2><p>An undetectable viral load means HIV is not transmitted through sex.</p></article></div><div className="profile-card"><div><span>FULL NAME</span><strong>{activeUser.full_name}</strong></div><div><span>EMAIL ADDRESS</span><strong>{activeUser.email}</strong></div><div><span>CONTACT NUMBER</span><strong>{activeUser.contact_number || 'Not provided'}</strong></div><div><span>ACCOUNT STATUS</span><div><StatusBadge status={activeUser.is_active !== false ? 'Active' : 'Inactive'} /></div></div><div><span>CARE STATUS</span><div><StatusBadge status={patientRecord.care_status || 'Active care plan'} /></div></div><div style={{ display: 'flex', gap: '12px', flexWrap: 'wrap', gridColumn: '1 / -1' }}><button className="primary-button" onClick={() => setEditing({ type: 'profile', name: activeUser.full_name, email: activeUser.email, phone: activeUser.contact_number || '' })}>Edit profile <span>↗</span></button><button className="text-button" onClick={() => navigate('services')}>View availed services ↗</button></div></div></PagePanel>,
     testing: <PagePanel eyebrow="Find your next step" title={<>Testing and<br /><i>treatment.</i></>}><div className="patient-testing-intro"><p>Testing is confidential. Treatment is available, and early care makes a difference.</p><a className="text-button" href="https://www.google.com/maps/search/health+center+Odiongan+Romblon+Philippines" target="_blank" rel="noreferrer">Open in Google Maps ↗</a></div>{!isTestingEnabled && <p className="form-error" style={{ margin: '16px 0' }}>HIV testing referrals are currently offline.</p>}<div className="map-wrap patient-map"><iframe title="Map of Odiongan, Romblon, Philippines" src="https://www.openstreetmap.org/export/embed.html?bbox=121.970%2C12.380%2C122.025%2C12.425&layer=mapnik&marker=12.401%2C121.990" /><p className="map-caption"><strong>Odiongan, Romblon</strong><span>Search for the nearest Rural Health Unit or hospital before visiting.</span></p></div><div className="testing-notes patient-testing-notes"><div><span>01</span><h2>Where to begin</h2><p>Visit your local Rural Health Unit, municipal health office, or hospital and ask about confidential HIV testing.</p></div><div><span>02</span><h2>Where to get treated</h2><p>{isTreatmentEnabled ? 'Ask a health worker about referral to an HIV treatment hub, medicines, and follow-up care.' : 'Treatment referral service is currently offline.'}</p></div></div>{isTestingEnabled ? <button className="primary-button panel-action" onClick={() => navigate('appointments')}>Book an appointment <span>↗</span></button> : <p className="empty-records">Appointment booking is currently unavailable.</p>}</PagePanel>,
-    appointments: <PagePanel eyebrow="Care schedule" title={<>Book an<br /><i>appointment.</i></>}><button className="primary-button panel-action" onClick={() => setEditing({ type: 'appointment', date: '', time: '', appointmentType: 'HIV care consultation', status: 'Requested' })}>Book appointment <span>+</span></button><RecordList items={appointments} empty="No appointments yet." render={(item) => <><div><strong>{item.appointment_type || item.appointmentType}</strong><span>{item.appointment_date || item.date} · {item.appointment_time || item.time}</span></div><StatusBadge status={item.status || 'Requested'} /><RecordActions onEdit={() => setEditing({ type: 'appointment', id: item.appointment_id || item.id, date: item.appointment_date || item.date, time: item.appointment_time || item.time, appointmentType: item.appointment_type || item.appointmentType, status: item.status })} onDelete={() => db.delete('Appointments', item.appointment_id || item.id)} /></>} /></PagePanel>,
+    appointments: <PagePanel eyebrow="Care schedule" title={<>Appointment<br /><i>requests.</i></>}>
+      <div className="appointment-page-intro">
+        <p>Choose a clinic and send your preferred visit details. A health worker will review the request and confirm or contact you about a different time.</p>
+        {!isTestingEnabled && <p className="form-error" role="status">Appointment requests are currently unavailable. Please contact your clinic directly.</p>}
+        {isTestingEnabled && !activeFacilities.length && <p className="form-error" role="status">No active clinics are accepting appointment requests right now.</p>}
+        {!activePatientId && <p className="form-error" role="status">Your patient record is unavailable. Please sign in again before requesting an appointment.</p>}
+      </div>
+      <button className="primary-button panel-action" type="button" disabled={!isTestingEnabled || !activePatientId || activeFacilities.length === 0} onClick={() => setEditing({ type: 'appointment', date: '', time: '', appointmentType: '', facilityId: '', notes: '', status: 'Requested' })}>Request an appointment <span>+</span></button>
+      {appointmentActionError && <p className="form-error" role="alert">{appointmentActionError}</p>}
+      <RecordList items={appointments} empty="No appointment requests yet." render={(item) => {
+        const facility = activeFacilities.find((entry) => Number(entry.facility_id) === Number(item.facility_id)) || db.findById('TestingFacilities', Number(item.facility_id));
+        const status = item.status || 'Requested';
+        const canUpdateRequest = ['requested', 'rescheduled'].includes(String(status).toLowerCase());
+        return <>
+          <div className="appointment-record-details">
+            <strong>{item.appointment_type || item.appointmentType}</strong>
+            <span>{item.appointment_date || item.date} · {formatAppointmentTime(item.appointment_time || item.time)}</span>
+            <span>{facility?.name || 'Clinic details unavailable'}{facility?.operating_hours ? ` · ${facility.operating_hours}` : ''}</span>
+            {item.notes && <small>{item.notes}</small>}
+          </div>
+          <StatusBadge status={status} />
+          {canUpdateRequest ? <AppointmentRequestActions onEdit={() => setEditing({ type: 'appointment', appointment_id: item.appointment_id || item.id, date: item.appointment_date || item.date, time: item.appointment_time || item.time, appointmentType: item.appointment_type || item.appointmentType, facilityId: item.facility_id, notes: item.notes || '', status })} onCancel={() => cancelAppointmentRequest(item.appointment_id || item.id)} /> : <span className="appointment-locked-note">Contact your health worker to update this appointment.</span>}
+        </>;
+      }} />
+    </PagePanel>,
     medication: <PagePanel eyebrow="Treatment support" title={<>Medication<br /><i>availability.</i></>}><p className="medication-note">Choose from the medication list below. Stock status is provided for guidance; confirm your prescription and availability with a health worker before visiting.</p>{!isMedicationRequestsEnabled && <p className="form-error" style={{ margin: '12px 0' }}>Online medication requests are currently unavailable. Contact your clinic directly.</p>}<div className="medication-catalog">{medicationCatalog.map((medication) => <article className="medication-option" key={medication.id}><div><strong>{medication.name}</strong><span>{medication.detail}</span></div><em className={medication.stock === 'In stock' ? 'status-available' : 'status-unavailable'}>{medication.stock}</em>{medication.stock === 'In stock' && isMedicationRequestsEnabled ? <button className="card-link" onClick={() => setEditing({ type: 'medication', name: medication.name, dosage: '', schedule: '', availability: medication.stock })}>Request medication <span>↗</span></button> : <span className="unavailable-label">{!isMedicationRequestsEnabled ? 'Service unavailable' : 'Currently unavailable'}</span>}</article>)}</div><h2 className="medication-record-heading">Your medication records</h2><div className="medication-list"><RecordList items={medications} empty="No medication records yet." render={(item) => <><div><strong>{item.medication_name || item.name}</strong><span>{item.dosage} · {item.schedule}</span></div><div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}><StatusBadge status={item.status || 'Pending'} /><em className={(item.availability || 'In stock') === 'In stock' ? 'status-available' : 'status-unavailable'}>{item.availability || 'In stock'}</em></div><RecordActions onEdit={() => setEditing({ type: 'medication', id: item.request_id || item.id, name: item.medication_name || item.name, dosage: item.dosage, schedule: item.schedule, availability: item.availability })} onDelete={() => db.delete('MedicationRequests', item.request_id || item.id)} /></>} /></div></PagePanel>,
     chat: <PagePanel eyebrow="Confidential support" title={<>Private<br /><i>conversation.</i></>}><ChatMessenger patientId={activePatientId} userId={activeUser.user_id} ticket={chats[0] || null} onUpdate={(preview) => { if (chats[0]?.chat_session_id) { db.update('ChatSessions', chats[0].chat_session_id, { preview, last_updated: new Date().toISOString() }); } }} /></PagePanel>,
     support: <PagePanel eyebrow="Private community care" title={<>You belong<br /><i>here.</i></>}><PatientSupportGroupPanel group={activeSupportGroup} membership={supportGroupMembership} messages={supportGroupMessages} localMode={!db.useApi} onJoin={(alias) => db.joinSupportGroup({ patientId: activePatientId, alias })} onLeave={() => db.leaveSupportGroup({ patientId: activePatientId })} onSend={(messageText) => db.sendSupportGroupMessage({ patientId: activePatientId, messageText })} onRefresh={() => db.refreshSupportGroupState().catch(() => false)} /></PagePanel>,
     donate: <PagePanel eyebrow="Trusted referrals" title={<>Support that<br /><i>reaches further.</i></>}><div className="org-list patient-org-list"><a href="https://www.globalfund.org/en/donate/" target="_blank" rel="noreferrer"><span>The Global Fund</span><small>Donate to end AIDS, TB, and malaria ↗</small></a><a href="https://www.pamf.org.ph/" target="_blank" rel="noreferrer"><span>Philippine HIV & AIDS Support House</span><small>Community support and referrals ↗</small></a></div></PagePanel>,
-    account: <PagePanel eyebrow="Your account" title={<>Your care<br /><i>dashboard.</i></>}><div style={{ display: 'flex', gap: '10px', alignItems: 'center', marginBottom: '20px', flexWrap: 'wrap' }}><StatusBadge status={activeUser.is_active !== false ? 'Active' : 'Inactive'} label={`Account: ${activeUser.is_active !== false ? 'Active' : 'Inactive'}`} /><StatusBadge status={patientRecord.care_status || 'Active care plan'} label={`Care status: ${patientRecord.care_status || 'Active care plan'}`} /></div><div className="dashboard-tiles"><DashboardTile label="Services availed" value={`${servicesAvailed.totalCount} total`} detail="Review all care history" /><DashboardTile label="Upcoming appointment" value={appointments[0] ? `${appointments[0].appointment_date || appointments[0].date} · ${appointments[0].appointment_time || appointments[0].time}` : 'Nothing scheduled'} detail={appointments[0]?.appointment_type || appointments[0]?.appointmentType || 'Book your first visit'} /><DashboardTile label="Private chat notifications" value={`${chats.length || 1} open ${chats.length === 1 ? 'conversation' : 'conversations'}`} detail="View your support messages" /><DashboardTile label="Support groups joined" value={`${joinedGroups.length} groups`} detail="Find a community to join" /><DashboardTile label="Medications ordered" value={`${medications.length} ${medications.length === 1 ? 'record' : 'records'}`} detail="Review your treatment records" /></div><h2 className="quick-heading">Quick actions</h2><div className="care-grid"><PatientAction title="View availed services" text="Check statuses of appointments and medication requests." action={() => navigate('services')} /><PatientAction title="Book appointment" text="Schedule time with a health worker." action={() => navigate('appointments')} /></div></PagePanel>,
+    account: <PagePanel eyebrow="Your account" title={<>Your care<br /><i>dashboard.</i></>}><div style={{ display: 'flex', gap: '10px', alignItems: 'center', marginBottom: '20px', flexWrap: 'wrap' }}><StatusBadge status={activeUser.is_active !== false ? 'Active' : 'Inactive'} label={`Account: ${activeUser.is_active !== false ? 'Active' : 'Inactive'}`} /><StatusBadge status={patientRecord.care_status || 'Active care plan'} label={`Care status: ${patientRecord.care_status || 'Active care plan'}`} /></div><div className="dashboard-tiles"><DashboardTile label="Services availed" value={`${servicesAvailed.totalCount} total`} detail="Review all care history" /><DashboardTile label="Upcoming appointment" value={upcomingAppointment ? `${upcomingAppointment.appointment_date} · ${formatAppointmentTime(upcomingAppointment.appointment_time)}` : 'Nothing scheduled'} detail={upcomingAppointment?.appointment_type || 'Book your first visit'} /><DashboardTile label="Private chat notifications" value={`${chats.length || 1} open ${chats.length === 1 ? 'conversation' : 'conversations'}`} detail="View your support messages" /><DashboardTile label="Support groups joined" value={`${joinedGroups.length} groups`} detail="Find a community to join" /><DashboardTile label="Medications ordered" value={`${medications.length} ${medications.length === 1 ? 'record' : 'records'}`} detail="Review your treatment records" /></div><h2 className="quick-heading">Quick actions</h2><div className="care-grid"><PatientAction title="View availed services" text="Check statuses of appointments and medication requests." action={() => navigate('services')} /><PatientAction title="Book appointment" text="Schedule time with a health worker." action={() => navigate('appointments')} /></div></PagePanel>,
   };
 
   if (['home', 'information', 'testing', 'donate'].includes(page)) {
-    return <GuestHub patientMode initialPage={page} profileName={profileName} onExit={onSignOut} onPrivatePage={navigate} onAccount={() => navigate('account')} />;
+    return <GuestHub patientMode appointmentsEnabled={isTestingEnabled} initialPage={page} profileName={profileName} onExit={onSignOut} onPrivatePage={navigate} onAccount={() => navigate('account')} />;
   }
 
   return (
@@ -604,7 +667,8 @@ function PatientDashboard({ currentUser, currentPatient, onPublicHub, onSignOut 
         <button className="patient-public-link" onClick={onPublicHub}>Public awareness hub ↗</button>
         <button className="footer-back" onClick={() => navigate('home')}>Back to top ↑</button>
       </footer>
-      {editing && <PatientForm data={editing} onClose={() => setEditing(null)} onSave={handleSaveForm} />}
+      {editing?.type === 'appointment' && <AppointmentRequestForm facilities={activeFacilities} initialValue={editing} serviceEnabled={isTestingEnabled} patientAvailable={Boolean(activePatientId)} onSubmit={handleSaveForm} onClose={() => setEditing(null)} />}
+      {editing && editing.type !== 'appointment' && <PatientForm data={editing} onClose={() => setEditing(null)} onSave={handleSaveForm} />}
     </div>
   );
 }
@@ -797,25 +861,24 @@ function confirmDeleteAction(message, onConfirm) {
   if (window.confirm(message)) onConfirm();
 }
 
-function RecordActions({ onEdit, onDelete }) { return <div className="record-actions"><button onClick={onEdit}>Edit</button><button onClick={() => confirmDeleteAction('Are you sure you want to delete this record?', onDelete)}>Delete</button></div>; }
+function RecordActions({ onEdit, onDelete }) { return <div className="record-actions"><button type="button" onClick={onEdit}>Edit</button><button type="button" onClick={() => confirmDeleteAction('Are you sure you want to delete this record?', onDelete)}>Delete</button></div>; }
+function AppointmentRequestActions({ onEdit, onCancel }) { return <div className="record-actions"><button type="button" onClick={onEdit}>Update request</button><button type="button" onClick={() => confirmDeleteAction('Cancel this appointment request? The clinic will no longer treat it as an active request.', onCancel)}>Cancel request</button></div>; }
 function PatientForm({ data, onClose, onSave }) {
   const [record, setRecord] = useState(data);
   const fields = record.type === 'profile'
     ? [['name', 'Full name', 'text', 'Your full name'], ['email', 'Email address', 'email', 'you@example.com'], ['phone', 'Contact number', 'tel', 'Your contact number']]
-    : record.type === 'appointment'
-      ? [['date', 'Date', 'date', 'YYYY-MM-DD'], ['time', 'Time', 'text', 'e.g. 10:00 AM'], ['appointmentType', 'Appointment type', 'text', 'HIV care consultation']]
-      : record.type === 'medication'
-        ? [['name', 'Medication name', 'text', 'e.g. Antiretroviral therapy'], ['dosage', 'Dosage', 'text', 'e.g. 1 tablet daily'], ['schedule', 'Schedule', 'text', 'e.g. Daily at bedtime']]
-        : record.type === 'worker-patient'
-          ? (db.useApi ? [['detail', 'Care details', 'text', 'Care plan details']] : [['name', 'Patient name', 'text', 'Patient full name'], ['detail', 'Care details', 'text', 'Care plan details']])
-          : [['subject', 'Subject', 'text', 'Subject'], ['preview', 'Message', 'text', 'Write a message...']];
+    : record.type === 'medication'
+      ? [['name', 'Medication name', 'text', 'e.g. Antiretroviral therapy'], ['dosage', 'Dosage', 'text', 'e.g. 1 tablet daily'], ['schedule', 'Schedule', 'text', 'e.g. Daily at bedtime']]
+      : record.type === 'worker-patient'
+        ? (db.useApi ? [['detail', 'Care details', 'text', 'Care plan details']] : [['name', 'Patient name', 'text', 'Patient full name'], ['detail', 'Care details', 'text', 'Care plan details']])
+        : [['subject', 'Subject', 'text', 'Subject'], ['preview', 'Message', 'text', 'Write a message...']];
 
   return (
     <div className="modal-backdrop" role="presentation" onClick={onClose}>
       <div className="patient-form" role="dialog" aria-modal="true" onClick={(event) => event.stopPropagation()}>
         <button className="close-button" onClick={onClose} aria-label="Close form">×</button>
         <p className="eyebrow">{record.id || record.appointment_id || record.request_id ? 'Edit record' : 'New record'}</p>
-        <h2>{record.type === 'appointment' ? 'Book appointment' : record.type === 'medication' ? 'Request medication' : record.type === 'chat' ? 'Start private chat' : record.type === 'worker-patient' ? 'Patient details' : 'Edit profile'}</h2>
+        <h2>{record.type === 'medication' ? 'Request medication' : record.type === 'chat' ? 'Start private chat' : record.type === 'worker-patient' ? 'Patient details' : 'Edit profile'}</h2>
         <form onSubmit={(event) => { event.preventDefault(); onSave(record); }}>
           {fields.map(([key, label, type = 'text', placeholder = '']) => (
             <label key={key}>
@@ -1467,8 +1530,9 @@ function HealthWorkerDashboard({ currentUser, currentWorker, onPublicHub, onSign
         date: a.appointment_date,
         time: a.appointment_time,
         type: a.appointment_type,
+        notes: a.notes || '',
         facilityName: facility?.name || 'Local Health Facility',
-        status: a.status || 'Confirmed',
+        status: a.status || 'Requested',
       };
     });
 
@@ -1517,7 +1581,13 @@ function HealthWorkerDashboard({ currentUser, currentWorker, onPublicHub, onSign
       {claimablePatients.length > 0 && <section className="claimable-patients" aria-labelledby="claimable-heading"><div className="claimable-heading"><div><p className="eyebrow">Matching facility</p><h2 id="claimable-heading">Available patients</h2></div><span>{claimablePatients.length} unassigned</span></div><div className="worker-list">{claimablePatients.map((patient) => <article key={patient.patient_id}><div><strong>{patient.full_name}</strong><span>{patient.care_status || 'Active care plan'} · Patient #{patient.patient_id}</span></div><button className="admin-btn admin-btn-primary" type="button" onClick={() => claimPatient(patient)}>Assign to me</button></article>)}</div></section>}
       <h2 className="quick-heading">Assigned patients</h2><div className="worker-list">{workerPatients.map((patient) => <article key={patient.userId || patient.id}><div><strong>{patient.fullName || patient.name}</strong><span>{patient.email} · {patient.medicalNotes || patient.detail}{patient.userId === 1 && latestMessage ? ` · “${latestMessage}”` : ''} · <strong style={{ color: 'var(--coral)', fontWeight: 400 }}>{patient.servicesAvailedCount || 0} services availed</strong></span></div><div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}><StatusBadge status={patient.careStatus || patient.status} /><StatusBadge status={patient.accountStatus || 'Active'} /></div><div className="worker-actions"><button type="button" className="card-link" onClick={() => setInspectingUser(patient)}>View Services ↗</button><button className="card-link" onClick={() => setPatientEditor({ type: 'worker-patient', ...patient, id: patient.patientId, user_id: patient.userId, name: patient.fullName })}>Edit Care Plan</button></div></article>)}</div>{!workerPatients.length && <p className="empty-records">No patients are currently assigned to you.</p>}</PagePanel>,
     medications: <PagePanel eyebrow="Treatment support" title={<>Medication<br /><i>requests.</i></>}><div className="worker-list">{requests.map((request) => <article key={request.id}><div><strong>{request.medication}</strong><span>Requested by {request.patient} · {request.dosage} · {request.schedule}</span></div><StatusBadge status={request.status} /><div className="worker-actions"><button className="card-link" onClick={() => updateRequest(request.id, 'Approved')}>Approve</button><button className="card-link" onClick={() => updateRequest(request.id, 'Needs information')}>Request info</button></div></article>)}</div></PagePanel>,
-    appointments: <PagePanel eyebrow="Care schedule" title={<>Manage<br /><i>appointments.</i></>}><div className="worker-list">{appointments.map((appointment) => <article key={appointment.id}><div><strong>{appointment.patient}</strong><span>{appointment.date} · {appointment.time} · {appointment.type} ({appointment.facilityName})</span></div><StatusBadge status={appointment.status} /><div className="worker-actions"><button className="card-link" onClick={() => updateAppointment(appointment.id, 'Completed')}>Mark Completed</button><button className="card-link" onClick={() => updateAppointment(appointment.id, 'Cancelled')}>Cancel</button></div></article>)}</div></PagePanel>,
+    appointments: <PagePanel eyebrow="Care schedule" title={<>Manage<br /><i>appointments.</i></>}><div className="worker-list">{appointments.map((appointment) => {
+          const status = String(appointment.status || 'Requested');
+          const isAwaitingConfirmation = ['requested', 'rescheduled'].includes(status.toLowerCase());
+          const isConfirmed = status.toLowerCase() === 'confirmed';
+          const isClosed = ['completed', 'cancelled'].includes(status.toLowerCase());
+          return <article key={appointment.id}><div><strong>{appointment.patient}</strong><span>{appointment.date} · {formatAppointmentTime(appointment.time)} · {appointment.type} ({appointment.facilityName})</span>{appointment.notes && <small className="appointment-worker-note">Patient note: {appointment.notes}</small>}</div><StatusBadge status={status} /><div className="worker-actions">{isAwaitingConfirmation && <button className="card-link" onClick={() => updateAppointment(appointment.id, 'Confirmed')}>Confirm request</button>}{isConfirmed && <button className="card-link" onClick={() => updateAppointment(appointment.id, 'Completed')}>Mark completed</button>}{!isClosed && <button className="card-link" onClick={() => updateAppointment(appointment.id, 'Cancelled')}>Cancel</button>}</div></article>;
+        })}</div>{!appointments.length && <p className="empty-records">No appointment requests are waiting for your review.</p>}</PagePanel>,
     groups: <PagePanel eyebrow="Supervised community care" title={<>One support<br /><i>group.</i></>}><SupervisorSupportGroupPanel group={supportGroup} messages={supportGroupMessages} localMode={!db.useApi} onSend={(messageText) => db.sendSupportGroupMessage({ patientId: workerUser.user_id, messageText, isSupervisor: true })} onRedact={(messageId) => db.redactSupportGroupMessage(messageId)} onRefresh={() => db.refreshSupportGroupState().catch(() => false)} /></PagePanel>,
   };
 

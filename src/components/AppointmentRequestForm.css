@@ -1,0 +1,140 @@
+.appointment-request-form {
+  max-height: min(90vh, 860px);
+  overflow-y: auto;
+}
+
+.appointment-request-intro,
+.appointment-request-success > p:not(.eyebrow) {
+  color: var(--muted);
+  font-size: 13px;
+  line-height: 1.55;
+  margin: -10px 0 22px;
+}
+
+.appointment-request-form form {
+  gap: 10px;
+}
+
+.appointment-request-form form > label {
+  margin-top: 8px;
+}
+
+.appointment-request-form .appointment-time-fields {
+  display: grid;
+  gap: 16px;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  margin-top: 8px;
+}
+
+.appointment-time-fields label {
+  min-width: 0;
+}
+
+.appointment-field-help {
+  color: var(--muted);
+  font-size: 10px;
+  line-height: 1.45;
+  margin: -4px 0 4px;
+}
+
+.appointment-optional {
+  color: var(--muted);
+  font-size: 9px;
+  letter-spacing: .04em;
+  margin-left: 5px;
+}
+
+.appointment-request-notice {
+  background: rgba(226,29,43,.055);
+  border-left: 2px solid var(--coral);
+  color: var(--muted);
+  font-size: 11px;
+  line-height: 1.55;
+  margin: 5px 0;
+  padding: 12px 14px;
+}
+
+.appointment-request-notice strong {
+  color: var(--ink);
+  font-weight: 400;
+}
+
+.appointment-request-error {
+  margin: 4px 0;
+}
+
+.appointment-request-actions {
+  align-items: center;
+  display: flex;
+  gap: 18px;
+  justify-content: flex-end;
+  margin-top: 8px;
+}
+
+.appointment-request-actions .primary-button {
+  margin: 0;
+}
+
+.appointment-request-actions button:disabled,
+.appointment-request-form .close-button:disabled {
+  cursor: not-allowed;
+  opacity: .6;
+}
+
+.appointment-request-success {
+  padding: 12px 0 4px;
+}
+
+.appointment-request-success > p[role='status'] {
+  background: rgba(226,29,43,.055);
+  border-left: 2px solid var(--coral);
+  margin: 20px 0 24px;
+  padding: 14px 16px;
+}
+
+.appointment-page-intro {
+  color: var(--muted);
+  font-size: 14px;
+  line-height: 1.55;
+  margin: -5px 0 24px;
+  max-width: 560px;
+}
+
+.appointment-record-details {
+  display: grid;
+  gap: 6px;
+  min-width: 0;
+}
+
+.appointment-record-details > span,
+.appointment-record-details > small,
+.appointment-locked-note {
+  color: var(--muted);
+  font-size: 11px;
+  line-height: 1.45;
+}
+
+.appointment-record-details > small {
+  border-left: 1px solid var(--line);
+  margin-top: 4px;
+  padding-left: 9px;
+}
+
+.appointment-locked-note {
+  max-width: 190px;
+}
+
+@media (max-width: 560px) {
+  .appointment-request-form .appointment-time-fields {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .appointment-request-actions {
+    align-items: stretch;
+    flex-direction: column-reverse;
+  }
+
+  .appointment-request-actions .text-button {
+    align-self: flex-start;
+  }
+}

@@ -629,12 +629,12 @@ class DatabaseService {
   /**
    * Appointments Database Operations
    */
-  bookAppointment({ patient_id, worker_id = 1, facility_id = 1, appointment_date, appointment_time, appointment_type = 'HIV care consultation', status = 'Requested', notes = '' }) {
+  bookAppointment({ patient_id, worker_id = null, facility_id = null, appointment_date, appointment_time, appointment_type = 'HIV care consultation', status = 'Requested', notes = '' }) {
     if (this.useApi) return this.insert('Appointments', { patient_id, worker_id, facility_id, appointment_date, appointment_time, appointment_type, status, notes });
     return this.insert('Appointments', {
       patient_id: parseInt(patient_id, 10),
       worker_id: worker_id ? parseInt(worker_id, 10) : null,
-      facility_id: facility_id ? parseInt(facility_id, 10) : 1,
+      facility_id: facility_id ? parseInt(facility_id, 10) : null,
       appointment_date: String(appointment_date),
       appointment_time: String(appointment_time),
       appointment_type: String(appointment_type),

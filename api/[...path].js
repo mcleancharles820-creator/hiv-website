@@ -440,8 +440,8 @@ async function mutate(req, user, table, id) {
     if (table === 'Users') {
       for (const key of Object.keys(values)) if (!['full_name', 'email', 'contact_number'].includes(key)) delete values[key];
     } else if (table === 'Appointments') {
-      for (const key of Object.keys(values)) if (!['appointment_date', 'appointment_time', 'appointment_type', 'status'].includes(key)) delete values[key];
-      if (values.status && !['Requested', 'Cancelled'].includes(values.status)) return { status: 403, body: { error: 'Patients may only cancel or request appointments.' } };
+       for (const key of Object.keys(values)) if (!['appointment_date', 'appointment_time', 'appointment_type', 'facility_id', 'notes', 'status'].includes(key)) delete values[key];
+       if (values.status && !['Requested', 'Cancelled'].includes(values.status)) return { status: 403, body: { error: 'Patients may only cancel or request appointments.' } };
     } else if (table === 'MedicationRequests') {
       for (const key of Object.keys(values)) if (!['medication_name', 'dosage', 'schedule', 'availability', 'status'].includes(key)) delete values[key];
       if (values.status && values.status !== 'Cancelled') return { status: 403, body: { error: 'Patients may only cancel medication requests.' } };
@@ -453,13 +453,64 @@ async function mutate(req, user, table, id) {
     for (const key of Object.keys(values)) if (key !== 'is_read') delete values[key];
     if (values.is_read !== true) return { status: 403, body: { error: 'Messages may only be marked as read.' } };
   }
+  if (table === 'Appointments' && operation === 'update' && user.role === 'patient') {
+    if (Object.prototype.hasOwnProperty.call(values, 'facility_id')) {
+      const facilityId = Number(values.facility_id);
+      if (!Number.isSafeInteger(facilityId) || facilityId < 1) return { status: 400, body: { error: 'Choose an active clinic for your appointment request.' } };
+      const facility = await pool.query('SELECT facility_id FROM testing_facilities WHERE facility_id = $1 AND is_active = TRUE', [facilityId]);
+      if (!facility.rowCount) return { status: 400, body: { error: 'That clinic is unavailable. Choose another active clinic.' } };
+      values.facility_id = facilityId;
+    }
+    if (Object.prototype.hasOwnProperty.call(values, 'appointment_date')) {
+      const requestedDate = String(values.appointment_date || '').trim();
+      const dateParts = requestedDate.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+      const validDate = dateParts && new Date(Date.UTC(Number(dateParts[1]), Number(dateParts[2]) - 1, Number(dateParts[3]))).toISOString().slice(0, 10) === requestedDate;
+      const todayParts = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Manila', year: 'numeric', month: '2-digit', day: '2-digit' }).formatToParts(new Date());
+      const today = `${todayParts.find((part) => part.type === 'year')?.value}-${todayParts.find((part) => part.type === 'month')?.value}-${todayParts.find((part) => part.type === 'day')?.value}`;
+      if (!validDate || requestedDate < today) return { status: 400, body: { error: 'Choose today or a future date for your appointment request.' } };
+    }
+    if (Object.prototype.hasOwnProperty.call(values, 'appointment_time') && !/^(?:[01]\d|2[0-3]):[0-5]\d$/.test(String(values.appointment_time || '').trim())) return { status: 400, body: { error: 'Choose a valid preferred appointment time.' } };
+    if (Object.prototype.hasOwnProperty.call(values, 'appointment_type')) {
+      values.appointment_type = String(values.appointment_type || '').trim();
+      if (!values.appointment_type || values.appointment_type.length > 100) return { status: 400, body: { error: 'Choose a visit reason of 1–100 characters.' } };
+    }
+    if (Object.prototype.hasOwnProperty.call(values, 'notes')) {
+      values.notes = String(values.notes || '').trim();
+      if (values.notes.length > 500) return { status: 400, body: { error: 'Appointment notes must be 500 characters or fewer.' } };
+    }
+  }
+  if (user.role === 'health-worker' && table === 'Appointments' && operation === 'update'
+      && values.status && !['Requested', 'Confirmed', 'Completed', 'Cancelled', 'Rescheduled'].includes(values.status)) {
+    return { status: 400, body: { error: 'Choose a valid appointment status.' } };
+  }
   if (table === 'Appointments' && operation === 'insert') {
     if (user.role === 'patient') {
+      const testingService = await pool.query("SELECT is_enabled FROM platform_services WHERE service_key = 'testing_referrals'");
+      if (testingService.rows[0]?.is_enabled !== true) return { status: 403, body: { error: 'Appointment requests are currently unavailable.' } };
       values.patient_id = await patientIdForUser(user.user_id);
+      if (!values.patient_id) return { status: 403, body: { error: 'Your patient record is unavailable. Please sign in again.' } };
       values.worker_id = null;
       values.status = 'Requested';
+      values.appointment_type = String(values.appointment_type || '').trim();
+      values.appointment_time = String(values.appointment_time || '').trim();
+      values.notes = String(values.notes || '').trim();
+      const facilityId = Number(values.facility_id);
+      if (!Number.isSafeInteger(facilityId) || facilityId < 1) return { status: 400, body: { error: 'Choose an active clinic for your appointment request.' } };
+      const facility = await pool.query('SELECT facility_id FROM testing_facilities WHERE facility_id = $1 AND is_active = TRUE', [facilityId]);
+      if (!facility.rowCount) return { status: 400, body: { error: 'That clinic is unavailable. Choose another active clinic.' } };
+      values.facility_id = facilityId;
+      const requestedDate = String(values.appointment_date || '').trim();
+      const dateParts = requestedDate.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+      const validDate = dateParts && new Date(Date.UTC(Number(dateParts[1]), Number(dateParts[2]) - 1, Number(dateParts[3]))).toISOString().slice(0, 10) === requestedDate;
+      const todayParts = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Manila', year: 'numeric', month: '2-digit', day: '2-digit' }).formatToParts(new Date());
+      const today = `${todayParts.find((part) => part.type === 'year')?.value}-${todayParts.find((part) => part.type === 'month')?.value}-${todayParts.find((part) => part.type === 'day')?.value}`;
+      if (!validDate || requestedDate < today) return { status: 400, body: { error: 'Choose today or a future date for your appointment request.' } };
+      if (!/^(?:[01]\d|2[0-3]):[0-5]\d$/.test(values.appointment_time)) return { status: 400, body: { error: 'Choose a valid preferred appointment time.' } };
+      if (!values.appointment_type || values.appointment_type.length > 100) return { status: 400, body: { error: 'Choose a visit reason of 1–100 characters.' } };
+      if (values.notes.length > 500) return { status: 400, body: { error: 'Appointment notes must be 500 characters or fewer.' } };
+    } else if (!values.appointment_date || !values.appointment_time || !values.appointment_type) {
+      return { status: 400, body: { error: 'Appointment date, time, and type are required.' } };
     }
-    if (!values.appointment_date || !values.appointment_time || !values.appointment_type) return { status: 400, body: { error: 'Appointment date, time, and type are required.' } };
   }
   if (table === 'MedicationRequests' && operation === 'insert' && user.role === 'patient') {
     values.patient_id = await patientIdForUser(user.user_id);
