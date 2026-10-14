@@ -5,6 +5,7 @@ const { createClient } = require('@supabase/supabase-js');
 const { isAllowedGender } = require('./genderOptions');
 const getFullNameFromParts = require('./accountName');
 const isPasswordRecoveryToken = require('./passwordRecoveryToken');
+const { isEligibleSupervisor, validateDisplayAlias, validateGroupMessage } = require('./supportGroupPolicy');
 
 const pool = globalThis.hivelinkPool || new Pool({
   connectionString: process.env.DATABASE_URL,
@@ -52,6 +53,7 @@ const catalogTables = {
 function send(res, status, body) {
   res.statusCode = status;
   res.setHeader('Content-Type', 'application/json; charset=utf-8');
+  res.setHeader('Cache-Control', 'no-store, private');
   res.end(JSON.stringify(body));
 }
 
@@ -200,7 +202,7 @@ async function bestEffort(task) {
 }
 
 async function loadSnapshot(user) {
-  const snapshot = {};
+  const snapshot = { SupportGroupMembers: [], SupportGroupMessages: [] };
   const queries = Object.entries(catalogTables).map(async ([key, table]) => {
     const result = await pool.query(`SELECT * FROM ${table}`);
     snapshot[key] = result.rows;
@@ -214,15 +216,40 @@ async function loadSnapshot(user) {
     snapshot.SystemSettings = rows.rows;
   })());
   queries.push((async () => {
-    const rows = await pool.query('SELECT * FROM support_groups WHERE is_active = TRUE ORDER BY group_id');
-    snapshot.SupportGroups = rows.rows;
+    const rows = await pool.query(
+      `SELECT g.group_id, g.name, g.detail, g.schedule, g.is_active,
+              g.facilitator_worker_id, w.is_verified AS supervisor_verified,
+              w.is_available AS supervisor_available, su.full_name AS supervisor_name,
+              su.role AS supervisor_role, su.is_active AS supervisor_active,
+              su.email_verified AS supervisor_email_verified
+       FROM support_groups g
+       LEFT JOIN health_workers w ON w.worker_id = g.facilitator_worker_id
+       LEFT JOIN users su ON su.user_id = w.user_id
+       WHERE g.is_active = TRUE ORDER BY g.group_id LIMIT 1`,
+    );
+    const group = rows.rows[0];
+    snapshot.SupportGroups = group ? [{
+      group_id: group.group_id,
+      name: group.name,
+      detail: group.detail,
+      schedule: group.schedule,
+      is_active: group.is_active,
+      has_supervisor: isEligibleSupervisor(
+        { is_verified: group.supervisor_verified, is_available: group.supervisor_available },
+        { role: group.supervisor_role, is_active: group.supervisor_active, email_verified: group.supervisor_email_verified },
+      ),
+      ...(user.role === 'admin' ? {
+        facilitator_worker_id: group.facilitator_worker_id,
+        supervisor_name: group.supervisor_name || null,
+      } : {}),
+    }] : [];
   })());
 
   if (user.role === 'admin') {
-    for (const [key, config] of Object.entries(tableConfig)) {
-      if (key === 'PublicInquiries') continue;
-      queries.push((async () => {
-        const selection = key === 'Users' ? 'user_id, email, full_name, role, contact_number, date_of_birth, age, gender, terms_accepted, is_active, email_verified, created_at, updated_at' : '*';
+      for (const [key, config] of Object.entries(tableConfig)) {
+        if (['PublicInquiries', 'SupportGroupMembers', 'SupportGroups'].includes(key)) continue;
+        queries.push((async () => {
+          const selection = key === 'Users' ? 'user_id, email, full_name, role, contact_number, date_of_birth, age, gender, terms_accepted, is_active, email_verified, created_at, updated_at' : '*';
         const rows = await pool.query(`SELECT ${selection} FROM ${config.sql}`);
         snapshot[key] = rows.rows;
       })());
@@ -230,14 +257,62 @@ async function loadSnapshot(user) {
     queries.push((async () => { snapshot.ActivityLogs = (await pool.query('SELECT * FROM activity_logs ORDER BY created_at DESC LIMIT 500')).rows; })());
     queries.push((async () => { snapshot.PublicInquiries = (await pool.query('SELECT * FROM public_inquiries ORDER BY created_at DESC')).rows; })());
   } else if (user.role === 'patient') {
+    const patientGroupMembershipQuery = (async () => {
+      const activeGroup = await pool.query(
+        `SELECT g.group_id,
+                EXISTS (
+                  SELECT 1 FROM health_workers w JOIN users su ON su.user_id = w.user_id
+                  WHERE w.worker_id = g.facilitator_worker_id AND w.is_verified = TRUE
+                    AND w.is_available = TRUE AND su.role = 'health-worker'
+                    AND su.is_active = TRUE AND su.email_verified = TRUE
+                ) AS has_supervisor
+         FROM support_groups g WHERE g.is_active = TRUE ORDER BY g.group_id LIMIT 1`,
+      );
+      const group = activeGroup.rows[0];
+      if (!group) return;
+      const membership = await pool.query(
+        `SELECT sgm.group_id, sgm.display_alias, sgm.joined_at
+         FROM support_group_members sgm
+         JOIN patients p USING (patient_id)
+         WHERE p.user_id = $1 AND sgm.group_id = $2 AND sgm.display_alias IS NOT NULL`,
+        [user.user_id, group.group_id],
+      );
+      snapshot.SupportGroupMembers = membership.rows;
+      if (!membership.rowCount || !group.has_supervisor) return;
+      snapshot.SupportGroupMessages = (await pool.query(
+        `SELECT message_id, group_id, sender_alias, sender_role,
+                CASE WHEN is_redacted THEN '[Message removed by the health worker]' ELSE message_text END AS message_text,
+                is_redacted, sent_at
+         FROM support_group_messages WHERE group_id = $1 AND sent_at > $2
+         ORDER BY sent_at, message_id LIMIT 300`,
+        [group.group_id, membership.rows[0].joined_at],
+      )).rows;
+    })();
+    queries.push(patientGroupMembershipQuery);
     queries.push((async () => { snapshot.Users = [user]; })());
     queries.push((async () => { snapshot.Patients = (await pool.query('SELECT * FROM patients WHERE user_id = $1', [user.user_id])).rows; })());
     queries.push((async () => { snapshot.Appointments = (await pool.query('SELECT a.* FROM appointments a JOIN patients p USING (patient_id) WHERE p.user_id = $1', [user.user_id])).rows; })());
     queries.push((async () => { snapshot.MedicationRequests = (await pool.query('SELECT m.* FROM medication_requests m JOIN patients p USING (patient_id) WHERE p.user_id = $1', [user.user_id])).rows; })());
     queries.push((async () => { snapshot.ChatSessions = (await pool.query('SELECT c.* FROM chat_sessions c JOIN patients p USING (patient_id) WHERE p.user_id = $1', [user.user_id])).rows; })());
     queries.push((async () => { snapshot.ChatMessages = (await pool.query('SELECT m.* FROM chat_messages m JOIN chat_sessions c USING (chat_session_id) JOIN patients p USING (patient_id) WHERE p.user_id = $1 ORDER BY sent_at', [user.user_id])).rows; })());
-    queries.push((async () => { snapshot.SupportGroupMembers = (await pool.query('SELECT sgm.* FROM support_group_members sgm JOIN patients p USING (patient_id) WHERE p.user_id = $1', [user.user_id])).rows; })());
   } else if (user.role === 'health-worker') {
+    const supervisorMessagesQuery = (async () => {
+      const messages = await pool.query(
+        `SELECT m.message_id, m.group_id, m.sender_alias, m.sender_role,
+                CASE WHEN m.is_redacted THEN '[Message removed by the health worker]' ELSE m.message_text END AS message_text,
+                m.is_redacted, m.sent_at
+         FROM support_group_messages m
+         JOIN support_groups g ON g.group_id = m.group_id AND g.is_active = TRUE
+         JOIN health_workers w ON w.worker_id = g.facilitator_worker_id
+         JOIN users supervisor ON supervisor.user_id = w.user_id
+         WHERE supervisor.user_id = $1 AND w.is_verified = TRUE AND w.is_available = TRUE
+           AND supervisor.is_active = TRUE AND supervisor.email_verified = TRUE
+         ORDER BY m.sent_at, m.message_id LIMIT 300`,
+        [user.user_id],
+      );
+      snapshot.SupportGroupMessages = messages.rows;
+    })();
+    queries.push(supervisorMessagesQuery);
     queries.push((async () => { snapshot.Users = [user, ...(await pool.query("SELECT u.user_id, u.email, u.full_name, u.role, u.contact_number, u.date_of_birth, u.age, u.gender, u.is_active, u.email_verified FROM users u JOIN patients p USING (user_id) JOIN health_workers h ON h.worker_id = p.assigned_worker_id WHERE h.user_id = $1", [user.user_id])).rows]; })());
     queries.push((async () => { snapshot.HealthWorkers = (await pool.query('SELECT * FROM health_workers WHERE user_id = $1', [user.user_id])).rows; })());
     queries.push((async () => { snapshot.Patients = (await pool.query('SELECT p.* FROM patients p JOIN health_workers h ON h.worker_id = p.assigned_worker_id WHERE h.user_id = $1', [user.user_id])).rows; })());
@@ -245,7 +320,22 @@ async function loadSnapshot(user) {
     queries.push((async () => { snapshot.MedicationRequests = (await pool.query('SELECT m.* FROM medication_requests m JOIN patients p USING (patient_id) JOIN health_workers h ON h.worker_id = p.assigned_worker_id WHERE h.user_id = $1', [user.user_id])).rows; })());
     queries.push((async () => { snapshot.ChatSessions = (await pool.query('SELECT c.* FROM chat_sessions c JOIN patients p USING (patient_id) JOIN health_workers h ON h.worker_id = p.assigned_worker_id WHERE h.user_id = $1', [user.user_id])).rows; })());
     queries.push((async () => { snapshot.ChatMessages = (await pool.query('SELECT m.* FROM chat_messages m JOIN chat_sessions c USING (chat_session_id) JOIN patients p USING (patient_id) JOIN health_workers h ON h.worker_id = p.assigned_worker_id WHERE h.user_id = $1 ORDER BY sent_at', [user.user_id])).rows; })());
-    queries.push((async () => { snapshot.SupportGroups = (await pool.query('SELECT * FROM support_groups')).rows; })());
+    queries.push((async () => {
+      const groups = await pool.query(
+        `SELECT g.group_id, g.name, g.detail, g.schedule, g.is_active,
+                (g.facilitator_worker_id = h.worker_id AND h.is_verified AND h.is_available
+                  AND wu.is_active AND wu.email_verified) AS is_current_user_supervisor,
+                EXISTS (SELECT 1 FROM health_workers sw JOIN users su ON su.user_id = sw.user_id
+                        WHERE sw.worker_id = g.facilitator_worker_id AND sw.is_verified = TRUE
+                          AND sw.is_available = TRUE AND su.is_active = TRUE AND su.email_verified = TRUE) AS has_supervisor
+         FROM support_groups g
+         JOIN health_workers h ON h.user_id = $1
+         JOIN users wu ON wu.user_id = h.user_id
+         WHERE g.is_active = TRUE ORDER BY g.group_id LIMIT 1`,
+        [user.user_id],
+      );
+      snapshot.SupportGroups = groups.rows;
+    })());
   }
   await Promise.all(queries);
   return snapshot;
@@ -253,6 +343,7 @@ async function loadSnapshot(user) {
 
 function allowed(role, table, operation) {
   if (table === 'PublicInquiries' && operation === 'insert') return true;
+  if (table === 'SupportGroups' || table === 'SupportGroupMembers') return false;
   if (role === 'admin') return true;
   if (role === 'health-worker') {
     if (table === 'HealthWorkers') return operation === 'update';
@@ -702,6 +793,258 @@ module.exports = async function handler(req, res) {
       }
     }
 
+    if (pathname === '/api/support-group/state' && req.method === 'GET') {
+      if (!user || !['patient', 'health-worker'].includes(user.role)) return send(res, user ? 403 : 401, { error: 'Group access required.' });
+      const activeResult = await pool.query(
+        `SELECT g.group_id, g.name, g.detail, g.schedule, g.is_active,
+                g.facilitator_worker_id, w.is_verified AS supervisor_verified,
+                w.is_available AS supervisor_available, su.user_id AS supervisor_user_id,
+                su.role AS supervisor_role, su.is_active AS supervisor_active,
+                su.email_verified AS supervisor_email_verified
+         FROM support_groups g
+         LEFT JOIN health_workers w ON w.worker_id = g.facilitator_worker_id
+         LEFT JOIN users su ON su.user_id = w.user_id
+         WHERE g.is_active = TRUE ORDER BY g.group_id LIMIT 1`,
+      );
+      const row = activeResult.rows[0];
+      if (!row) return send(res, 200, { group: null, membership: null, messages: [] });
+      const hasSupervisor = isEligibleSupervisor(
+        { is_verified: row.supervisor_verified, is_available: row.supervisor_available },
+        { role: row.supervisor_role, is_active: row.supervisor_active, email_verified: row.supervisor_email_verified },
+      );
+      const group = {
+        group_id: row.group_id,
+        name: row.name,
+        detail: row.detail,
+        schedule: row.schedule,
+        is_active: row.is_active,
+        has_supervisor: hasSupervisor,
+      };
+      let membership = null;
+      let canRead = false;
+      if (user.role === 'patient') {
+        const membershipResult = await pool.query(
+          `SELECT sgm.group_id, sgm.display_alias, sgm.joined_at
+           FROM support_group_members sgm JOIN patients p USING (patient_id)
+           WHERE sgm.group_id = $1 AND p.user_id = $2 AND sgm.display_alias IS NOT NULL`,
+          [row.group_id, user.user_id],
+        );
+        membership = membershipResult.rows[0] || null;
+        canRead = Boolean(membership && hasSupervisor);
+      } else {
+        const currentSupervisor = hasSupervisor && Number(row.supervisor_user_id) === Number(user.user_id);
+        group.is_current_user_supervisor = currentSupervisor;
+        canRead = currentSupervisor;
+      }
+      let messages = [];
+      if (canRead) {
+        const params = [row.group_id];
+        let joinedAtFilter = '';
+        if (membership) {
+          params.push(membership.joined_at);
+          joinedAtFilter = 'AND sent_at > $2';
+        }
+        messages = (await pool.query(
+          `SELECT message_id, group_id, sender_alias, sender_role,
+                  CASE WHEN is_redacted THEN '[Message removed by the health worker]' ELSE message_text END AS message_text,
+                  is_redacted, sent_at
+           FROM support_group_messages
+           WHERE group_id = $1 ${joinedAtFilter}
+           ORDER BY sent_at, message_id LIMIT 300`,
+          params,
+        )).rows;
+      }
+      return send(res, 200, { group, membership, messages });
+    }
+    if (pathname === '/api/support-group/join' && req.method === 'POST') {
+      if (user?.role !== 'patient') return send(res, user ? 403 : 401, { error: 'Patient access required.' });
+      const { alias, error: aliasError } = validateDisplayAlias(getBody(req).alias, { fullName: user.full_name, email: user.email });
+      if (aliasError) return send(res, 400, { error: aliasError });
+      const client = await pool.connect();
+      try {
+        await client.query('BEGIN');
+        const activeGroup = await client.query(
+          `SELECT g.group_id FROM support_groups g
+           JOIN health_workers w ON w.worker_id = g.facilitator_worker_id
+           JOIN users supervisor ON supervisor.user_id = w.user_id
+           WHERE g.is_active = TRUE AND w.is_verified = TRUE AND w.is_available = TRUE
+             AND supervisor.role = 'health-worker' AND supervisor.is_active = TRUE AND supervisor.email_verified = TRUE
+           ORDER BY g.group_id LIMIT 1 FOR UPDATE OF g`,
+        );
+        if (!activeGroup.rowCount) {
+          await client.query('ROLLBACK');
+          return send(res, 409, { error: 'The private group is unavailable until its verified health-worker supervisor is assigned.' });
+        }
+        const patient = await client.query('SELECT patient_id FROM patients WHERE user_id = $1', [user.user_id]);
+        if (!patient.rowCount) {
+          await client.query('ROLLBACK');
+          return send(res, 404, { error: 'Patient profile not found.' });
+        }
+        const existing = await client.query(
+          'SELECT display_alias FROM support_group_members WHERE group_id = $1 AND patient_id = $2',
+          [activeGroup.rows[0].group_id, patient.rows[0].patient_id],
+        );
+        if (existing.rows[0]?.display_alias) {
+          await client.query('ROLLBACK');
+          return send(res, 409, { error: 'You have already joined this group.' });
+        }
+        const aliasUsed = await client.query(
+          `SELECT 1 FROM support_group_members
+             WHERE group_id = $1 AND LOWER(display_alias) = LOWER($2)
+           UNION ALL
+           SELECT 1 FROM support_group_messages
+             WHERE group_id = $1 AND sender_role = 'member' AND LOWER(sender_alias) = LOWER($2)
+           LIMIT 1`,
+          [activeGroup.rows[0].group_id, alias],
+        );
+        if (aliasUsed.rowCount) {
+          await client.query('ROLLBACK');
+          return send(res, 409, { error: 'That alias is already in use. Choose another display alias.' });
+        }
+        const joined = await client.query(
+          `INSERT INTO support_group_members (group_id, patient_id, role_in_group, display_alias)
+           VALUES ($1, $2, 'Member', $3)
+           ON CONFLICT (group_id, patient_id) DO UPDATE
+             SET display_alias = EXCLUDED.display_alias, joined_at = NOW()
+           RETURNING group_id, display_alias, joined_at`,
+          [activeGroup.rows[0].group_id, patient.rows[0].patient_id, alias],
+        );
+        await client.query('COMMIT');
+        return send(res, 201, { membership: joined.rows[0] });
+      } catch (error) {
+        await client.query('ROLLBACK');
+        if (error.code === '23505') return send(res, 409, { error: 'That alias is already in use. Choose another display alias.' });
+        throw error;
+      } finally { client.release(); }
+    }
+    if (pathname === '/api/support-group/leave' && req.method === 'POST') {
+      if (user?.role !== 'patient') return send(res, user ? 403 : 401, { error: 'Patient access required.' });
+      const client = await pool.connect();
+      try {
+        await client.query('BEGIN');
+        await client.query('SELECT group_id FROM support_groups WHERE is_active = TRUE ORDER BY group_id LIMIT 1 FOR UPDATE');
+        const result = await client.query(
+          `DELETE FROM support_group_members sgm USING patients p, support_groups g
+           WHERE sgm.patient_id = p.patient_id AND p.user_id = $1
+             AND g.group_id = sgm.group_id AND g.is_active = TRUE`,
+          [user.user_id],
+        );
+        await client.query('COMMIT');
+        return send(res, 200, { ok: true, left: result.rowCount > 0 });
+      } catch (error) {
+        await client.query('ROLLBACK');
+        throw error;
+      } finally { client.release(); }
+    }
+    if (pathname === '/api/support-group/messages' && req.method === 'POST') {
+      if (!user || !['patient', 'health-worker'].includes(user.role)) return send(res, user ? 403 : 401, { error: 'Group access required.' });
+      const { messageText, error: messageError } = validateGroupMessage(getBody(req).messageText);
+      if (messageError) return send(res, 400, { error: messageError });
+      const client = await pool.connect();
+      try {
+        await client.query('BEGIN');
+        const activeGroup = await client.query(
+          `SELECT g.group_id, g.facilitator_worker_id FROM support_groups g
+           JOIN health_workers w ON w.worker_id = g.facilitator_worker_id
+           JOIN users supervisor ON supervisor.user_id = w.user_id
+           WHERE g.is_active = TRUE AND w.is_verified = TRUE AND w.is_available = TRUE
+             AND supervisor.role = 'health-worker' AND supervisor.is_active = TRUE AND supervisor.email_verified = TRUE
+           ORDER BY g.group_id LIMIT 1 FOR UPDATE OF g`,
+        );
+        const group = activeGroup.rows[0];
+        if (!group) {
+          await client.query('ROLLBACK');
+          return send(res, 409, { error: 'The private group is currently unavailable.' });
+        }
+        let senderAlias;
+        let senderRole;
+        if (user.role === 'patient') {
+          const membership = await client.query(
+            `SELECT sgm.display_alias FROM support_group_members sgm
+             JOIN patients p USING (patient_id)
+             WHERE sgm.group_id = $1 AND p.user_id = $2
+             FOR UPDATE OF sgm`,
+            [group.group_id, user.user_id],
+          );
+          if (!membership.rowCount || !membership.rows[0].display_alias) {
+            await client.query('ROLLBACK');
+            return send(res, 403, { error: 'Join the group before sending a message.' });
+          }
+          senderAlias = membership.rows[0].display_alias;
+          senderRole = 'member';
+        } else {
+          const supervisor = await client.query(
+            `SELECT w.worker_id FROM health_workers w JOIN users u ON u.user_id = w.user_id
+             WHERE w.worker_id = $1 AND w.user_id = $2 AND w.is_verified = TRUE AND w.is_available = TRUE
+               AND u.is_active = TRUE AND u.email_verified = TRUE`,
+            [group.facilitator_worker_id, user.user_id],
+          );
+          if (!supervisor.rowCount) {
+            await client.query('ROLLBACK');
+            return send(res, 403, { error: 'Only the designated group supervisor can post as a health worker.' });
+          }
+          senderAlias = 'Health worker';
+          senderRole = 'supervisor';
+        }
+        await client.query('SELECT pg_advisory_xact_lock($1::bigint)', [user.user_id]);
+        await client.query("DELETE FROM support_group_message_rate_limit_events WHERE sent_at < NOW() - INTERVAL '10 minutes'");
+        const recent = await client.query(
+          `SELECT COUNT(*)::int AS count FROM support_group_message_rate_limit_events
+           WHERE user_id = $1 AND sent_at > NOW() - INTERVAL '1 minute'`,
+          [user.user_id],
+        );
+        if (recent.rows[0].count >= 12) {
+          await client.query('ROLLBACK');
+          return send(res, 429, { error: 'Please wait a moment before sending another message.' });
+        }
+        await client.query('INSERT INTO support_group_message_rate_limit_events (user_id) VALUES ($1)', [user.user_id]);
+        const inserted = await client.query(
+          `INSERT INTO support_group_messages (group_id, sender_alias, sender_role, message_text)
+           VALUES ($1, $2, $3, $4)
+           RETURNING message_id, group_id, sender_alias, sender_role, message_text, is_redacted, sent_at`,
+          [group.group_id, senderAlias, senderRole, messageText],
+        );
+        await client.query('COMMIT');
+        return send(res, 201, { message: inserted.rows[0] });
+      } catch (error) {
+        await client.query('ROLLBACK');
+        throw error;
+      } finally { client.release(); }
+    }
+    const redactSupportGroupMessage = pathname.match(/^\/api\/support-group\/messages\/(\d+)\/redact$/);
+    if (redactSupportGroupMessage && req.method === 'POST') {
+      if (user?.role !== 'health-worker') return send(res, user ? 403 : 401, { error: 'Health-worker access required.' });
+      const messageId = Number(redactSupportGroupMessage[1]);
+      const client = await pool.connect();
+      try {
+        await client.query('BEGIN');
+        const redacted = await client.query(
+          `UPDATE support_group_messages m SET is_redacted = TRUE,
+             message_text = '[Message removed by the health worker]'
+           FROM support_groups g, health_workers w, users supervisor
+           WHERE m.message_id = $1 AND g.group_id = m.group_id AND g.is_active = TRUE
+             AND w.worker_id = g.facilitator_worker_id AND w.user_id = supervisor.user_id
+             AND supervisor.user_id = $2 AND supervisor.role = 'health-worker'
+             AND supervisor.is_active = TRUE AND supervisor.email_verified = TRUE
+             AND w.is_verified = TRUE AND w.is_available = TRUE AND m.is_redacted = FALSE
+           RETURNING m.message_id`,
+          [messageId, user.user_id],
+        );
+        if (!redacted.rowCount) {
+          await client.query('ROLLBACK');
+          return send(res, 404, { error: 'Message not found or moderation access is unavailable.' });
+        }
+        await client.query(
+          'INSERT INTO activity_logs (actor_user_id, actor_name, action, category, details) VALUES ($1,$2,$3,$4,$5)',
+          [user.user_id, user.full_name, 'Redacted a support-group message', 'Community Safety', `Removed support-group message #${messageId}`],
+        );
+        await client.query('COMMIT');
+        return send(res, 200, { ok: true });
+      } catch (error) {
+        await client.query('ROLLBACK');
+        throw error;
+      } finally { client.release(); }
+    }
     const markReadMatch = pathname.match(/^\/api\/chat\/sessions\/(\d+)\/read$/);
     if (markReadMatch && req.method === 'POST') {
       if (!user) return send(res, 401, { error: 'Sign in required.' });
@@ -717,6 +1060,47 @@ module.exports = async function handler(req, res) {
       const incomingRole = user.role === 'health-worker' ? 'patient' : 'worker';
       const updated = await pool.query('UPDATE chat_messages SET is_read = TRUE WHERE chat_session_id = $1 AND sender_role = $2 AND is_read = FALSE RETURNING message_id', [sessionId, incomingRole]);
       return send(res, 200, { updatedCount: updated.rowCount });
+    }
+    if (pathname === '/api/admin/support-group/supervisor' && req.method === 'PUT') {
+      if (user?.role !== 'admin') return send(res, user ? 403 : 401, { error: 'Administrator access required.' });
+      const rawWorkerId = getBody(req).workerId;
+      const workerId = rawWorkerId === null || rawWorkerId === '' ? null : Number(rawWorkerId);
+      if (workerId !== null && (!Number.isSafeInteger(workerId) || workerId < 1)) {
+        return send(res, 400, { error: 'Choose a valid health worker or clear the assignment.' });
+      }
+      const client = await pool.connect();
+      try {
+        await client.query('BEGIN');
+        const group = await client.query('SELECT group_id FROM support_groups WHERE is_active = TRUE ORDER BY group_id LIMIT 1 FOR UPDATE');
+        if (!group.rowCount) {
+          await client.query('ROLLBACK');
+          return send(res, 409, { error: 'The single active support group is not configured.' });
+        }
+        let supervisorName = null;
+        if (workerId !== null) {
+          const eligible = await client.query(
+            `SELECT w.worker_id, u.full_name FROM health_workers w JOIN users u ON u.user_id = w.user_id
+             WHERE w.worker_id = $1 AND w.is_verified = TRUE AND w.is_available = TRUE
+               AND u.role = 'health-worker' AND u.is_active = TRUE AND u.email_verified = TRUE`,
+            [workerId],
+          );
+          if (!eligible.rowCount) {
+            await client.query('ROLLBACK');
+            return send(res, 400, { error: 'Only verified, active, available, email-confirmed health workers can supervise the group.' });
+          }
+          supervisorName = eligible.rows[0].full_name;
+        }
+        await client.query('UPDATE support_groups SET facilitator_worker_id = $1 WHERE group_id = $2', [workerId, group.rows[0].group_id]);
+        await client.query(
+          'INSERT INTO activity_logs (actor_user_id, actor_name, action, category, details) VALUES ($1,$2,$3,$4,$5)',
+          [user.user_id, user.full_name, workerId ? 'Assigned support-group supervisor' : 'Removed support-group supervisor', 'Community Safety', workerId ? `Assigned verified worker ${workerId} to the single support group` : 'Paused access to the single support group until a supervisor is assigned'],
+        );
+        await client.query('COMMIT');
+        return send(res, 200, { group: { group_id: group.rows[0].group_id, facilitator_worker_id: workerId, supervisor_name: supervisorName, has_supervisor: Boolean(workerId) } });
+      } catch (error) {
+        await client.query('ROLLBACK');
+        throw error;
+      } finally { client.release(); }
     }
     if (pathname === '/api/admin/email' && req.method === 'POST') {
       if (user?.role !== 'admin') return send(res, user ? 403 : 401, { error: 'Administrator access required.' });

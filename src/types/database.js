@@ -266,6 +266,7 @@ export const SupportGroupModel = {
     facilitator_worker_id: { type: 'number', required: false, references: 'HealthWorkers.worker_id' },
     member_count: { type: 'number', default: 0 },
     is_active: { type: 'boolean', default: true },
+    has_supervisor: { type: 'boolean', default: false },
     created_at: { type: 'datetime', default: () => new Date().toISOString() },
   },
   relationships: {
@@ -285,6 +286,7 @@ export const SupportGroupMemberModel = {
     group_id: { type: 'number', required: true, references: 'SupportGroups.group_id' },
     patient_id: { type: 'number', required: true, references: 'Patients.patient_id' },
     role_in_group: { type: 'enum', options: ['Member', 'Peer Leader', 'Moderator'], default: 'Member' },
+    display_alias: { type: 'string', required: false, maxLength: 24 },
     joined_at: { type: 'datetime', default: () => new Date().toISOString() },
   },
   relationships: {
@@ -405,6 +407,20 @@ export const PartnerOrganizationModel = {
   },
 };
 
+export const SupportGroupMessageModel = {
+  tableName: 'SupportGroupMessages',
+  primaryKey: 'message_id',
+  fields: {
+    message_id: { type: 'number', isPrimary: true, autoIncrement: true },
+    group_id: { type: 'number', required: true, references: 'SupportGroups.group_id' },
+    sender_alias: { type: 'string', required: true, maxLength: 24 },
+    sender_role: { type: 'enum', options: ['member', 'supervisor'], required: true },
+    message_text: { type: 'string', required: true, maxLength: 2000 },
+    is_redacted: { type: 'boolean', default: false },
+    sent_at: { type: 'datetime', default: () => new Date().toISOString() },
+  },
+};
+
 export const DatabaseSchema = {
   Users: UserModel,
   Patients: PatientModel,
@@ -417,6 +433,7 @@ export const DatabaseSchema = {
   ChatMessages: ChatMessageModel,
   SupportGroups: SupportGroupModel,
   SupportGroupMembers: SupportGroupMemberModel,
+  SupportGroupMessages: SupportGroupMessageModel,
   PublicInquiries: PublicInquiryModel,
   PlatformServices: PlatformServiceModel,
   SystemSettings: SystemSettingModel,

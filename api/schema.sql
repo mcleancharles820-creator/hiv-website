@@ -271,9 +271,7 @@ VALUES
 
 INSERT INTO support_groups (group_id, name, detail, schedule, target_audience, facilitator_worker_id, member_count)
 VALUES
-(1, 'Living Positive', 'Peer connection · Weekly online circle', 'Weekly online circle', 'Open to all living with HIV', NULL, 0),
-(2, 'Island Care Circle', 'Local support · Romblon community', 'Every Saturday', 'Romblon community', NULL, 0),
-(3, 'Young Advocates', 'Peer support · Safe digital community', 'Bi-weekly Sundays', 'Ages 18–29', NULL, 0);
+(1, 'Living Positive', 'A private, peer-support space for conversation.', 'Live moderated group chat', 'Patients', NULL, 0);
 
 INSERT INTO platform_services (service_id, service_key, name, detail, is_enabled, display_order)
 VALUES

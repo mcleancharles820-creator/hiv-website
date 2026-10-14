@@ -1144,3 +1144,369 @@ h1 { line-height: 1.02; }
     align-items: center;
   }
 }
+
+.support-group-panel {
+  max-width: 920px;
+}
+
+.support-group-overview {
+  align-items: flex-start;
+  border-bottom: 1px solid var(--line);
+  display: flex;
+  gap: 24px;
+  justify-content: space-between;
+  padding: 4px 0 24px;
+}
+
+.support-group-overview h2 {
+  font-size: 28px;
+  font-weight: 400;
+  margin: 0 0 10px;
+}
+
+.support-group-overview p:not(.eyebrow) {
+  color: var(--muted);
+  font-size: 14px;
+  line-height: 1.55;
+  margin: 0;
+  max-width: 60ch;
+}
+
+.support-group-status,
+.support-group-live {
+  align-items: center;
+  border: 1px solid var(--line);
+  color: var(--muted);
+  display: inline-flex;
+  flex: 0 0 auto;
+  font-size: 10px;
+  gap: 8px;
+  letter-spacing: .04em;
+  padding: 7px 10px;
+  text-transform: uppercase;
+}
+
+.support-group-status i,
+.support-group-live i {
+  background: var(--muted);
+  border-radius: 50%;
+  height: 7px;
+  width: 7px;
+}
+
+.support-group-status.is-live,
+.support-group-live {
+  color: #106b3c;
+}
+
+.support-group-status.is-live i,
+.support-group-live i {
+  background: #16804b;
+}
+
+.support-group-privacy,
+.support-group-local-warning,
+.support-group-unavailable {
+  border-left: 2px solid var(--coral);
+  margin: 22px 0;
+  padding: 14px 17px;
+}
+
+.support-group-privacy {
+  background: #fff5f6;
+}
+
+.support-group-privacy strong {
+  font-size: 14px;
+  font-weight: 400;
+}
+
+.support-group-privacy p,
+.support-group-local-warning,
+.support-group-unavailable {
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.55;
+}
+
+.support-group-privacy p {
+  margin: 6px 0 0;
+  max-width: 76ch;
+}
+
+.support-group-local-warning {
+  background: #fff8e6;
+  border-color: #d97706;
+  color: #754700;
+  margin-top: 0;
+}
+
+.support-group-unavailable {
+  background: #fffafa;
+}
+
+.support-group-member-state {
+  align-items: center;
+  border-bottom: 1px solid var(--line);
+  display: flex;
+  gap: 16px;
+  justify-content: space-between;
+  padding: 16px 0;
+}
+
+.support-group-member-state p {
+  color: var(--muted);
+  font-size: 13px;
+  margin: 0;
+}
+
+.support-group-member-state strong {
+  color: var(--ink);
+  font-weight: 400;
+}
+
+.support-group-join {
+  border-top: 1px solid var(--line);
+  display: grid;
+  gap: 12px;
+  margin-top: 26px;
+  max-width: 560px;
+  padding-top: 24px;
+}
+
+.support-group-join label {
+  font-size: 12px;
+}
+
+.support-group-join input,
+.support-group-join select {
+  background: #fff;
+  border: 1px solid var(--line);
+  color: var(--ink);
+  font: 14px 'Headland One', Georgia, serif;
+  min-height: 46px;
+  padding: 11px 13px;
+  width: 100%;
+}
+
+.support-group-join input:focus-visible,
+.support-group-join select:focus-visible,
+.support-group-composer textarea:focus-visible,
+.support-group-composer button:focus-visible,
+.support-group-redact:focus-visible {
+  outline: 2px solid var(--coral);
+  outline-offset: 3px;
+}
+
+.support-group-join small,
+.support-group-composer small {
+  color: var(--muted);
+  font-size: 10px;
+  line-height: 1.5;
+}
+
+.support-group-join > p {
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.5;
+  margin: 0;
+}
+
+.support-group-join .primary-button {
+  justify-self: start;
+  margin-top: 5px;
+}
+
+.support-group-chat {
+  background: #fff;
+  border: 1px solid var(--line);
+  margin-top: 24px;
+}
+
+.support-group-chat-header {
+  align-items: center;
+  border-bottom: 1px solid var(--line);
+  display: flex;
+  gap: 16px;
+  justify-content: space-between;
+  padding: 17px 20px;
+}
+
+.support-group-chat-header h2 {
+  font-size: 17px;
+  font-weight: 400;
+  margin: 0;
+}
+
+.support-group-chat-header p {
+  color: var(--muted);
+  font-size: 11px;
+  line-height: 1.4;
+  margin: 5px 0 0;
+}
+
+.support-group-message-list {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  max-height: min(58vh, 620px);
+  min-height: 280px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding: 20px;
+  scroll-behavior: smooth;
+}
+
+.support-group-message {
+  align-self: flex-start;
+  background: #fffafa;
+  border-left: 2px solid var(--line);
+  max-width: min(82%, 640px);
+  overflow-wrap: anywhere;
+  padding: 12px 15px;
+}
+
+.support-group-message.from-you {
+  align-self: flex-end;
+  background: #fff0f1;
+  border-left: 0;
+  border-right: 2px solid var(--coral);
+}
+
+.support-group-message.from-supervisor {
+  border-left-color: var(--coral);
+}
+
+.support-group-message-meta {
+  align-items: baseline;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 14px;
+  justify-content: space-between;
+}
+
+.support-group-message-meta strong {
+  font-size: 11px;
+  font-weight: 400;
+}
+
+.support-group-message-meta time {
+  color: var(--muted);
+  font-size: 9px;
+}
+
+.support-group-message > p {
+  font-size: 13px;
+  line-height: 1.55;
+  margin: 8px 0 0;
+  white-space: pre-wrap;
+}
+
+.support-group-redact {
+  background: none;
+  border: 0;
+  color: var(--muted);
+  cursor: pointer;
+  font-size: 10px;
+  margin-top: 8px;
+  padding: 0;
+  text-decoration: underline;
+}
+
+.support-group-empty {
+  color: var(--muted);
+  font-size: 13px;
+  margin: auto;
+  padding: 32px 10px;
+  text-align: center;
+}
+
+.support-group-composer {
+  align-items: end;
+  border-top: 1px solid var(--line);
+  display: grid;
+  gap: 10px 12px;
+  grid-template-columns: minmax(0, 1fr) auto;
+  padding: 14px 18px;
+}
+
+.support-group-composer textarea {
+  background: var(--cream);
+  border: 1px solid var(--line);
+  color: var(--ink);
+  font: 13px/1.5 'Headland One', Georgia, serif;
+  min-height: 54px;
+  min-width: 0;
+  padding: 11px 12px;
+  resize: vertical;
+  width: 100%;
+}
+
+.support-group-composer .primary-button {
+  min-height: 44px;
+}
+
+.support-group-composer small {
+  grid-column: 1 / -1;
+}
+
+.support-group-composer button:disabled,
+.support-group-join button:disabled,
+.support-group-member-state button:disabled {
+  cursor: not-allowed;
+  opacity: .55;
+}
+
+.support-group-error {
+  margin: 12px 18px 0;
+}
+
+.sr-only {
+  clip: rect(0, 0, 0, 0);
+  clip-path: inset(50%);
+  height: 1px;
+  overflow: hidden;
+  position: absolute;
+  white-space: nowrap;
+  width: 1px;
+}
+
+@media (max-width: 700px) {
+  .support-group-overview {
+    flex-direction: column;
+    gap: 14px;
+  }
+
+  .support-group-member-state {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .support-group-chat-header {
+    align-items: flex-start;
+    padding: 15px;
+  }
+
+  .support-group-message-list {
+    max-height: 52vh;
+    min-height: 260px;
+    padding: 14px;
+  }
+
+  .support-group-message {
+    max-width: 92%;
+  }
+
+  .support-group-composer {
+    grid-template-columns: minmax(0, 1fr);
+    padding: 12px;
+  }
+
+  .support-group-composer .primary-button {
+    justify-self: end;
+  }
+
+  .support-group-composer small {
+    grid-column: auto;
+  }
+}

@@ -17,6 +17,7 @@ const initialDatabase = {
   MedicationRequests: [],
   ChatSessions: [],
   ChatMessages: [],
+  SupportGroupMessages: [],
   SupportGroupMembers: [],
   ActivityLogs: [],
   PublicInquiries: [],
@@ -31,9 +32,7 @@ const initialDatabase = {
     { facility_id: 2, name: 'Romblon Provincial Hospital', facility_type: 'Provincial Hospital', address: 'Liwanag, Odiongan', city: 'Odiongan', province: 'Romblon', country: 'Philippines', latitude: 12.405500, longitude: 121.986200, contact_phone: '+63 920 987 6543', services_offered: 'HIV Treatment Hub, ART Dispensing, Confirmatory Testing', operating_hours: '24/7 Care', maps_url: 'https://www.google.com/maps/search/Romblon+Provincial+Hospital+Odiongan', is_active: true, created_at: '2026-01-01T00:00:00Z' }
   ],
   SupportGroups: [
-    { group_id: 1, name: 'Living Positive', detail: 'Peer connection · Weekly online circle', schedule: 'Weekly online circle', target_audience: 'Open to all living with HIV', facilitator_worker_id: null, member_count: 0, is_active: true, created_at: '2026-01-01T00:00:00Z' },
-    { group_id: 2, name: 'Island Care Circle', detail: 'Local support · Romblon community', schedule: 'Every Saturday', target_audience: 'Romblon community', facilitator_worker_id: null, member_count: 0, is_active: true, created_at: '2026-01-01T00:00:00Z' },
-    { group_id: 3, name: 'Young Advocates', detail: 'Peer support · Ages 18–29', schedule: 'Bi-weekly Sundays', target_audience: 'Ages 18–29', facilitator_worker_id: null, member_count: 0, is_active: true, created_at: '2026-01-01T00:00:00Z' }
+    { group_id: 1, name: 'Living Positive', detail: 'A private, peer-support space for conversation.', schedule: 'Live moderated group chat', target_audience: 'Patients', facilitator_worker_id: null, has_supervisor: false, is_active: true, created_at: '2026-01-01T00:00:00Z' }
   ],
   PlatformServices: [
     { service_id: 1, service_key: 'testing_referrals', name: 'HIV testing referrals', detail: 'Local testing and facility guidance', is_enabled: true, display_order: 1, updated_at: '2026-01-01T00:00:00Z' },
@@ -85,6 +84,135 @@ class DatabaseService {
     this.data = { ...initialDatabase, ...snapshot };
     this.notify();
     return this.data;
+  }
+
+  async refreshSupportGroupState() {
+    if (!this.useApi) return this.data;
+    const state = await this.apiRequest('/api/support-group/state');
+    this.data = {
+      ...this.data,
+      SupportGroups: state.group ? [state.group] : [],
+      SupportGroupMembers: state.membership ? [state.membership] : [],
+      SupportGroupMessages: state.messages || [],
+    };
+    this.notify();
+    return state;
+  }
+
+  async joinSupportGroup({ patientId, alias }) {
+    if (this.useApi) {
+      try {
+        const result = await this.apiRequest('/api/support-group/join', { method: 'POST', body: JSON.stringify({ alias }) });
+        await this.refreshSupportGroupState();
+        return result.membership;
+      } catch (error) {
+        return { error: error.message };
+      }
+    }
+    const group = this.getTable('SupportGroups').find((item) => item.is_active);
+    if (!group) return { error: 'The support group is unavailable.' };
+    if (!group.facilitator_worker_id) return { error: 'A verified health worker must be assigned before this group can open.' };
+    const existing = this.getTable('SupportGroupMembers').find((item) => item.group_id === group.group_id && item.patient_id === patientId);
+    if (existing) return { error: 'You have already joined this group.' };
+    const normalizedAlias = String(alias || '').trim().replace(/\s+/g, ' ');
+    if (normalizedAlias.length < 3 || normalizedAlias.length > 24) return { error: 'Choose a display alias between 3 and 24 characters.' };
+    if (this.getTable('SupportGroupMembers').some((item) => item.group_id === group.group_id && item.display_alias?.toLowerCase() === normalizedAlias.toLowerCase())) {
+      return { error: 'That alias is already in use. Choose another display alias.' };
+    }
+    return this.insert('SupportGroupMembers', { group_id: group.group_id, patient_id: patientId, role_in_group: 'Member', display_alias: normalizedAlias, joined_at: new Date().toISOString() });
+  }
+
+  async leaveSupportGroup({ patientId }) {
+    if (this.useApi) {
+      try {
+        const result = await this.apiRequest('/api/support-group/leave', { method: 'POST' });
+        this.data = { ...this.data, SupportGroupMembers: [], SupportGroupMessages: [] };
+        this.notify();
+        await this.refreshSupportGroupState();
+        return result;
+      } catch (error) {
+        return { error: error.message };
+      }
+    }
+    const group = this.getTable('SupportGroups').find((item) => item.is_active);
+    const membership = this.getTable('SupportGroupMembers').find((item) => item.group_id === group?.group_id && item.patient_id === patientId);
+    if (!membership) return { left: false };
+    this.data = {
+      ...this.data,
+      SupportGroupMembers: this.getTable('SupportGroupMembers').filter((item) => item.membership_id !== membership.membership_id),
+      SupportGroupMessages: [],
+    };
+    this.saveDatabase(this.data);
+    return { left: true };
+  }
+
+  async sendSupportGroupMessage({ patientId, messageText, isSupervisor = false }) {
+    const text = String(messageText || '').trim();
+    if (!text) return { error: 'Write a message before sending.' };
+    if (Array.from(text).length > 2000) return { error: 'Messages must be 2,000 characters or fewer.' };
+    if (this.useApi) {
+      try {
+        const result = await this.apiRequest('/api/support-group/messages', { method: 'POST', body: JSON.stringify({ messageText: text }) });
+        await this.refreshSupportGroupState();
+        return result.message;
+      } catch (error) {
+        return { error: error.message };
+      }
+    }
+    const group = this.getTable('SupportGroups').find((item) => item.is_active);
+    if (!group?.facilitator_worker_id) return { error: 'The support group is unavailable until a supervisor is assigned.' };
+    const membership = this.getTable('SupportGroupMembers').find((item) => item.group_id === group.group_id && item.patient_id === patientId);
+    if (!isSupervisor && !membership) return { error: 'Join the group before sending a message.' };
+    const worker = this.findById('HealthWorkers', group.facilitator_worker_id);
+    if (isSupervisor && worker?.user_id !== Number(patientId)) return { error: 'Only the designated group supervisor can post as a health worker.' };
+    const message = this.insert('SupportGroupMessages', {
+      group_id: group.group_id,
+      sender_alias: isSupervisor ? 'Health worker' : membership.display_alias,
+      sender_role: isSupervisor ? 'supervisor' : 'member',
+      message_text: text,
+      is_redacted: false,
+      sent_at: new Date().toISOString(),
+    });
+    return message;
+  }
+
+  async redactSupportGroupMessage(messageId) {
+    if (this.useApi) {
+      try {
+        const result = await this.apiRequest(`/api/support-group/messages/${encodeURIComponent(messageId)}/redact`, { method: 'POST' });
+        await this.refreshSupportGroupState();
+        return result;
+      } catch (error) {
+        return { error: error.message };
+      }
+    }
+    const message = this.findById('SupportGroupMessages', messageId);
+    if (!message) return { error: 'Message not found.' };
+    const updated = this.update('SupportGroupMessages', messageId, { is_redacted: true, message_text: '[Message removed by the health worker]' });
+    return updated;
+  }
+
+  async assignSupportGroupSupervisor(workerId) {
+    if (this.useApi) {
+      try {
+        const result = await this.apiRequest('/api/admin/support-group/supervisor', { method: 'PUT', body: JSON.stringify({ workerId: workerId || null }) });
+        await this.refresh();
+        return result.group;
+      } catch (error) {
+        return { error: error.message };
+      }
+    }
+    const normalizedWorkerId = workerId === '' || workerId == null ? null : Number(workerId);
+    if (normalizedWorkerId !== null) {
+      const worker = this.findById('HealthWorkers', normalizedWorkerId);
+      const user = worker ? this.findById('Users', worker.user_id) : null;
+      if (!worker?.is_verified || !worker?.is_available || user?.is_active === false || user?.email_verified === false) {
+        return { error: 'Only verified, active, available health workers can supervise the group.' };
+      }
+    }
+    const group = this.getTable('SupportGroups').find((item) => item.is_active);
+    if (!group) return { error: 'The single active support group is not configured.' };
+    return this.update('SupportGroups', group.group_id, { facilitator_worker_id: normalizedWorkerId, has_supervisor: Boolean(normalizedWorkerId) });
   }
 
   async restoreSession() {
@@ -685,7 +813,9 @@ class DatabaseService {
         };
       });
 
-    const memberships = this.getTable('SupportGroupMembers').filter((sgm) => sgm.patient_id === patientId);
+    const memberships = this.useApi
+      ? this.getTable('SupportGroupMembers')
+      : this.getTable('SupportGroupMembers').filter((sgm) => sgm.patient_id === patientId);
     const supportGroups = memberships.map((m) => {
       const grp = this.findById('SupportGroups', m.group_id);
       return {
@@ -738,7 +868,7 @@ class DatabaseService {
         category: 'Community Support Group',
         type: 'Group Membership',
         name: g.name,
-        date: g.joinedAt ? g.joinedAt.slice(0, 10) : 'Active',
+        date: (g.joinedAt || g.joined_at) ? (g.joinedAt || g.joined_at).slice(0, 10) : 'Active',
         time: g.schedule || 'Scheduled',
         status: 'Active Member',
         statusType: 'success',

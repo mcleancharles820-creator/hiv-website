@@ -106,6 +106,15 @@ export async function subscribeToChatChanges(onChange) {
       },
       onChange
     )
+    .on(
+      'postgres_changes',
+      {
+        event: '*',
+        schema: 'public',
+        table: 'support_group_messages',
+      },
+      onChange
+    )
     .subscribe((status, error) => {
       console.log('Supabase Realtime status:', status);
 

@@ -1,12 +1,14 @@
-import { fireEvent, render, screen, within } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import App from './App';
+import { PatientSupportGroupPanel, SupervisorSupportGroupPanel } from './components/SupportGroupPanel';
 import db from './services/databaseService';
 import { consumePasswordRecoveryToken, isPasswordRecoveryRedirect } from './services/passwordRecovery';
 const { Buffer } = require('buffer');
 const getFullNameFromParts = require('../api/accountName');
 const { isAllowedGender } = require('../api/genderOptions');
 const isPasswordRecoveryToken = require('../api/passwordRecoveryToken');
+const { isEligibleSupervisor, validateDisplayAlias, validateGroupMessage } = require('../api/supportGroupPolicy');
 
 beforeEach(() => {
   jest.spyOn(window, 'scrollTo').mockImplementation(() => {});
@@ -396,15 +398,76 @@ test('patient appointment deletion waits for confirmation', () => {
   expect(db.findById('Appointments', appointment.appointment_id)).toBeNull();
 });
 
-test('health worker support-group removal waits for confirmation', () => {
+test('support-group privacy helpers validate aliases, messages, and supervisor eligibility', () => {
+  expect(validateDisplayAlias('River Stone', { fullName: 'Morgan Lee', email: 'morgan@example.com' })).toEqual({ alias: 'River Stone' });
+  expect(validateDisplayAlias('MorganLee', { fullName: 'Morgan Lee', email: 'morgan@example.com' }).error).toMatch(/different from your account/i);
+  expect(validateDisplayAlias('morgan@example.com').error).toMatch(/email address or phone number/i);
+  expect(validateDisplayAlias('Supervisor').error).toMatch(/cannot be mistaken/i);
+  expect(validateDisplayAlias('1234567890').error).toMatch(/email address or phone number/i);
+  expect(validateGroupMessage('  I am here to listen.  ')).toEqual({ messageText: 'I am here to listen.' });
+  expect(validateGroupMessage(' '.repeat(3))).toHaveProperty('error');
+  expect(validateGroupMessage('x'.repeat(2001))).toHaveProperty('error');
+  expect(isEligibleSupervisor({ is_verified: true, is_available: true }, { role: 'health-worker', is_active: true, email_verified: true })).toBe(true);
+  expect(isEligibleSupervisor({ is_verified: true, is_available: false }, { role: 'health-worker', is_active: true, email_verified: true })).toBe(false);
+});
+
+test('patient group panel joins with an alias, sends messages, and loses access after leaving', async () => {
+  const onJoin = jest.fn().mockResolvedValue({ group_id: 1, display_alias: 'RiverStone' });
+  const onSend = jest.fn().mockResolvedValue({ message_id: 1 });
+  const onLeave = jest.fn().mockResolvedValue({ left: true });
+  const props = {
+    group: { group_id: 1, name: 'Living Positive', detail: 'Private peer support', has_supervisor: true },
+    membership: null,
+    messages: [],
+    localMode: false,
+    onJoin,
+    onSend,
+    onLeave,
+  };
+  const { rerender } = render(<PatientSupportGroupPanel {...props} />);
+  userEvent.type(screen.getByLabelText(/choose a display name/i), 'RiverStone');
+  userEvent.click(screen.getByRole('button', { name: /join group/i }));
+  expect(onJoin).toHaveBeenCalledWith('RiverStone');
+  expect(await screen.findByText(/you joined the group/i)).toBeInTheDocument();
+
+  const membership = { group_id: 1, display_alias: 'RiverStone' };
+  rerender(<PatientSupportGroupPanel {...props} membership={membership} />);
+  expect(screen.getByText(/joined as/i)).toBeInTheDocument();
+  expect(screen.getByText(/only current members and the designated health worker/i)).toBeInTheDocument();
+  userEvent.type(screen.getByLabelText(/write a message/i), 'Glad to be here.');
+  userEvent.click(screen.getByRole('button', { name: /^send/i }));
+  await waitFor(() => expect(onSend).toHaveBeenCalledWith('Glad to be here.'));
+
+  const priorMessage = { message_id: 1, sender_alias: 'RiverStone', sender_role: 'member', message_text: 'Glad to be here.', sent_at: new Date().toISOString() };
+  rerender(<PatientSupportGroupPanel {...props} membership={membership} messages={[priorMessage]} />);
+  jest.spyOn(window, 'confirm').mockReturnValue(true);
+  userEvent.click(screen.getByRole('button', { name: /leave group/i }));
+  expect(onLeave).toHaveBeenCalled();
+  expect(await screen.findByText(/you left the group/i)).toBeInTheDocument();
+  rerender(<PatientSupportGroupPanel {...props} membership={null} messages={[]} />);
+  expect(screen.queryByText('Glad to be here.')).not.toBeInTheDocument();
+  expect(screen.getByRole('button', { name: /join group/i })).toBeInTheDocument();
+});
+
+test('non-supervisor health workers cannot see group messages', () => {
+  render(<SupervisorSupportGroupPanel
+    group={{ group_id: 1, name: 'Living Positive', is_current_user_supervisor: false }}
+    messages={[{ message_id: 1, sender_alias: 'RiverStone', sender_role: 'member', message_text: 'Private group content', sent_at: new Date().toISOString() }]}
+    localMode={false}
+    onSend={jest.fn()}
+    onRedact={jest.fn()}
+  />);
+  expect(screen.getByRole('status')).toHaveTextContent(/available only to its designated/i);
+  expect(screen.queryByText('Private group content')).not.toBeInTheDocument();
+});
+
+test('health workers have one supervised group and cannot create or remove groups', () => {
   db.registerUser({
     fullName: 'Dr. Evelyn Garcia',
     email: 'evelyn@risinghiv.org',
     password: 'password',
     role: 'health-worker',
   });
-  const groupCount = db.getTable('SupportGroups').length;
-  const confirmSpy = jest.spyOn(window, 'confirm').mockReturnValue(false);
 
   render(<App />);
   userEvent.selectOptions(screen.getByLabelText(/account type/i), 'health-worker');
@@ -412,14 +475,12 @@ test('health worker support-group removal waits for confirmation', () => {
   userEvent.type(screen.getByLabelText(/^password$/i), 'password');
   userEvent.click(screen.getByRole('button', { name: /^sign in/i }));
   userEvent.click(screen.getByRole('button', { name: 'Groups' }));
-  userEvent.click(screen.getAllByRole('button', { name: 'Remove' })[0]);
 
-  expect(confirmSpy).toHaveBeenCalled();
-  expect(db.getTable('SupportGroups')).toHaveLength(groupCount);
-
-  confirmSpy.mockReturnValue(true);
-  userEvent.click(screen.getAllByRole('button', { name: 'Remove' })[0]);
-  expect(db.getTable('SupportGroups')).toHaveLength(groupCount - 1);
+  expect(screen.getByRole('heading', { name: /one support group/i })).toBeInTheDocument();
+  expect(screen.getByText(/demo mode only: private group chat is disabled/i)).toBeInTheDocument();
+  expect(screen.queryByRole('button', { name: /create group/i })).not.toBeInTheDocument();
+  expect(screen.queryByRole('button', { name: /remove/i })).not.toBeInTheDocument();
+  expect(db.getTable('SupportGroups')).toHaveLength(1);
 });
 
 test('patient public pages match the guest experience', () => {
@@ -492,6 +553,49 @@ test('patient chat recreates a missing session before sending a message', async 
   expect(screen.queryByRole('alert')).not.toBeInTheDocument();
   expect(db.getTable('ChatSessions')).toHaveLength(1);
   expect(db.getTable('ChatMessages')).toHaveLength(1);
+});
+
+test('API support-group join sends only the alias and receives sanitized membership data', async () => {
+  const previousApiMode = db.useApi;
+  db.useApi = true;
+  const fetchMock = jest.spyOn(global, 'fetch')
+    .mockResolvedValueOnce({ ok: true, json: async () => ({ membership: { group_id: 1, display_alias: 'RiverStone', joined_at: '2026-10-14T12:00:00Z' } }) })
+    .mockResolvedValueOnce({ ok: true, json: async () => ({
+      group: { group_id: 1, name: 'Living Positive', has_supervisor: true },
+      membership: { group_id: 1, display_alias: 'RiverStone', joined_at: '2026-10-14T12:00:00Z' },
+      messages: [{ message_id: 1, group_id: 1, sender_alias: 'RiverStone', sender_role: 'member', message_text: 'Welcome', sent_at: '2026-10-14T12:01:00Z' }],
+    }) });
+
+  try {
+    await expect(db.joinSupportGroup({ patientId: 789, alias: 'RiverStone' })).resolves.toMatchObject({ group_id: 1, display_alias: 'RiverStone' });
+    expect(fetchMock).toHaveBeenNthCalledWith(1, '/api/support-group/join', expect.objectContaining({ method: 'POST', body: JSON.stringify({ alias: 'RiverStone' }) }));
+    expect(fetchMock).toHaveBeenNthCalledWith(2, '/api/support-group/state', expect.objectContaining({ credentials: 'same-origin' }));
+    expect(fetchMock.mock.calls[0][1].body).not.toContain('789');
+    expect(db.getTable('SupportGroupMembers')[0]).not.toHaveProperty('patient_id');
+    expect(db.getTable('SupportGroupMessages')[0]).not.toHaveProperty('sender_user_id');
+    expect(db.getTable('SupportGroupMessages')[0]).not.toHaveProperty('patient_id');
+  } finally {
+    db.useApi = previousApiMode;
+  }
+});
+
+test('API support-group refresh uses a membership-scoped group snapshot', async () => {
+  const previousApiMode = db.useApi;
+  db.useApi = true;
+  const membership = { group_id: 1, display_alias: 'RiverStone' };
+  const message = { message_id: 9, group_id: 1, sender_alias: 'RiverStone', sender_role: 'member', message_text: 'Welcome' };
+  const fetchMock = jest.spyOn(global, 'fetch').mockResolvedValueOnce({
+    ok: true,
+    json: async () => ({ group: { group_id: 1, has_supervisor: true }, membership, messages: [message] }),
+  });
+  try {
+    await db.refreshSupportGroupState();
+    expect(fetchMock).toHaveBeenCalledWith('/api/support-group/state', expect.objectContaining({ credentials: 'same-origin' }));
+    expect(db.getTable('SupportGroupMessages')).toEqual([message]);
+    expect(db.getTable('SupportGroupMembers')).toEqual([membership]);
+  } finally {
+    db.useApi = previousApiMode;
+  }
 });
 
 test('API chat session recovery refreshes the signed-in patient snapshot', async () => {
@@ -657,6 +761,29 @@ test('health worker can claim an unassigned patient and access their chat', asyn
   expect(screen.getAllByText('Claimable Patient').length).toBeGreaterThan(0);
 });
 
+test('admin can assign the private support group to one eligible supervisor', async () => {
+  db.registerUser({ fullName: 'Platform Admin', email: 'group.admin@example.com', password: 'securePassword123', role: 'admin' });
+  const eligibleWorker = db.registerUser({ fullName: 'Dr. Private Supervisor', email: 'supervisor@example.com', password: 'securePassword123', role: 'health-worker' });
+  const unavailableWorker = db.registerUser({ fullName: 'Dr. Unavailable', email: 'unavailable@example.com', password: 'securePassword123', role: 'health-worker' });
+  db.update('HealthWorkers', unavailableWorker.worker.worker_id, { is_available: false });
+
+  render(<App />);
+  userEvent.selectOptions(screen.getByLabelText(/account type/i), 'admin');
+  userEvent.type(screen.getByLabelText(/email address/i), 'group.admin@example.com');
+  userEvent.type(screen.getByLabelText(/^password$/i), 'securePassword123');
+  userEvent.click(screen.getByRole('button', { name: /^sign in/i }));
+  userEvent.click(screen.getByRole('button', { name: 'Support group' }));
+  const supervisorSelect = screen.getByLabelText(/designated health-worker supervisor/i);
+  expect(within(supervisorSelect).getByRole('option', { name: /Dr\. Private Supervisor/i })).toBeInTheDocument();
+  expect(within(supervisorSelect).queryByRole('option', { name: /Dr\. Unavailable/i })).not.toBeInTheDocument();
+  userEvent.selectOptions(supervisorSelect, String(eligibleWorker.worker.worker_id));
+  userEvent.click(screen.getByRole('button', { name: /save supervisor/i }));
+
+  expect(await screen.findByRole('status')).toHaveTextContent(/supervisor has been updated/i);
+  expect(db.getTable('SupportGroups').filter((group) => group.is_active)).toHaveLength(1);
+  expect(db.getTable('SupportGroups').find((group) => group.is_active).facilitator_worker_id).toBe(eligibleWorker.worker.worker_id);
+});
+
 test('admin gets platform management pages and service toggles', () => {
   db.registerUser({
     fullName: 'Platform Admin',
@@ -674,6 +801,7 @@ test('admin gets platform management pages and service toggles', () => {
   expect(screen.getByRole('heading', { name: /keep care connected/i })).toBeInTheDocument();
   expect(screen.getByRole('button', { name: 'Users' })).toBeInTheDocument();
   expect(screen.getByRole('button', { name: 'Health workers' })).toBeInTheDocument();
+  expect(screen.getByRole('button', { name: 'Support group' })).toBeInTheDocument();
   expect(screen.getByRole('button', { name: 'Services' })).toBeInTheDocument();
   expect(screen.getByRole('button', { name: 'Activity logs' })).toBeInTheDocument();
   expect(screen.getByRole('button', { name: 'Reports' })).toBeInTheDocument();

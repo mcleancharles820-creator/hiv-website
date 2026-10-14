@@ -1,6 +1,7 @@
 import './App.css';
 import { CircleUser } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
+import { AdminSupportGroupSupervisor, PatientSupportGroupPanel, SupervisorSupportGroupPanel } from './components/SupportGroupPanel';
 import db from './services/databaseService';
 import { clearChatRealtimeSession, setChatRealtimeSession, subscribeToChatChanges } from './services/chatRealtime';
 import { consumePasswordRecoveryToken, isPasswordRecoveryRedirect } from './services/passwordRecovery';
@@ -486,7 +487,15 @@ function PatientDashboard({ currentUser, currentPatient, onPublicHub, onSignOut 
   const appointments = activePatientId ? db.getTable('Appointments').filter((a) => a.patient_id === activePatientId) : [];
   const medications = activePatientId ? db.getTable('MedicationRequests').filter((m) => m.patient_id === activePatientId) : [];
   const chats = activePatientId ? db.getTable('ChatSessions').filter((c) => c.patient_id === activePatientId) : [];
-  const joinedGroups = activePatientId ? db.getTable('SupportGroupMembers').filter((sgm) => sgm.patient_id === activePatientId) : [];
+  const activeSupportGroup = db.getTable('SupportGroups').find((group) => group.is_active) || null;
+  const supportGroupMembership = activeSupportGroup
+    ? db.getTable('SupportGroupMembers').find((membership) => Number(membership.group_id) === Number(activeSupportGroup.group_id)
+      && (db.useApi || Number(membership.patient_id) === Number(activePatientId))) || null
+    : null;
+  const supportGroupMessages = activeSupportGroup
+    ? db.getTable('SupportGroupMessages').filter((message) => Number(message.group_id) === Number(activeSupportGroup.group_id))
+    : [];
+  const joinedGroups = supportGroupMembership ? [supportGroupMembership] : [];
 
   const navigate = (nextPage) => {
     setPage(nextPage);
@@ -557,7 +566,7 @@ function PatientDashboard({ currentUser, currentPatient, onPublicHub, onSignOut 
     appointments: <PagePanel eyebrow="Care schedule" title={<>Book an<br /><i>appointment.</i></>}><button className="primary-button panel-action" onClick={() => setEditing({ type: 'appointment', date: '', time: '', appointmentType: 'HIV care consultation', status: 'Requested' })}>Book appointment <span>+</span></button><RecordList items={appointments} empty="No appointments yet." render={(item) => <><div><strong>{item.appointment_type || item.appointmentType}</strong><span>{item.appointment_date || item.date} · {item.appointment_time || item.time}</span></div><StatusBadge status={item.status || 'Requested'} /><RecordActions onEdit={() => setEditing({ type: 'appointment', id: item.appointment_id || item.id, date: item.appointment_date || item.date, time: item.appointment_time || item.time, appointmentType: item.appointment_type || item.appointmentType, status: item.status })} onDelete={() => db.delete('Appointments', item.appointment_id || item.id)} /></>} /></PagePanel>,
     medication: <PagePanel eyebrow="Treatment support" title={<>Medication<br /><i>availability.</i></>}><p className="medication-note">Choose from the medication list below. Stock status is provided for guidance; confirm your prescription and availability with a health worker before visiting.</p>{!isMedicationRequestsEnabled && <p className="form-error" style={{ margin: '12px 0' }}>Online medication requests are currently unavailable. Contact your clinic directly.</p>}<div className="medication-catalog">{medicationCatalog.map((medication) => <article className="medication-option" key={medication.id}><div><strong>{medication.name}</strong><span>{medication.detail}</span></div><em className={medication.stock === 'In stock' ? 'status-available' : 'status-unavailable'}>{medication.stock}</em>{medication.stock === 'In stock' && isMedicationRequestsEnabled ? <button className="card-link" onClick={() => setEditing({ type: 'medication', name: medication.name, dosage: '', schedule: '', availability: medication.stock })}>Request medication <span>↗</span></button> : <span className="unavailable-label">{!isMedicationRequestsEnabled ? 'Service unavailable' : 'Currently unavailable'}</span>}</article>)}</div><h2 className="medication-record-heading">Your medication records</h2><div className="medication-list"><RecordList items={medications} empty="No medication records yet." render={(item) => <><div><strong>{item.medication_name || item.name}</strong><span>{item.dosage} · {item.schedule}</span></div><div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}><StatusBadge status={item.status || 'Pending'} /><em className={(item.availability || 'In stock') === 'In stock' ? 'status-available' : 'status-unavailable'}>{item.availability || 'In stock'}</em></div><RecordActions onEdit={() => setEditing({ type: 'medication', id: item.request_id || item.id, name: item.medication_name || item.name, dosage: item.dosage, schedule: item.schedule, availability: item.availability })} onDelete={() => db.delete('MedicationRequests', item.request_id || item.id)} /></>} /></div></PagePanel>,
     chat: <PagePanel eyebrow="Confidential support" title={<>Private<br /><i>conversation.</i></>}><ChatMessenger patientId={activePatientId} userId={activeUser.user_id} ticket={chats[0] || null} onUpdate={(preview) => { if (chats[0]?.chat_session_id) { db.update('ChatSessions', chats[0].chat_session_id, { preview, last_updated: new Date().toISOString() }); } }} /></PagePanel>,
-    support: <PagePanel eyebrow="Community care" title={<>You belong<br /><i>here.</i></>}><div className="support-groups"><SupportGroup name="Living Positive" detail="Peer connection · Weekly online circle" /><SupportGroup name="Island Care Circle" detail="Local support · Romblon community" /><SupportGroup name="Young Advocates" detail="Peer support · Ages 18–29" /></div></PagePanel>,
+    support: <PagePanel eyebrow="Private community care" title={<>You belong<br /><i>here.</i></>}><PatientSupportGroupPanel group={activeSupportGroup} membership={supportGroupMembership} messages={supportGroupMessages} localMode={!db.useApi} onJoin={(alias) => db.joinSupportGroup({ patientId: activePatientId, alias })} onLeave={() => db.leaveSupportGroup({ patientId: activePatientId })} onSend={(messageText) => db.sendSupportGroupMessage({ patientId: activePatientId, messageText })} onRefresh={() => db.refreshSupportGroupState().catch(() => false)} /></PagePanel>,
     donate: <PagePanel eyebrow="Trusted referrals" title={<>Support that<br /><i>reaches further.</i></>}><div className="org-list patient-org-list"><a href="https://www.globalfund.org/en/donate/" target="_blank" rel="noreferrer"><span>The Global Fund</span><small>Donate to end AIDS, TB, and malaria ↗</small></a><a href="https://www.pamf.org.ph/" target="_blank" rel="noreferrer"><span>Philippine HIV & AIDS Support House</span><small>Community support and referrals ↗</small></a></div></PagePanel>,
     account: <PagePanel eyebrow="Your account" title={<>Your care<br /><i>dashboard.</i></>}><div style={{ display: 'flex', gap: '10px', alignItems: 'center', marginBottom: '20px', flexWrap: 'wrap' }}><StatusBadge status={activeUser.is_active !== false ? 'Active' : 'Inactive'} label={`Account: ${activeUser.is_active !== false ? 'Active' : 'Inactive'}`} /><StatusBadge status={patientRecord.care_status || 'Active care plan'} label={`Care status: ${patientRecord.care_status || 'Active care plan'}`} /></div><div className="dashboard-tiles"><DashboardTile label="Services availed" value={`${servicesAvailed.totalCount} total`} detail="Review all care history" /><DashboardTile label="Upcoming appointment" value={appointments[0] ? `${appointments[0].appointment_date || appointments[0].date} · ${appointments[0].appointment_time || appointments[0].time}` : 'Nothing scheduled'} detail={appointments[0]?.appointment_type || appointments[0]?.appointmentType || 'Book your first visit'} /><DashboardTile label="Private chat notifications" value={`${chats.length || 1} open ${chats.length === 1 ? 'conversation' : 'conversations'}`} detail="View your support messages" /><DashboardTile label="Support groups joined" value={`${joinedGroups.length} groups`} detail="Find a community to join" /><DashboardTile label="Medications ordered" value={`${medications.length} ${medications.length === 1 ? 'record' : 'records'}`} detail="Review your treatment records" /></div><h2 className="quick-heading">Quick actions</h2><div className="care-grid"><PatientAction title="View availed services" text="Check statuses of all appointments, medications, and support." action={() => navigate('services')} /><PatientAction title="Book appointment" text="Schedule time with a health worker." action={() => navigate('appointments')} /><PatientAction title="Start private chat" text="Send a confidential question." action={() => navigate('chat')} /><PatientAction title="Manage medication" text="Update your treatment records." action={() => navigate('medication')} /></div></PagePanel>,
   };
@@ -784,7 +793,6 @@ function confirmDeleteAction(message, onConfirm) {
 }
 
 function RecordActions({ onEdit, onDelete }) { return <div className="record-actions"><button onClick={onEdit}>Edit</button><button onClick={() => confirmDeleteAction('Are you sure you want to delete this record?', onDelete)}>Delete</button></div>; }
-function SupportGroup({ name, detail }) { return <article className="support-group"><div><h2>{name}</h2><p>{detail}</p></div><button className="card-link">Join group <span>↗</span></button></article>; }
 function PatientForm({ data, onClose, onSave }) {
   const [record, setRecord] = useState(data);
   const fields = record.type === 'profile'
@@ -1459,17 +1467,14 @@ function HealthWorkerDashboard({ currentUser, currentWorker, onPublicHub, onSign
       };
     });
 
-  const groups = db.getTable('SupportGroups').map((g) => ({
-    id: g.group_id,
-    name: g.name,
-    members: g.member_count || 0,
-    schedule: g.schedule,
-  }));
+  const supportGroup = db.getTable('SupportGroups').find((group) => group.is_active) || null;
+  const supportGroupMessages = supportGroup
+    ? db.getTable('SupportGroupMessages').filter((message) => Number(message.group_id) === Number(supportGroup.group_id))
+    : [];
 
   const navigate = (nextPage) => { setPage(nextPage); scrollPageToTop(); };
   const updateRequest = (id, status) => db.update('MedicationRequests', id, { status });
   const updateAppointment = (id, status) => db.update('Appointments', id, { status });
-  const removeGroup = (id) => confirmDeleteAction('Are you sure you want to remove this support group?', () => db.delete('SupportGroups', id));
   const savePatient = (patient) => {
     if (patient.id || patient.patient_id || patient.userId) {
       const pid = patient.patient_id || patient.id;
@@ -1500,7 +1505,7 @@ function HealthWorkerDashboard({ currentUser, currentWorker, onPublicHub, onSign
   const latestMessage = db.getTable('ChatMessages').filter((m) => m.sender_role === 'patient').at(-1)?.message_text || '';
 
   const content = {
-    overview: <><p className="eyebrow"><span className="pulse-dot" /> Health worker overview</p><h1>Care that<br /><i>connects.</i></h1><p className="dashboard-intro">Support patients with trusted information, treatment follow-up, and compassionate care.</p><div className="dashboard-tiles worker-tiles"><DashboardTile label="Patients needing care" value={`${workerPatients.length} active`} detail="View patient support" /><DashboardTile label="Medication requests" value={`${requests.filter((r) => r.status === 'Pending').length} pending`} detail="Review requests" /><DashboardTile label="Today’s appointments" value={`${appointments.length} scheduled`} detail="Open schedule" /><DashboardTile label="Support groups" value={`${groups.length} managed`} detail="Manage groups" /></div><h2 className="quick-heading">Quick actions</h2><div className="care-grid"><PatientAction title="Open patient chats" text="Respond to confidential patient questions." action={() => navigate('chat')} /><PatientAction title="Review medication" text="Process medication requests and updates." action={() => navigate('medications')} /><PatientAction title="Manage appointments" text="Confirm and organize patient visits." action={() => navigate('appointments')} /></div></>,
+    overview: <><p className="eyebrow"><span className="pulse-dot" /> Health worker overview</p><h1>Care that<br /><i>connects.</i></h1><p className="dashboard-intro">Support patients with trusted information, treatment follow-up, and compassionate care.</p><div className="dashboard-tiles worker-tiles"><DashboardTile label="Patients needing care" value={`${workerPatients.length} active`} detail="View patient support" /><DashboardTile label="Medication requests" value={`${requests.filter((r) => r.status === 'Pending').length} pending`} detail="Review requests" /><DashboardTile label="Today’s appointments" value={`${appointments.length} scheduled`} detail="Open schedule" /><DashboardTile label="Support group" value={supportGroup ? '1 configured' : 'Unavailable'} detail="Supervise the group chat" /></div><h2 className="quick-heading">Quick actions</h2><div className="care-grid"><PatientAction title="Open patient chats" text="Respond to confidential patient questions." action={() => navigate('chat')} /><PatientAction title="Review medication" text="Process medication requests and updates." action={() => navigate('medications')} /><PatientAction title="Manage appointments" text="Confirm and organize patient visits." action={() => navigate('appointments')} /></div></>,
     chat: <PagePanel eyebrow="Private patient support" title={<>Conversation<br /><i>inbox.</i></>}><HealthWorkerChatInbox userId={workerUser.user_id} /></PagePanel>,
     patientsChats: <PagePanel eyebrow="Patient care and private support" title={<>Patients and<br /><i>chats.</i></>}>
       {assignmentNotice && <p className="form-status" role="status">{assignmentNotice}</p>}
@@ -1508,7 +1513,7 @@ function HealthWorkerDashboard({ currentUser, currentWorker, onPublicHub, onSign
       <h2 className="quick-heading">Assigned patients</h2><div className="worker-list">{workerPatients.map((patient) => <article key={patient.userId || patient.id}><div><strong>{patient.fullName || patient.name}</strong><span>{patient.email} · {patient.medicalNotes || patient.detail}{patient.userId === 1 && latestMessage ? ` · “${latestMessage}”` : ''} · <strong style={{ color: 'var(--coral)', fontWeight: 400 }}>{patient.servicesAvailedCount || 0} services availed</strong></span></div><div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}><StatusBadge status={patient.careStatus || patient.status} /><StatusBadge status={patient.accountStatus || 'Active'} /></div><div className="worker-actions"><button type="button" className="card-link" onClick={() => setInspectingUser(patient)}>View Services ↗</button><button className="card-link" onClick={() => setPatientEditor({ type: 'worker-patient', ...patient, id: patient.patientId, user_id: patient.userId, name: patient.fullName })}>Edit Care Plan</button></div></article>)}</div>{!workerPatients.length && <p className="empty-records">No patients are currently assigned to you.</p>}</PagePanel>,
     medications: <PagePanel eyebrow="Treatment support" title={<>Medication<br /><i>requests.</i></>}><div className="worker-list">{requests.map((request) => <article key={request.id}><div><strong>{request.medication}</strong><span>Requested by {request.patient} · {request.dosage} · {request.schedule}</span></div><StatusBadge status={request.status} /><div className="worker-actions"><button className="card-link" onClick={() => updateRequest(request.id, 'Approved')}>Approve</button><button className="card-link" onClick={() => updateRequest(request.id, 'Needs information')}>Request info</button></div></article>)}</div></PagePanel>,
     appointments: <PagePanel eyebrow="Care schedule" title={<>Manage<br /><i>appointments.</i></>}><div className="worker-list">{appointments.map((appointment) => <article key={appointment.id}><div><strong>{appointment.patient}</strong><span>{appointment.date} · {appointment.time} · {appointment.type} ({appointment.facilityName})</span></div><StatusBadge status={appointment.status} /><div className="worker-actions"><button className="card-link" onClick={() => updateAppointment(appointment.id, 'Completed')}>Mark Completed</button><button className="card-link" onClick={() => updateAppointment(appointment.id, 'Cancelled')}>Cancel</button></div></article>)}</div></PagePanel>,
-    groups: <PagePanel eyebrow="Community care" title={<>Support<br /><i>groups.</i></>}><button className="primary-button panel-action" onClick={() => db.insert('SupportGroups', { name: 'New support group', detail: 'Community peer circle', schedule: 'Set a schedule', member_count: 0, is_active: true })}>Create group <span>+</span></button><div className="worker-list">{groups.map((group) => <article key={group.id}><div><strong>{group.name}</strong><span>{group.members} members · {group.schedule}</span></div><button className="card-link">Edit <span>↗</span></button><button className="record-delete" onClick={() => removeGroup(group.id)}>Remove</button></article>)}</div></PagePanel>,
+    groups: <PagePanel eyebrow="Supervised community care" title={<>One support<br /><i>group.</i></>}><SupervisorSupportGroupPanel group={supportGroup} messages={supportGroupMessages} localMode={!db.useApi} onSend={(messageText) => db.sendSupportGroupMessage({ patientId: workerUser.user_id, messageText, isSupervisor: true })} onRedact={(messageId) => db.redactSupportGroupMessage(messageId)} onRefresh={() => db.refreshSupportGroupState().catch(() => false)} /></PagePanel>,
   };
 
   return (
@@ -1628,6 +1633,8 @@ function AdminDashboard({ onPublicHub, onSignOut }) {
 
   const appointmentsCount = db.getTable('Appointments').length;
   const openChatsCount = db.getTable('ChatSessions').filter((c) => c.status === 'Open').length;
+  const activeSupportGroup = db.getTable('SupportGroups').find((group) => group.is_active) || null;
+  const eligibleSupportGroupWorkers = detailedWorkers.filter((worker) => worker.isVerified && worker.isAvailable && worker.emailVerified && worker.accountStatus === 'Active');
 
   const filteredUsers = detailedUsers.filter((u) => {
     const matchesSearch = !userSearch.trim() || u.fullName.toLowerCase().includes(userSearch.toLowerCase()) || u.email.toLowerCase().includes(userSearch.toLowerCase());
@@ -1777,6 +1784,7 @@ function AdminDashboard({ onPublicHub, onSignOut }) {
         )}
       </PagePanel>
     ),
+    supportGroup: <PagePanel eyebrow="Community safety" title={<>Private group<br /><i>supervision.</i></>}><AdminSupportGroupSupervisor group={activeSupportGroup} eligibleWorkers={eligibleSupportGroupWorkers} allWorkers={detailedWorkers} onAssign={(workerId) => db.assignSupportGroupSupervisor(workerId)} /></PagePanel>,
     services: (
       <PagePanel eyebrow="Platform controls" title={<>Available<br /><i>services.</i></>}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px', flexWrap: 'wrap', gap: '12px' }}>
@@ -1821,7 +1829,7 @@ function AdminDashboard({ onPublicHub, onSignOut }) {
       <div className="topline"><span>WORLD AIDS DAY IS EVERY DAY</span><span className="topline-detail">Information. Care. Community.</span></div>
       <header className="site-header guest-header patient-header">
         <button className="brand brand-button" onClick={() => navigate('overview')} aria-label="HIVeLink home"><span>HIVeLink</span></button>
-        <nav className="nav-links worker-nav" aria-label="Admin navigation">{[['overview', 'Overview'], ['users', 'Users'], ['workers', 'Health workers'], ['services', 'Services'], ['logs', 'Activity logs'], ['reports', 'Reports'], ['settings', 'Settings']].map(([key, label]) => <button className={`guest-nav-link ${page === key ? 'active' : ''}`} key={key} onClick={() => navigate(key)}>{label}</button>)}</nav>
+        <nav className="nav-links worker-nav" aria-label="Admin navigation">{[['overview', 'Overview'], ['users', 'Users'], ['workers', 'Health workers'], ['supportGroup', 'Support group'], ['services', 'Services'], ['logs', 'Activity logs'], ['reports', 'Reports'], ['settings', 'Settings']].map(([key, label]) => <button className={`guest-nav-link ${page === key ? 'active' : ''}`} key={key} onClick={() => navigate(key)}>{label}</button>)}</nav>
         <div className="patient-header-actions"><button className="sign-out-button" onClick={onSignOut}>Sign out</button></div>
       </header>
       <main key={page} className="patient-main route-transition">{content[page]}</main>
@@ -1874,8 +1882,9 @@ function App() {
     if (!db.useApi || !hasEntered || isGuest) return undefined;
     let mounted = true;
     let unsubscribe;
-    subscribeToChatChanges(() => {
-      db.refresh().catch((error) => console.error('Could not refresh chat data:', error.message));
+    subscribeToChatChanges((payload) => {
+      const refresh = payload?.table === 'support_group_messages' ? db.refreshSupportGroupState() : db.refresh();
+      refresh.catch((error) => console.error('Could not refresh chat data:', error.message));
     }).then((stop) => {
       if (mounted) unsubscribe = stop;
       else stop();
