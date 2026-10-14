@@ -3,6 +3,8 @@ import userEvent from '@testing-library/user-event';
 import App from './App';
 import db from './services/databaseService';
 import { consumePasswordRecoveryToken, isPasswordRecoveryRedirect } from './services/passwordRecovery';
+const { Buffer } = require('buffer');
+const isPasswordRecoveryToken = require('../api/passwordRecoveryToken');
 
 beforeEach(() => {
   jest.spyOn(window, 'scrollTo').mockImplementation(() => {});
@@ -249,6 +251,16 @@ test('password recovery token reader only consumes a recovery hash', () => {
   expect(isPasswordRecoveryRedirect()).toBe(false);
   expect(consumePasswordRecoveryToken()).toBeNull();
   window.history.replaceState(window.history.state, '', '/');
+});
+
+test('accepts Supabase implicit recovery OTP claims but not ordinary password tokens', () => {
+  const tokenWithClaims = (claims) => `header.${Buffer.from(JSON.stringify(claims)).toString('base64url')}.signature`;
+
+  expect(isPasswordRecoveryToken(tokenWithClaims({ amr: [{ method: 'otp' }] }))).toBe(true);
+  expect(isPasswordRecoveryToken(tokenWithClaims({ amr: [{ method: 'recovery' }] }))).toBe(true);
+  expect(isPasswordRecoveryToken(tokenWithClaims({ amr: [{ method: 'password' }] }))).toBe(false);
+  expect(isPasswordRecoveryToken(tokenWithClaims({}))).toBe(false);
+  expect(isPasswordRecoveryToken('not-a-jwt')).toBe(false);
 });
 
 test('switching from sign in to sign up clears entered credentials and account type', () => {

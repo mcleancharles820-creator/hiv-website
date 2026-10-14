@@ -2,6 +2,7 @@ const { Pool } = require('pg');
 const bcrypt = require('bcryptjs');
 const crypto = require('crypto');
 const { createClient } = require('@supabase/supabase-js');
+const isPasswordRecoveryToken = require('./passwordRecoveryToken');
 
 const pool = globalThis.hivelinkPool || new Pool({
   connectionString: process.env.DATABASE_URL,
@@ -101,17 +102,6 @@ function setSessionCookie(res, token) {
   res.setHeader('Set-Cookie', `${sessionCookie}=${encodeURIComponent(token)}; HttpOnly; Path=/; SameSite=Lax; Max-Age=28800${secure}`);
 }
 
-function isPasswordRecoveryToken(accessToken) {
-  const [, payload] = String(accessToken || '').split('.');
-  if (!payload) return false;
-  try {
-    const claims = JSON.parse(Buffer.from(payload, 'base64url').toString('utf8'));
-    const methods = Array.isArray(claims.amr) ? claims.amr : [];
-    return methods.some((entry) => (typeof entry === 'string' ? entry : entry?.method) === 'recovery');
-  } catch {
-    return false;
-  }
-}
 
 function escapeHtml(value) {
   return String(value).replace(/[&<>"']/g, (character) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[character]));
@@ -562,29 +552,9 @@ module.exports = async function handler(req, res) {
       if (tokenError || !authData.user?.id || !authData.user.email) {
         return send(res, 400, { error: 'The password reset link is invalid or has expired. Request a new link and try again.' });
       }
-      
-const [, tokenPayload] = accessToken.split('.');
-let tokenClaims = {};
-
-try {
-  tokenClaims = JSON.parse(
-    Buffer.from(tokenPayload, 'base64url').toString('utf8')
-  );
-} catch {
-
-}
-
-console.log('Password recovery diagnostic:', {
-  amr: tokenClaims.amr,
-  issuedAt: tokenClaims.iat,
-  audience: tokenClaims.aud,
-});
-
-if (!isPasswordRecoveryToken(accessToken)) {
-  return send(res, 403, {
-    error: 'Use a valid password reset link to change this password.',
-  });
-}
+      if (!isPasswordRecoveryToken(accessToken)) {
+        return send(res, 403, { error: 'Use a valid password reset link to change this password.' });
+      }
       if (password.toLowerCase() === authData.user.email.toLowerCase()) {
         return send(res, 400, { error: 'Password cannot be the same as your email address.' });
       }
