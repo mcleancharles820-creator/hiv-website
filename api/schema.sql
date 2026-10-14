@@ -24,7 +24,7 @@ CREATE TABLE users (
     contact_number VARCHAR(30),
     date_of_birth DATE,
     age INT CHECK (age IS NULL OR (age >= 13 AND age <= 120)),
-    gender VARCHAR(50) CHECK (gender IS NULL OR gender IN ('Woman', 'Man', 'Non-binary', 'Prefer not to say', 'Self-describe')),
+    gender VARCHAR(50) CHECK (gender IS NULL OR gender IN ('Male', 'Female', 'Other', 'Woman', 'Man', 'Non-binary', 'Prefer not to say', 'Self-describe')),
     terms_accepted BOOLEAN NOT NULL DEFAULT TRUE,
     is_active BOOLEAN NOT NULL DEFAULT TRUE,
     email_verified BOOLEAN NOT NULL DEFAULT FALSE,

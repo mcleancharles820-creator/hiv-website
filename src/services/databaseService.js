@@ -356,19 +356,18 @@ class DatabaseService {
   /**
    * Registration & Authentication Database Encoding
    */
-  registerUser({ fullName, firstName, lastName, email, password, role = 'patient', age, dateOfBirth, gender, contactNumber, termsAccepted = true }) {
+  registerUser({ fullName, firstName, middleName, lastName, email, password, role = 'patient', age, dateOfBirth, gender, contactNumber, termsAccepted = true }) {
     if (this.useApi) {
-      const nameParts = String(fullName || '').trim().split(/\s+/);
       return this.apiRequest('/api/auth/register', {
         method: 'POST',
-        body: JSON.stringify({ firstName: firstName || nameParts.shift(), lastName: lastName || nameParts.join(' '), email, password, age, dateOfBirth, gender, contactNumber, termsAccepted }),
+        body: JSON.stringify({ firstName, middleName, lastName, email, password, age, dateOfBirth, gender, contactNumber, termsAccepted }),
       }).catch((error) => ({ error: error.message, verificationPending: Boolean(error.details?.verificationPending) }));
     }
     // 1. Data Type normalization and parsing
     const parsedAge = age ? parseInt(age, 10) : null;
     const formattedDob = dateOfBirth ? String(dateOfBirth) : null;
     const formattedEmail = String(email || '').trim().toLowerCase();
-    const formattedName = String(fullName || `${firstName || ''} ${lastName || ''}`).trim();
+    const formattedName = String(fullName || [firstName, middleName, lastName].filter(Boolean).join(' ')).trim();
     const formattedPhone = contactNumber ? String(contactNumber).trim() : null;
     const cleanPassword = String(password || '');
 
@@ -829,6 +828,7 @@ class DatabaseService {
         name: u.full_name || 'Health Worker',
         email: u.email || 'worker@risinghiv.org',
         emailVerified: u.email_verified !== false,
+        gender: u.gender || 'Not specified',
         contactNumber: u.contact_number || 'Not provided',
         phone: u.contact_number || '',
         specialty: w.specialty || 'HIV care support',
@@ -855,14 +855,14 @@ class DatabaseService {
   /**
    * Admin CRUD Operations
    */
-  adminCreateUser({ fullName, email, password, contactNumber, age, dateOfBirth, gender, careStatus = 'Active care plan', medicalNotes = '', preferredFacilityId = 1, assignedWorkerId = null, emergencyContact = '', emergencyPhone = '', isActive = true }) {
+  adminCreateUser({ fullName, firstName, middleName, lastName, email, password, contactNumber, age, dateOfBirth, gender, careStatus = 'Active care plan', medicalNotes = '', preferredFacilityId = 1, assignedWorkerId = null, emergencyContact = '', emergencyPhone = '', isActive = true }) {
     if (this.useApi) {
-      return this.apiRequest('/api/admin/users', { method: 'POST', body: JSON.stringify({ fullName, email, password, contactNumber, age, dateOfBirth, gender, careStatus, medicalNotes, preferredFacilityId, assignedWorkerId, emergencyContact, emergencyPhone, isActive }) })
+      return this.apiRequest('/api/admin/users', { method: 'POST', body: JSON.stringify({ firstName, middleName, lastName, email, password, contactNumber, age, dateOfBirth, gender, careStatus, medicalNotes, preferredFacilityId, assignedWorkerId, emergencyContact, emergencyPhone, isActive }) })
         .then(async (result) => { await this.refresh(); return result; })
         .catch((error) => ({ error: error.message }));
     }
     const regResult = this.registerUser({
-      fullName,
+      fullName: fullName || [firstName, middleName, lastName].filter(Boolean).join(' '),
       email,
       password: password || 'default123',
       role: 'patient',
@@ -984,18 +984,19 @@ class DatabaseService {
     return true;
   }
 
-  adminCreateHealthWorker({ fullName, email, password, contactNumber, specialty = 'HIV care support', licenseNumber = '', primaryFacilityId = 1, isVerified = true, isAvailable = true, bioSummary = '', isActive = true }) {
+  adminCreateHealthWorker({ fullName, firstName, middleName, lastName, email, password, contactNumber, gender, specialty = 'HIV care support', licenseNumber = '', primaryFacilityId = 1, isVerified = true, isAvailable = true, bioSummary = '', isActive = true }) {
     if (this.useApi) {
-      return this.apiRequest('/api/admin/workers', { method: 'POST', body: JSON.stringify({ fullName, email, password, contactNumber, specialty, licenseNumber, primaryFacilityId, isVerified, isAvailable, bioSummary, isActive }) })
+      return this.apiRequest('/api/admin/workers', { method: 'POST', body: JSON.stringify({ firstName, middleName, lastName, email, password, contactNumber, gender, specialty, licenseNumber, primaryFacilityId, isVerified, isAvailable, bioSummary, isActive }) })
         .then(async (result) => { await this.refresh(); return result; })
         .catch((error) => ({ error: error.message }));
     }
     const regResult = this.registerUser({
-      fullName,
+      fullName: fullName || [firstName, middleName, lastName].filter(Boolean).join(' '),
       email,
       password: password || 'default123',
       role: 'health-worker',
       contactNumber,
+      gender,
       termsAccepted: true,
     });
     if (regResult.error) return regResult;

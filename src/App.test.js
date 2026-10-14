@@ -4,6 +4,8 @@ import App from './App';
 import db from './services/databaseService';
 import { consumePasswordRecoveryToken, isPasswordRecoveryRedirect } from './services/passwordRecovery';
 const { Buffer } = require('buffer');
+const getFullNameFromParts = require('../api/accountName');
+const { isAllowedGender } = require('../api/genderOptions');
 const isPasswordRecoveryToken = require('../api/passwordRecoveryToken');
 
 beforeEach(() => {
@@ -73,12 +75,15 @@ test('shows all requested registration fields', () => {
   render(<App />);
   userEvent.click(screen.getByRole('button', { name: /new here\? sign up/i }));
 
-  expect(screen.getByLabelText(/first name/i)).toBeInTheDocument();
-  expect(screen.getByLabelText(/last name/i)).toBeInTheDocument();
+  expect(screen.getByLabelText(/first name/i)).toBeRequired();
+  expect(screen.getByLabelText(/middle name/i)).toBeRequired();
+  expect(screen.getByLabelText(/last name/i)).toBeRequired();
   expect(screen.getByLabelText(/email address/i)).toBeInTheDocument();
   expect(screen.getByLabelText(/^age$/i)).toBeInTheDocument();
   expect(screen.getByLabelText(/date of birth/i)).toBeInTheDocument();
-  expect(screen.getByLabelText(/^gender/i)).toBeInTheDocument();
+  const signupGender = screen.getByLabelText(/^gender/i);
+  expect(signupGender).toBeRequired();
+  expect(Array.from(signupGender.options).map((option) => option.text)).toEqual(['Select an option', 'Male', 'Female', 'Other']);
   expect(screen.getByLabelText(/^password$/i)).toBeInTheDocument();
   expect(screen.getByLabelText(/confirm password/i)).toBeInTheDocument();
   expect(screen.getByLabelText(/contact number/i)).toBeInTheDocument();
@@ -116,6 +121,44 @@ test('admin email service sends a registered user ID to the backend', async () =
       credentials: 'same-origin',
       body: JSON.stringify({ userId: 42, subject: 'Account update', message: 'Please review your account.' }),
     }));
+  } finally {
+    db.useApi = previousApiMode;
+  }
+});
+
+test('gender validation matches patient and health-worker account choices', () => {
+  expect(isAllowedGender('Male', 'patient')).toBe(true);
+  expect(isAllowedGender('Female', 'patient')).toBe(true);
+  expect(isAllowedGender('Other', 'patient')).toBe(true);
+  expect(isAllowedGender('Other', 'health-worker')).toBe(false);
+  expect(isAllowedGender('Woman', 'patient')).toBe(false);
+});
+
+test('server name validation requires each name and respects the users.full_name limit', () => {
+  expect(getFullNameFromParts({ firstName: ' Ada ', middleName: 'Marie', lastName: 'Lovelace ' })).toEqual({ fullName: 'Ada Marie Lovelace' });
+  expect(getFullNameFromParts({ firstName: 'Ada', middleName: ' ', lastName: 'Lovelace' }).error).toMatch(/first, middle, and last names are required/i);
+  expect(getFullNameFromParts({ firstName: 'Ada', middleName: 'Marie', lastName: 'L'.repeat(150) }).error).toMatch(/150 characters or fewer/i);
+});
+
+test('registration services send all three name parts and never send password confirmation', async () => {
+  const previousApiMode = db.useApi;
+  db.useApi = true;
+  const fetchMock = jest.spyOn(global, 'fetch').mockResolvedValue({ ok: true, json: async () => ({}) });
+  const nameParts = { firstName: 'Ada', middleName: 'Marie', lastName: 'Lovelace' };
+
+  try {
+    await db.registerUser({ ...nameParts, email: 'ada@example.com', password: 'securePassword123', confirmPassword: 'securePassword123', gender: 'Other' });
+    await db.adminCreateUser({ ...nameParts, email: 'patient@example.com', password: 'securePassword123', confirmPassword: 'securePassword123', gender: 'Male' });
+    await db.adminCreateHealthWorker({ ...nameParts, email: 'worker@example.com', password: 'securePassword123', confirmPassword: 'securePassword123', gender: 'Female' });
+
+    const requestBody = (path) => JSON.parse(fetchMock.mock.calls.find(([url]) => url === path)[1].body);
+    expect(requestBody('/api/auth/register')).toMatchObject({ ...nameParts, gender: 'Other' });
+    expect(requestBody('/api/admin/users')).toMatchObject({ ...nameParts, gender: 'Male' });
+    expect(requestBody('/api/admin/workers')).toMatchObject({ ...nameParts, gender: 'Female' });
+    ['/api/auth/register', '/api/admin/users', '/api/admin/workers'].forEach((path) => {
+      expect(requestBody(path)).not.toHaveProperty('confirmPassword');
+      expect(requestBody(path)).not.toHaveProperty('fullName');
+    });
   } finally {
     db.useApi = previousApiMode;
   }
@@ -165,11 +208,12 @@ test('API signup waits for email verification and supports resending the link', 
     render(<App />);
     userEvent.click(screen.getByRole('button', { name: /new here\? sign up/i }));
     userEvent.type(screen.getByLabelText(/first name/i), 'Verify');
+    userEvent.type(screen.getByLabelText(/middle name/i), 'Anne');
     userEvent.type(screen.getByLabelText(/last name/i), 'Account');
     userEvent.type(screen.getByLabelText(/email address/i), 'verify@example.com');
     userEvent.type(screen.getByLabelText(/^age$/i), '30');
     fireEvent.change(screen.getByLabelText(/date of birth/i), { target: { value: '1996-01-01' } });
-    userEvent.selectOptions(screen.getByLabelText(/^gender/i), 'Woman');
+    userEvent.selectOptions(screen.getByLabelText(/^gender/i), 'Female');
     userEvent.type(screen.getByLabelText(/^password$/i), 'securePass1234');
     userEvent.type(screen.getByLabelText(/confirm password/i), 'securePass1234');
     userEvent.click(screen.getByRole('checkbox'));
@@ -664,11 +708,12 @@ test('encodes registered user into the database and loads their personalized das
   userEvent.click(screen.getByRole('button', { name: /new here\? sign up/i }));
 
   userEvent.type(screen.getByLabelText(/first name/i), 'Jordan');
+  userEvent.type(screen.getByLabelText(/middle name/i), 'Marie');
   userEvent.type(screen.getByLabelText(/last name/i), 'Taylor');
   userEvent.type(screen.getByLabelText(/email address/i), 'jordan@testdomain.org');
   userEvent.type(screen.getByLabelText(/^age$/i), '29');
   fireEvent.change(screen.getByLabelText(/date of birth/i), { target: { value: '1997-04-15' } });
-  userEvent.selectOptions(screen.getByLabelText(/^gender/i), 'Woman');
+  userEvent.selectOptions(screen.getByLabelText(/^gender/i), 'Female');
   userEvent.type(screen.getByLabelText(/^password$/i), 'securePass123');
   userEvent.type(screen.getByLabelText(/confirm password/i), 'securePass123');
   userEvent.type(screen.getByLabelText(/contact number/i), '+63 912 345 6789');
@@ -677,8 +722,8 @@ test('encodes registered user into the database and loads their personalized das
   userEvent.click(screen.getByRole('button', { name: /create my account/i }));
 
   // Verifies personalized dashboard loaded from newly registered DB profile
-  expect(screen.getByText('Jordan Taylor')).toBeInTheDocument();
-  expect(db.getTable('Users').find((user) => user.email === 'jordan@testdomain.org').full_name).toBe('Jordan Taylor');
+  expect(screen.getByText('Jordan Marie Taylor')).toBeInTheDocument();
+  expect(db.getTable('Users').find((user) => user.email === 'jordan@testdomain.org').full_name).toBe('Jordan Marie Taylor');
 });
 
 test('blocks registration when password is the same as the email address', () => {
@@ -686,11 +731,12 @@ test('blocks registration when password is the same as the email address', () =>
   userEvent.click(screen.getByRole('button', { name: /new here\? sign up/i }));
 
   userEvent.type(screen.getByLabelText(/first name/i), 'Taylor');
+  userEvent.type(screen.getByLabelText(/middle name/i), 'Alison');
   userEvent.type(screen.getByLabelText(/last name/i), 'Swift');
   userEvent.type(screen.getByLabelText(/email address/i), 'taylor@example.com');
   userEvent.type(screen.getByLabelText(/^age$/i), '30');
   fireEvent.change(screen.getByLabelText(/date of birth/i), { target: { value: '1995-12-13' } });
-  userEvent.selectOptions(screen.getByLabelText(/^gender/i), 'Woman');
+  userEvent.selectOptions(screen.getByLabelText(/^gender/i), 'Female');
   userEvent.type(screen.getByLabelText(/^password$/i), 'taylor@example.com');
   userEvent.type(screen.getByLabelText(/confirm password/i), 'taylor@example.com');
   userEvent.click(screen.getByLabelText(/i agree to the/i));
@@ -698,6 +744,25 @@ test('blocks registration when password is the same as the email address', () =>
   userEvent.click(screen.getByRole('button', { name: /create my account/i }));
 
   expect(screen.getByRole('alert')).toHaveTextContent(/password cannot be the same as your email address/i);
+});
+
+test('blocks public signup when the password confirmation does not match', () => {
+  render(<App />);
+  userEvent.click(screen.getByRole('button', { name: /new here\? sign up/i }));
+  userEvent.type(screen.getByLabelText(/first name/i), 'Morgan');
+  userEvent.type(screen.getByLabelText(/middle name/i), 'Lee');
+  userEvent.type(screen.getByLabelText(/last name/i), 'Taylor');
+  userEvent.type(screen.getByLabelText(/email address/i), 'morgan.taylor@example.com');
+  userEvent.type(screen.getByLabelText(/^age$/i), '28');
+  fireEvent.change(screen.getByLabelText(/date of birth/i), { target: { value: '1998-03-04' } });
+  userEvent.selectOptions(screen.getByLabelText(/^gender/i), 'Female');
+  userEvent.type(screen.getByLabelText(/^password$/i), 'securePassword123');
+  userEvent.type(screen.getByLabelText(/confirm password/i), 'differentPassword123');
+  userEvent.click(screen.getByLabelText(/i agree to the/i));
+  userEvent.click(screen.getByRole('button', { name: /create my account/i }));
+
+  expect(screen.getByRole('alert')).toHaveTextContent(/passwords do not match/i);
+  expect(db.getTable('Users')).toHaveLength(0);
 });
 
 test('admin dashboard starts with all data and metrics at 0', () => {
@@ -742,17 +807,32 @@ test('admin can perform full CRUD on users, see full user info, and inspect avai
   // 1. CREATE USER VIA ADMIN MODAL
   userEvent.click(screen.getByRole('button', { name: /^add user/i }));
   expect(screen.getByRole('heading', { name: /add new user/i })).toBeInTheDocument();
+  const patientGender = screen.getByLabelText(/^gender$/i);
+  expect(Array.from(patientGender.options).map((option) => option.text)).toEqual(['Male', 'Female', 'Other']);
+  userEvent.selectOptions(patientGender, 'Other');
 
-  userEvent.type(screen.getByLabelText(/full name/i), 'Alex Rivera');
+  userEvent.type(screen.getByLabelText(/first name/i), 'Alex');
+  userEvent.type(screen.getByLabelText(/middle name/i), 'James');
+  userEvent.type(screen.getByLabelText(/last name/i), 'Rivera');
   userEvent.type(screen.getByLabelText(/email address/i), 'alex.rivera@example.com');
-  userEvent.type(screen.getByLabelText(/^password$/i), 'pass12345');
+  userEvent.type(screen.getByLabelText(/^password$/i), 'patientPass123');
+  userEvent.type(screen.getByLabelText(/confirm password/i), 'patientPass123');
   userEvent.type(screen.getByLabelText(/^age$/i), '28');
   userEvent.type(screen.getByLabelText(/contact phone/i), '+63 918 111 2222');
   userEvent.selectOptions(screen.getByLabelText(/care status/i), 'Active care plan');
+  userEvent.clear(screen.getByLabelText(/confirm password/i));
+  userEvent.type(screen.getByLabelText(/confirm password/i), 'differentPatientPass123');
+  userEvent.click(screen.getByRole('button', { name: /save user record/i }));
+  expect(screen.getByRole('alert')).toHaveTextContent(/passwords do not match/i);
+  expect(db.getTable('Users').some((user) => user.email === 'alex.rivera@example.com')).toBe(false);
+
+  userEvent.clear(screen.getByLabelText(/confirm password/i));
+  userEvent.type(screen.getByLabelText(/confirm password/i), 'patientPass123');
   userEvent.click(screen.getByRole('button', { name: /save user record/i }));
 
-  expect(screen.getByText('Alex Rivera')).toBeInTheDocument();
+  expect(screen.getByText('Alex James Rivera')).toBeInTheDocument();
   expect(screen.getByText(/alex\.rivera@example\.com/i)).toBeInTheDocument();
+  expect(db.getTable('Users').find((account) => account.email === 'alex.rivera@example.com').gender).toBe('Other');
 
   // Book an appointment for this newly created patient so they have an availed service
   const alexUser = db.getTable('Users').find((u) => u.email === 'alex.rivera@example.com');
@@ -768,7 +848,7 @@ test('admin can perform full CRUD on users, see full user info, and inspect avai
   // 2. READ & INSPECT USER AND AVAILED SERVICES WITH STATUS
   userEvent.click(screen.getByRole('button', { name: /view details & services/i }));
   const userModal = screen.getByRole('dialog');
-  expect(within(userModal).getByRole('heading', { name: 'Alex Rivera' })).toBeInTheDocument();
+  expect(within(userModal).getByRole('heading', { name: 'Alex James Rivera' })).toBeInTheDocument();
   expect(within(userModal).getByText(/services availed/i)).toBeInTheDocument();
   expect(within(userModal).getByText(/confidential hiv screening/i)).toBeInTheDocument();
   expect(within(userModal).getByText('Confirmed')).toBeInTheDocument();
@@ -817,25 +897,42 @@ test('admin can perform full CRUD on health workers, see full worker details, an
   // 1. CREATE HEALTH WORKER VIA ADMIN MODAL
   userEvent.click(screen.getByRole('button', { name: /^add health worker/i }));
   expect(screen.getByRole('heading', { name: /add health worker/i })).toBeInTheDocument();
+  const workerGender = screen.getByLabelText(/^gender$/i);
+  expect(workerGender).toBeRequired();
+  expect(Array.from(workerGender.options).map((option) => option.text)).toEqual(['Select an option', 'Male', 'Female']);
 
-  userEvent.type(screen.getByLabelText(/full name/i), 'Dr. Maria Clara');
+  userEvent.type(screen.getByLabelText(/first name/i), 'Maria');
+  userEvent.type(screen.getByLabelText(/middle name/i), 'Clara');
+  userEvent.type(screen.getByLabelText(/last name/i), 'Santos');
   userEvent.type(screen.getByLabelText(/email address/i), 'maria.clara@risinghiv.org');
-  userEvent.type(screen.getByLabelText(/^password$/i), 'workerPass789');
+  userEvent.selectOptions(workerGender, 'Female');
+  userEvent.type(screen.getByLabelText(/^password$/i), 'workerPass7890');
+  userEvent.type(screen.getByLabelText(/confirm password/i), 'workerPass7890');
   userEvent.type(screen.getByLabelText(/specialty/i), 'Infectious Disease Specialist');
   userEvent.type(screen.getByLabelText(/license number/i), 'PRC-99887766');
   userEvent.selectOptions(screen.getByLabelText(/availability status/i), 'Available');
   userEvent.selectOptions(screen.getByLabelText(/verification status/i), 'Verified');
   userEvent.type(screen.getByLabelText(/bio & clinical experience/i), 'Over 10 years of community health leadership.');
+  userEvent.clear(screen.getByLabelText(/confirm password/i));
+  userEvent.type(screen.getByLabelText(/confirm password/i), 'differentWorkerPass123');
+  userEvent.click(screen.getByRole('button', { name: /save health worker/i }));
+  expect(screen.getByRole('alert')).toHaveTextContent(/passwords do not match/i);
+  expect(db.getTable('Users').some((user) => user.email === 'maria.clara@risinghiv.org')).toBe(false);
+
+  userEvent.clear(screen.getByLabelText(/confirm password/i));
+  userEvent.type(screen.getByLabelText(/confirm password/i), 'workerPass7890');
   userEvent.click(screen.getByRole('button', { name: /save health worker/i }));
 
-  expect(screen.getByText('Dr. Maria Clara')).toBeInTheDocument();
+  expect(screen.getByText('Maria Clara Santos')).toBeInTheDocument();
   expect(screen.getByText(/infectious disease specialist/i)).toBeInTheDocument();
+  expect(db.getTable('Users').find((account) => account.email === 'maria.clara@risinghiv.org').gender).toBe('Female');
 
   // 2. READ & INSPECT WORKER DETAILS AND WORKLOAD
   userEvent.click(screen.getByRole('button', { name: /view details & workload/i }));
   const workerModal = screen.getByRole('dialog');
-  expect(within(workerModal).getByRole('heading', { name: 'Dr. Maria Clara' })).toBeInTheDocument();
+  expect(within(workerModal).getByRole('heading', { name: 'Maria Clara Santos' })).toBeInTheDocument();
   expect(within(workerModal).getByText('PRC-99887766')).toBeInTheDocument();
+  expect(within(workerModal).getByText('Female')).toBeInTheDocument();
   expect(within(workerModal).getByText(/over 10 years of community health leadership/i)).toBeInTheDocument();
 
   // 3. UPDATE HEALTH WORKER
@@ -851,7 +948,7 @@ test('admin can perform full CRUD on health workers, see full worker details, an
   expect(within(deleteWorkerModal).getByRole('heading', { name: /delete health worker/i })).toBeInTheDocument();
   userEvent.click(within(deleteWorkerModal).getByRole('button', { name: /confirm delete/i }));
 
-  expect(screen.queryByText('Dr. Maria Clara')).not.toBeInTheDocument();
+  expect(screen.queryByText('Maria Clara Santos')).not.toBeInTheDocument();
 });
 
 test('patient can view all services they have availed with their respective status badges', () => {

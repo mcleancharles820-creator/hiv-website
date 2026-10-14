@@ -17,6 +17,21 @@ function formatDateTime(value, fallback = 'Not recorded') {
   return date.toLocaleString([], { dateStyle: 'medium', timeStyle: 'short' });
 }
 
+function composeFullName(firstName, middleName, lastName) {
+  return [firstName, middleName, lastName].map((part) => String(part || '').trim()).join(' ');
+}
+
+function normalizeGender(value) {
+  return ({
+    Woman: 'Female',
+    Man: 'Male',
+    'Non-binary': 'Other',
+    'Prefer not to say': 'Other',
+    'Self-describe': 'Other',
+  })[value] || value || '';
+}
+
+
 const resources = [
   {
     number: '01',
@@ -174,14 +189,24 @@ function AuthScreen({ onEnter, onPasswordRecoveryComplete }) {
         }
 
         const firstName = form.elements.firstName.value.trim();
+        const middleName = form.elements.middleName.value.trim();
         const lastName = form.elements.lastName.value.trim();
+        if (!firstName || !middleName || !lastName) {
+          setError('First, middle, and last names are required.');
+          return;
+        }
+        const fullName = composeFullName(firstName, middleName, lastName);
+        if (fullName.length > 150) {
+          setError('Your full name must be 150 characters or fewer.');
+          return;
+        }
         const age = form.elements.age && form.elements.age.value ? parseInt(form.elements.age.value, 10) : null;
         const dateOfBirth = form.elements.dateOfBirth ? form.elements.dateOfBirth.value : null;
         const gender = form.elements.gender ? form.elements.gender.value : null;
         const contactNumber = form.elements.contactNumber ? form.elements.contactNumber.value : null;
         const termsAccepted = form.elements.terms ? form.elements.terms.checked : true;
 
-        const registration = db.registerUser({ firstName, lastName, email, password, role, age, dateOfBirth, gender, contactNumber, termsAccepted });
+        const registration = db.registerUser({ fullName, firstName, middleName, lastName, email, password, role, age, dateOfBirth, gender, contactNumber, termsAccepted });
         const registered = db.useApi ? await registration : registration;
         if (registered.verificationRequired || registered.verificationPending) {
           setVerificationEmail(email.trim());
@@ -255,11 +280,11 @@ function AuthScreen({ onEnter, onPasswordRecoveryComplete }) {
             <button className="primary-button" type="button" onClick={returnToSignIn}>Sign in <span>↗</span></button>
           </div> : <>
           <form key={mode} className={`auth-form ${mode === 'register' ? 'registration-form' : ''}`} onSubmit={handleSubmit} autoComplete="off">
-            {mode === 'register' && <div className="field-row registration-name-row"><label>First Name<input name="firstName" required type="text" autoComplete="given-name" placeholder="First name" /></label><label>Last Name<input name="lastName" required type="text" autoComplete="family-name" placeholder="Last name" /></label></div>}
+            {mode === 'register' && <div className="field-row registration-name-row"><label>First Name<input name="firstName" required type="text" autoComplete="given-name" placeholder="First name" /></label><label>Middle Name<input name="middleName" required type="text" autoComplete="additional-name" placeholder="Middle name" /></label><label>Last Name<input name="lastName" required type="text" autoComplete="family-name" placeholder="Last name" /></label></div>}
             {mode !== 'reset' && <label>Email Address<input name="email" required type="email" autoComplete="email" defaultValue={mode === 'forgot' ? resetEmail : ''} placeholder="you@example.com" /></label>}
             {mode === 'login' && !db.useApi && <label>Account type<select name="role" value={role} onChange={(event) => setRole(event.target.value)} required><option value="patient">Patient / User</option><option value="health-worker">Health Worker</option><option value="admin">Admin</option></select></label>}
             {mode === 'register' && <div className="field-row"><label>Age<input name="age" required type="number" min="13" max="120" placeholder="Age" /></label><label>Date of Birth<input name="dateOfBirth" required type="date" /></label></div>}
-            {mode === 'register' && <label>Gender<select name="gender" defaultValue="" required><option value="" disabled>Select an option</option><option>Woman</option><option>Man</option><option>Non-binary</option><option>Prefer not to say</option><option>Self-describe</option></select></label>}
+            {mode === 'register' && <label>Gender<select name="gender" defaultValue="" required><option value="" disabled>Select an option</option><option>Male</option><option>Female</option><option>Other</option></select></label>}
             {(mode === 'login' || mode === 'register') && <label>Password<input name="password" required minLength={mode === 'register' ? 12 : undefined} type="password" autoComplete={mode === 'login' ? 'current-password' : 'new-password'} placeholder="Enter your password" /></label>}
             {(mode === 'reset' || mode === 'register') && <label>{mode === 'reset' ? 'New Password' : 'Confirm Password'}<input name={mode === 'reset' ? 'password' : 'confirmPassword'} required minLength={12} type="password" autoComplete="new-password" placeholder={mode === 'reset' ? 'Create a new password' : 'Re-enter your password'} /></label>}
             {mode === 'reset' && <label>Confirm New Password<input name="confirmPassword" required minLength={12} type="password" autoComplete="new-password" placeholder="Re-enter your new password" /></label>}
@@ -916,6 +941,7 @@ function AdminHealthWorkerDetailModal({ worker, onClose, onEdit, onDelete }) {
               <div className="admin-detail-item"><span className="admin-detail-label">Full Name</span><strong className="admin-detail-value">{worker.fullName}</strong></div>
               <div className="admin-detail-item"><span className="admin-detail-label">Email Address</span><strong className="admin-detail-value">{worker.email}</strong></div>
               <div className="admin-detail-item"><span className="admin-detail-label">Contact Phone</span><strong className="admin-detail-value">{worker.contactNumber}</strong></div>
+              <div className="admin-detail-item"><span className="admin-detail-label">Gender</span><strong className="admin-detail-value">{worker.gender}</strong></div>
               <div className="admin-detail-item"><span className="admin-detail-label">Specialty</span><strong className="admin-detail-value">{worker.specialty}</strong></div>
               <div className="admin-detail-item"><span className="admin-detail-label">License Number</span><strong className="admin-detail-value">{worker.licenseNumber}</strong></div>
               <div className="admin-detail-item"><span className="admin-detail-label">Primary Facility</span><strong className="admin-detail-value">{worker.primaryFacilityName}</strong></div>
@@ -960,12 +986,16 @@ function AdminUserFormModal({ user, onClose, onSave }) {
   const isEdit = Boolean(user?.userId || user?.id);
   const [formData, setFormData] = useState({
     fullName: user?.fullName || user?.full_name || '',
+    firstName: '',
+    middleName: '',
+    lastName: '',
     email: user?.email || '',
     password: '',
+    confirmPassword: '',
     contactNumber: user?.contactNumber || user?.phone || user?.contact_number || '',
     age: user?.age || '',
     dateOfBirth: user?.dateOfBirth || user?.date_of_birth || '',
-    gender: user?.gender || 'Woman',
+    gender: normalizeGender(user?.gender) || 'Female',
     careStatus: user?.careStatus || 'Active care plan',
     preferredFacilityId: user?.preferredFacilityId || 1,
     assignedWorkerId: user?.assignedWorkerId || '',
@@ -989,12 +1019,33 @@ function AdminUserFormModal({ user, onClose, onSave }) {
   const handleSubmit = async (e) => {
     e.preventDefault();
     setError('');
-    if (!formData.fullName.trim() || !formData.email.trim()) {
-      setError('Please provide full name and email.');
+    if (!formData.email.trim()) {
+      setError('Please provide a valid email address.');
       return;
     }
-    if (!isEdit && !formData.password.trim()) {
-      setError('Password is required when creating a new user.');
+
+    let fullName = formData.fullName.trim();
+    if (!isEdit) {
+      const nameParts = [formData.firstName, formData.middleName, formData.lastName].map((part) => part.trim());
+      if (nameParts.some((part) => !part)) {
+        setError('First, middle, and last names are required.');
+        return;
+      }
+      fullName = composeFullName(...nameParts);
+      if (fullName.length > 150) {
+        setError('The full name must be 150 characters or fewer.');
+        return;
+      }
+      if (formData.password.length < 12) {
+        setError('Password must be at least 12 characters.');
+        return;
+      }
+      if (formData.password !== formData.confirmPassword) {
+        setError('Passwords do not match. Please check them and try again.');
+        return;
+      }
+    } else if (!fullName) {
+      setError('Please provide a full name.');
       return;
     }
 
@@ -1006,7 +1057,7 @@ function AdminUserFormModal({ user, onClose, onSave }) {
         return;
       }
     } else {
-      const pending = db.adminCreateUser(formData);
+      const pending = db.adminCreateUser({ ...formData, fullName });
       const result = db.useApi ? await pending : pending;
       if (result.error) {
         setError(result.error);
@@ -1024,17 +1075,24 @@ function AdminUserFormModal({ user, onClose, onSave }) {
         <h2>{isEdit ? 'Update user' : 'Add new user'}</h2>
         {error && <p className="form-error" role="alert">{error}</p>}
         <form onSubmit={handleSubmit}>
-          <label>Full Name
+          {isEdit ? <label>Full Name
             <input required type="text" value={formData.fullName} onChange={(e) => setFormData({ ...formData, fullName: e.target.value })} placeholder="Full name" />
-          </label>
+          </label> : <div className="field-row registration-name-row admin-registration-name-row">
+            <label>First Name<input required type="text" autoComplete="given-name" value={formData.firstName} onChange={(e) => setFormData({ ...formData, firstName: e.target.value })} placeholder="First name" /></label>
+            <label>Middle Name<input required type="text" autoComplete="additional-name" value={formData.middleName} onChange={(e) => setFormData({ ...formData, middleName: e.target.value })} placeholder="Middle name" /></label>
+            <label>Last Name<input required type="text" autoComplete="family-name" value={formData.lastName} onChange={(e) => setFormData({ ...formData, lastName: e.target.value })} placeholder="Last name" /></label>
+          </div>}
           <label>Email Address
-            <input required type="email" value={formData.email} onChange={(e) => setFormData({ ...formData, email: e.target.value })} placeholder="you@example.com" />
+            <input required type="email" autoComplete="email" value={formData.email} onChange={(e) => setFormData({ ...formData, email: e.target.value })} placeholder="you@example.com" />
           </label>
-          {!isEdit && (
+          {!isEdit && <>
             <label>Password
-              <input required minLength={12} type="password" value={formData.password} onChange={(e) => setFormData({ ...formData, password: e.target.value })} placeholder="Create password" />
+              <input required minLength={12} autoComplete="new-password" type="password" value={formData.password} onChange={(e) => setFormData({ ...formData, password: e.target.value })} placeholder="Create password" />
             </label>
-          )}
+            <label>Confirm Password
+              <input required minLength={12} autoComplete="new-password" type="password" value={formData.confirmPassword} onChange={(e) => setFormData({ ...formData, confirmPassword: e.target.value })} placeholder="Re-enter password" />
+            </label>
+          </>}
           <div className="field-row">
             <label>Age
               <input type="number" min="13" max="120" value={formData.age} onChange={(e) => setFormData({ ...formData, age: e.target.value })} placeholder="Age" />
@@ -1046,11 +1104,9 @@ function AdminUserFormModal({ user, onClose, onSave }) {
           <div className="field-row">
             <label>Gender
               <select value={formData.gender} onChange={(e) => setFormData({ ...formData, gender: e.target.value })}>
-                <option>Woman</option>
-                <option>Man</option>
-                <option>Non-binary</option>
-                <option>Prefer not to say</option>
-                <option>Self-describe</option>
+                <option>Male</option>
+                <option>Female</option>
+                <option>Other</option>
               </select>
             </label>
             <label>Contact Phone
@@ -1109,8 +1165,13 @@ function AdminHealthWorkerFormModal({ worker, onClose, onSave }) {
   const isEdit = Boolean(worker?.workerId || worker?.id);
   const [formData, setFormData] = useState({
     fullName: worker?.fullName || worker?.name || '',
+    firstName: '',
+    middleName: '',
+    lastName: '',
     email: worker?.email || '',
     password: '',
+    confirmPassword: '',
+    gender: ['Male', 'Female'].includes(normalizeGender(worker?.gender)) ? normalizeGender(worker?.gender) : '',
     contactNumber: worker?.contactNumber || worker?.phone || '',
     specialty: worker?.specialty || (isEdit ? 'HIV care support' : ''),
     licenseNumber: worker?.licenseNumber || '',
@@ -1127,17 +1188,39 @@ function AdminHealthWorkerFormModal({ worker, onClose, onSave }) {
   const handleSubmit = async (e) => {
     e.preventDefault();
     setError('');
-    if (!formData.fullName.trim() || !formData.email.trim()) {
-      setError('Please provide full name and email.');
+    if (!formData.email.trim()) {
+      setError('Please provide a valid email address.');
       return;
     }
-    if (!isEdit && !formData.password.trim()) {
-      setError('Password is required when creating a new health worker.');
+
+    let fullName = formData.fullName.trim();
+    if (!isEdit) {
+      const nameParts = [formData.firstName, formData.middleName, formData.lastName].map((part) => part.trim());
+      if (nameParts.some((part) => !part)) {
+        setError('First, middle, and last names are required.');
+        return;
+      }
+      fullName = composeFullName(...nameParts);
+      if (fullName.length > 150) {
+        setError('The full name must be 150 characters or fewer.');
+        return;
+      }
+      if (formData.password.length < 12) {
+        setError('Password must be at least 12 characters.');
+        return;
+      }
+      if (formData.password !== formData.confirmPassword) {
+        setError('Passwords do not match. Please check them and try again.');
+        return;
+      }
+    } else if (!fullName) {
+      setError('Please provide a full name.');
       return;
     }
 
     const payload = {
       ...formData,
+      fullName,
       isVerified: formData.verificationStatus === 'Verified',
       isAvailable: formData.availabilityStatus === 'Available',
     };
@@ -1168,17 +1251,31 @@ function AdminHealthWorkerFormModal({ worker, onClose, onSave }) {
         <h2>{isEdit ? 'Update worker' : 'Add health worker'}</h2>
         {error && <p className="form-error" role="alert">{error}</p>}
         <form onSubmit={handleSubmit}>
-          <label>Full Name
+          {isEdit ? <label>Full Name
             <input required type="text" value={formData.fullName} onChange={(e) => setFormData({ ...formData, fullName: e.target.value })} placeholder="Full name" />
-          </label>
+          </label> : <div className="field-row registration-name-row admin-registration-name-row">
+            <label>First Name<input required type="text" autoComplete="given-name" value={formData.firstName} onChange={(e) => setFormData({ ...formData, firstName: e.target.value })} placeholder="First name" /></label>
+            <label>Middle Name<input required type="text" autoComplete="additional-name" value={formData.middleName} onChange={(e) => setFormData({ ...formData, middleName: e.target.value })} placeholder="Middle name" /></label>
+            <label>Last Name<input required type="text" autoComplete="family-name" value={formData.lastName} onChange={(e) => setFormData({ ...formData, lastName: e.target.value })} placeholder="Last name" /></label>
+          </div>}
           <label>Email Address
-            <input required type="email" value={formData.email} onChange={(e) => setFormData({ ...formData, email: e.target.value })} placeholder="worker@risinghiv.org" />
+            <input required type="email" autoComplete="email" value={formData.email} onChange={(e) => setFormData({ ...formData, email: e.target.value })} placeholder="worker@risinghiv.org" />
           </label>
-          {!isEdit && (
+          {!isEdit && <label>Gender
+            <select required value={formData.gender} onChange={(e) => setFormData({ ...formData, gender: e.target.value })}>
+              <option value="">Select an option</option>
+              <option>Male</option>
+              <option>Female</option>
+            </select>
+          </label>}
+          {!isEdit && <>
             <label>Password
-              <input required minLength={12} type="password" value={formData.password} onChange={(e) => setFormData({ ...formData, password: e.target.value })} placeholder="Create password" />
+              <input required minLength={12} autoComplete="new-password" type="password" value={formData.password} onChange={(e) => setFormData({ ...formData, password: e.target.value })} placeholder="Create password" />
             </label>
-          )}
+            <label>Confirm Password
+              <input required minLength={12} autoComplete="new-password" type="password" value={formData.confirmPassword} onChange={(e) => setFormData({ ...formData, confirmPassword: e.target.value })} placeholder="Re-enter password" />
+            </label>
+          </>}
           <div className="field-row">
             <label>Specialty
               <input required type="text" value={formData.specialty} onChange={(e) => setFormData({ ...formData, specialty: e.target.value })} placeholder="e.g. HIV Care Specialist" />

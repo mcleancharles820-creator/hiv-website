@@ -76,10 +76,11 @@ Production builds use the Vercel functions in `api/` instead of browser `localSt
 3. If the app tables already exist, run `api/migrations/001_email_verification.sql` instead. It preserves existing accounts as verified and requires verification for newly created accounts.
 4. Run `api/migrations/002_chat_realtime_rls.sql` after schema setup. It enables read-only, role-scoped Realtime access to chats; message writes still go through the Vercel API.
 5. Run `api/migrations/003_password_recovery.sql` to track password changes and invalidate existing HIVeLink sessions after a reset.
-6. Copy the PostgreSQL connection string from Supabase. Use a connection pooler URL supported by Vercel and include `sslmode=require`.
-7. Create a long random session secret (at least 32 characters). Do not commit it or put it in React source.
-8. In Supabase Dashboard > Authentication > Providers > Email, enable email confirmations. Under URL Configuration, set the Site URL to the deployed app and allow that URL under Redirect URLs; password recovery redirects to the app root with `?password-reset=1`.
-9. Supabase's built-in email service needs no custom domain and is suitable for capstone testing, but it is rate-limited and may only deliver to authorized/verified addresses in the Supabase organization. To verify arbitrary recipients, configure a custom SMTP provider.
+6. Run `api/migrations/004_gender_options.sql` to allow the new Male/Female/Other labels without invalidating existing gender values.
+7. Copy the PostgreSQL connection string from Supabase. Use a connection pooler URL supported by Vercel and include `sslmode=require`.
+8. Create a long random session secret (at least 32 characters). Do not commit it or put it in React source.
+9. In Supabase Dashboard > Authentication > Providers > Email, enable email confirmations. Under URL Configuration, set the Site URL to the deployed app and allow that URL under Redirect URLs; password recovery redirects to the app root with `?password-reset=1`.
+10. Supabase's built-in email service needs no custom domain and is suitable for capstone testing, but it is rate-limited and may only deliver to authorized/verified addresses in the Supabase organization. To verify arbitrary recipients, configure a custom SMTP provider.
 
 ### Vercel setup
 
@@ -101,7 +102,7 @@ Chat Realtime uses authenticated Postgres Changes with row-level security. Patie
 
 ### Create the first administrator
 
-Public registration intentionally cannot create an administrator. Run this from the `hiv-website` folder on a trusted machine, with `DATABASE_URL`, `SUPABASE_URL`, and `SUPABASE_SERVICE_ROLE_KEY` set in the terminal. The initial administrator is created and verified in Supabase Auth because this is an operator-provisioned account. The script prompts for the administrator password without echoing it:
+Public registration intentionally cannot create an administrator. Run this from the `hiv-website` folder on a trusted machine, with `DATABASE_URL`, `SUPABASE_URL`, and `SUPABASE_SERVICE_ROLE_KEY` set in the terminal. The initial administrator is created and verified in Supabase Auth because this is an operator-provisioned account. The script requires first, middle, and last names and prompts for the password twice without echoing either entry:
 
 ```powershell
 npm run create-admin

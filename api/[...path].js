@@ -2,6 +2,8 @@ const { Pool } = require('pg');
 const bcrypt = require('bcryptjs');
 const crypto = require('crypto');
 const { createClient } = require('@supabase/supabase-js');
+const { isAllowedGender } = require('./genderOptions');
+const getFullNameFromParts = require('./accountName');
 const isPasswordRecoveryToken = require('./passwordRecoveryToken');
 
 const pool = globalThis.hivelinkPool || new Pool({
@@ -57,6 +59,7 @@ function getBody(req) {
   if (req.body && typeof req.body === 'object') return req.body;
   return {};
 }
+
 
 function getCookie(req, name) {
   const cookieHeader = req.headers.cookie || '';
@@ -321,6 +324,9 @@ async function mutate(req, user, table, id) {
 
   const values = {};
   for (const column of config.columns) if (Object.prototype.hasOwnProperty.call(record, column)) values[column] = record[column];
+  if (table === 'Users' && values.gender !== undefined && !isAllowedGender(values.gender, user.role === 'health-worker' ? 'health-worker' : 'patient')) {
+    return { status: 400, body: { error: user.role === 'health-worker' ? 'Choose Male or Female for health worker gender.' : 'Choose Male, Female, or Other for gender.' } };
+  }
   if (user.role === 'patient' && table === 'Users' && values.email) {
     const current = await pool.query('SELECT email FROM users WHERE user_id = $1', [user.user_id]);
     if (String(values.email).trim().toLowerCase() !== current.rows[0]?.email) return { status: 400, body: { error: 'Changing account email is not available yet. Contact an administrator.' } };
@@ -426,10 +432,12 @@ module.exports = async function handler(req, res) {
     if (pathname === '/api/auth/register' && req.method === 'POST') {
       if (!applicationUrl()) return send(res, 503, { error: 'APP_URL is not configured.' });
       const body = getBody(req);
-      const fullName = `${String(body.firstName || '').trim()} ${String(body.lastName || '').trim()}`.trim();
+      const { fullName, error: nameError } = getFullNameFromParts(body);
       const email = String(body.email || '').trim().toLowerCase();
       const password = String(body.password || '');
-      if (!fullName || !email || password.length < 12) return send(res, 400, { error: 'First name, last name, email, and a password of at least 12 characters are required.' });
+      if (nameError) return send(res, 400, { error: nameError });
+      if (!isAllowedGender(body.gender, 'patient')) return send(res, 400, { error: 'Choose Male, Female, or Other for gender.' });
+      if (!email || password.length < 12) return send(res, 400, { error: 'Email and a password of at least 12 characters are required.' });
       const { publicClient, adminClient } = supabaseClients();
       const { data: authData, error: authError } = await publicClient.auth.signUp({
         email,
@@ -735,10 +743,12 @@ module.exports = async function handler(req, res) {
       try {
         await client.query('BEGIN');
         if (kind === 'users' && req.method === 'POST') {
-          const fullName = String(body.fullName || '').trim();
+          const { fullName, error: nameError } = getFullNameFromParts(body);
           const email = String(body.email || '').trim().toLowerCase();
           const password = String(body.password || '');
-          if (!fullName || !email || password.length < 12) { await client.query('ROLLBACK'); return send(res, 400, { error: 'Name, email, and a password of at least 12 characters are required.' }); }
+          if (nameError) { await client.query('ROLLBACK'); return send(res, 400, { error: nameError }); }
+          if (!isAllowedGender(body.gender, 'patient')) { await client.query('ROLLBACK'); return send(res, 400, { error: 'Choose Male, Female, or Other for gender.' }); }
+          if (!email || password.length < 12) { await client.query('ROLLBACK'); return send(res, 400, { error: 'Email and a password of at least 12 characters are required.' }); }
           const assignedWorkerId = body.assignedWorkerId === '' || body.assignedWorkerId === undefined || body.assignedWorkerId === null ? null : Number(body.assignedWorkerId);
           if (assignedWorkerId !== null) {
             if (!Number.isSafeInteger(assignedWorkerId) || assignedWorkerId < 1) { await client.query('ROLLBACK'); return send(res, 400, { error: 'Select a valid health worker.' }); }
@@ -758,15 +768,17 @@ module.exports = async function handler(req, res) {
           return send(res, 201, { user: created.rows[0], patient: patient.rows[0], verificationRequired: true, verificationEmailSent: verification.sent });
         }
         if (kind === 'workers' && req.method === 'POST') {
-          const fullName = String(body.fullName || '').trim();
+          const { fullName, error: nameError } = getFullNameFromParts(body);
           const email = String(body.email || '').trim().toLowerCase();
           const password = String(body.password || '');
-          if (!fullName || !email || password.length < 12) { await client.query('ROLLBACK'); return send(res, 400, { error: 'Name, email, and a password of at least 12 characters are required.' }); }
+          if (nameError) { await client.query('ROLLBACK'); return send(res, 400, { error: nameError }); }
+          if (!isAllowedGender(body.gender, 'health-worker')) { await client.query('ROLLBACK'); return send(res, 400, { error: 'Choose Male or Female for health worker gender.' }); }
+          if (!email || password.length < 12) { await client.query('ROLLBACK'); return send(res, 400, { error: 'Email and a password of at least 12 characters are required.' }); }
           const { adminClient } = supabaseClients();
           const { data: authData, error: authError } = await adminClient.auth.admin.createUser({ email, password, email_confirm: false, user_metadata: { full_name: fullName } });
           if (authError || !authData.user) { await client.query('ROLLBACK'); return send(res, 400, { error: authError?.message || 'Could not create the Supabase Auth account.' }); }
           supabaseAuthUserId = authData.user.id;
-          const created = await client.query('INSERT INTO users (supabase_user_id, email, password_hash, full_name, role, contact_number, is_active, terms_accepted, email_verified) VALUES ($1,$2,NULL,$3,\'health-worker\',$4,$5,TRUE,FALSE) RETURNING user_id, supabase_user_id, email, full_name, role, contact_number, is_active, email_verified', [supabaseAuthUserId, email, fullName, body.contactNumber || null, body.isActive !== false]);
+          const created = await client.query('INSERT INTO users (supabase_user_id, email, password_hash, full_name, role, contact_number, gender, is_active, terms_accepted, email_verified) VALUES ($1,$2,NULL,$3,\'health-worker\',$4,$5,$6,TRUE,FALSE) RETURNING user_id, supabase_user_id, email, full_name, role, contact_number, gender, is_active, email_verified', [supabaseAuthUserId, email, fullName, body.contactNumber || null, body.gender, body.isActive !== false]);
           const worker = await client.query('INSERT INTO health_workers (user_id, specialty, license_number, primary_facility_id, is_verified, is_available, bio_summary) VALUES ($1,$2,$3,$4,$5,$6,$7) RETURNING *', [created.rows[0].user_id, body.specialty || 'HIV care support', body.licenseNumber || null, body.primaryFacilityId || 1, body.isVerified !== false, body.isAvailable !== false, body.bioSummary || 'Licensed Health Worker']);
           await client.query('INSERT INTO activity_logs (actor_user_id, actor_name, action, category, details) VALUES ($1,$2,$3,$4,$5)', [user.user_id, user.full_name, `Created health worker: ${fullName}`, 'Care Team Management', `Created health worker ${email}`]);
           await client.query('COMMIT');
@@ -781,6 +793,10 @@ module.exports = async function handler(req, res) {
           if (!profile.rowCount) { await client.query('ROLLBACK'); return send(res, 404, { error: 'Record not found.' }); }
           const userId = profile.rows[0].user_id;
           const userFields = { fullName: 'full_name', email: 'email', contactNumber: 'contact_number', isActive: 'is_active', age: 'age', dateOfBirth: 'date_of_birth', gender: 'gender' };
+          if (body.gender !== undefined && !isAllowedGender(body.gender, isWorker ? 'health-worker' : 'patient')) {
+            await client.query('ROLLBACK');
+            return send(res, 400, { error: isWorker ? 'Choose Male or Female for health worker gender.' : 'Choose Male, Female, or Other for gender.' });
+          }
           if (body.email !== undefined && String(body.email).trim().toLowerCase() !== profile.rows[0].email) {
             await client.query('ROLLBACK');
             return send(res, 400, { error: 'Changing account email is not available yet. Create a new account with the correct address.' });

@@ -45,10 +45,17 @@ function promptSecret(label) {
 async function main() {
   if (!process.env.DATABASE_URL) throw new Error('Set DATABASE_URL before creating the initial admin.');
   if (!process.env.SUPABASE_URL || !process.env.SUPABASE_SERVICE_ROLE_KEY) throw new Error('Set SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY before creating the initial admin.');
-  const fullName = await prompt('Administrator name: ');
+  const firstName = await prompt('Administrator first name: ');
+  const middleName = await prompt('Administrator middle name: ');
+  const lastName = await prompt('Administrator last name: ');
+  const fullName = [firstName, middleName, lastName].join(' ');
   const email = (await prompt('Administrator email: ')).toLowerCase();
   const password = await promptSecret('Administrator password (minimum 12 characters): ');
-  if (!fullName || !email || password.length < 12) throw new Error('A name, valid email, and password of at least 12 characters are required.');
+  const confirmPassword = await promptSecret('Confirm administrator password: ');
+  if (!firstName || !middleName || !lastName || fullName.length > 150 || !email || password.length < 12) {
+    throw new Error('First, middle, and last names, a valid email, and a password of at least 12 characters are required.');
+  }
+  if (password !== confirmPassword) throw new Error('Passwords do not match. No administrator account was created.');
 
   const pool = new Pool({ connectionString: process.env.DATABASE_URL, max: 1 });
   const supabase = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_SERVICE_ROLE_KEY, { auth: { autoRefreshToken: false, persistSession: false, detectSessionInUrl: false } });
