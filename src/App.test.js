@@ -434,8 +434,8 @@ test('patient group panel joins with an alias, sends messages, and loses access 
   rerender(<PatientSupportGroupPanel {...props} membership={membership} />);
   expect(screen.getByText(/joined as/i)).toBeInTheDocument();
   expect(screen.getByText(/only current members and the designated health worker/i)).toBeInTheDocument();
-  userEvent.type(screen.getByLabelText(/write a message/i), 'Glad to be here.');
-  userEvent.click(screen.getByRole('button', { name: /^send/i }));
+  fireEvent.change(screen.getByLabelText(/write a message/i), { target: { value: 'Glad to be here.' } });
+  fireEvent.click(screen.getByRole('button', { name: /^send/i }));
   await waitFor(() => expect(onSend).toHaveBeenCalledWith('Glad to be here.'));
 
   const priorMessage = { message_id: 1, sender_alias: 'RiverStone', sender_role: 'member', message_text: 'Glad to be here.', sent_at: new Date().toISOString() };
@@ -520,8 +520,7 @@ test('patient private chat works as a health worker messenger', async () => {
   userEvent.type(screen.getByLabelText(/email address/i), 'morgan@example.com');
   userEvent.type(screen.getByLabelText(/^password$/i), 'password');
   userEvent.click(screen.getByRole('button', { name: /^sign in/i }));
-  userEvent.click(screen.getByRole('button', { name: 'Care' }));
-  userEvent.click(screen.getByRole('button', { name: /open private chat/i }));
+  userEvent.click(screen.getByRole('button', { name: 'Private Chat' }));
 
   expect(screen.getByText('Elena Santos')).toBeInTheDocument();
   expect(screen.getByText(/health worker · available/i)).toBeInTheDocument();
@@ -544,8 +543,7 @@ test('patient chat recreates a missing session before sending a message', async 
   userEvent.type(screen.getByLabelText(/email address/i), 'morgan@example.com');
   userEvent.type(screen.getByLabelText(/^password$/i), 'password');
   userEvent.click(screen.getByRole('button', { name: /^sign in/i }));
-  userEvent.click(screen.getByRole('button', { name: 'Care' }));
-  userEvent.click(screen.getByRole('button', { name: /open private chat/i }));
+  userEvent.click(screen.getByRole('button', { name: 'Private Chat' }));
   userEvent.type(screen.getByLabelText(/message health worker/i), 'I have a question.');
   userEvent.click(screen.getByRole('button', { name: /send message/i }));
 
@@ -630,8 +628,7 @@ test('patient medication page shows availability status', () => {
   userEvent.type(screen.getByLabelText(/email address/i), 'morgan@example.com');
   userEvent.type(screen.getByLabelText(/^password$/i), 'password');
   userEvent.click(screen.getByRole('button', { name: /^sign in/i }));
-  userEvent.click(screen.getByRole('button', { name: 'Care' }));
-  userEvent.click(screen.getByRole('button', { name: /open medication/i }));
+  userEvent.click(screen.getByRole('button', { name: 'Medication' }));
   expect(screen.getAllByText('Antiretroviral therapy').length).toBeGreaterThan(0);
   expect(screen.getAllByText('In stock').length).toBeGreaterThan(0);
   expect(screen.getAllByText('Out of stock').length).toBeGreaterThan(0);
@@ -813,7 +810,7 @@ test('admin gets platform management pages and service toggles', () => {
   expect(serviceToggle).toHaveAttribute('aria-pressed', 'true');
 });
 
-test('patient navbar keeps the selected page after leaving Care', () => {
+test('patient navigation opens private chat, medication, and support groups outside Care', () => {
   db.registerUser({
     fullName: 'Morgan Lee',
     email: 'morgan@example.com',
@@ -825,10 +822,27 @@ test('patient navbar keeps the selected page after leaving Care', () => {
   userEvent.type(screen.getByLabelText(/email address/i), 'morgan@example.com');
   userEvent.type(screen.getByLabelText(/^password$/i), 'password');
   userEvent.click(screen.getByRole('button', { name: /^sign in/i }));
+
+  expect(screen.getByRole('button', { name: 'Private Chat' })).toBeInTheDocument();
+  expect(screen.getByRole('button', { name: 'Medication' })).toBeInTheDocument();
+  expect(screen.getByRole('button', { name: 'Support Groups' })).toBeInTheDocument();
+
+  userEvent.click(screen.getByRole('button', { name: 'Private Chat' }));
+  expect(screen.getByRole('heading', { name: /private conversation/i })).toBeInTheDocument();
+  expect(screen.getByRole('button', { name: 'Private Chat' })).toHaveAttribute('aria-current', 'page');
+
+  userEvent.click(screen.getByRole('button', { name: 'Medication' }));
+  expect(screen.getByRole('heading', { name: /medication availability/i })).toBeInTheDocument();
+  userEvent.click(screen.getByRole('button', { name: 'Support Groups' }));
+  expect(screen.getByRole('heading', { name: /you belong here/i })).toBeInTheDocument();
+
   userEvent.click(screen.getByRole('button', { name: 'Care' }));
   expect(screen.getByRole('heading', { name: /care, all in one place/i })).toBeInTheDocument();
-  userEvent.click(screen.getByRole('button', { name: 'Information' }));
-  expect(screen.getByRole('heading', { name: /knowledge without stigma/i })).toBeInTheDocument();
+  expect(screen.getByRole('heading', { name: 'Appointments' })).toBeInTheDocument();
+  expect(screen.getByRole('heading', { name: 'Services availed' })).toBeInTheDocument();
+  expect(screen.queryByRole('heading', { name: 'Private chat' })).not.toBeInTheDocument();
+  expect(screen.queryByRole('heading', { name: 'Medication' })).not.toBeInTheDocument();
+  expect(screen.queryByRole('heading', { name: 'Support groups' })).not.toBeInTheDocument();
 });
 
 test('encodes registered user into the database and loads their personalized dashboard', () => {
