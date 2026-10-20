@@ -110,6 +110,27 @@ const patientPrivateNavItems = [
   ['support', 'Support Groups'],
 ];
 
+function PatientHeader({ page, profileName, onNavigate, onSignOut }) {
+  const items = [['home', 'Home'], ['information', 'Information'], ['testing', 'Testing'], ...patientPrivateNavItems];
+  return (
+    <header className="site-header guest-header patient-header">
+      <button className="brand brand-button" onClick={() => onNavigate('home')} aria-label="HIVeLink home"><span>HIVeLink</span></button>
+      <nav className="nav-links" aria-label="Patient navigation">
+        {items.map(([key, label]) => (
+          <button className={`guest-nav-link ${page === key ? 'active' : ''}`} key={key} onClick={() => onNavigate(key)} aria-current={page === key ? 'page' : undefined}>{label}</button>
+        ))}
+      </nav>
+      <div className="patient-header-actions">
+        <span className="profile-name">{profileName}</span>
+        <button className={`profile-icon ${page === 'account' ? 'active' : ''}`} type="button" aria-label={`Open ${profileName}'s care dashboard`} aria-current={page === 'account' ? 'page' : undefined} onClick={() => onNavigate('account')} title="Open care dashboard">
+          <CircleUser aria-hidden="true" className="profile-icon-glyph" color="currentColor" size={18} strokeWidth={1.6} />
+        </button>
+        <button className="sign-out-button" onClick={onSignOut}>Sign out</button>
+      </div>
+    </header>
+  );
+}
+
 function localDateValue(date = new Date()) {
   const year = date.getFullYear();
   const month = String(date.getMonth() + 1).padStart(2, '0');
@@ -213,7 +234,10 @@ function GuestHub({ onExit, patientMode = false, appointmentsEnabled = true, onP
 
   return <div className={patientMode ? 'patient-shell guest-hub patient-guest-hub' : 'guest-hub'}>
     <div className="topline"><span>WORLD AIDS DAY IS EVERY DAY</span><span className="topline-detail">Information. Care. Community.</span></div>
-    <header className={`site-header guest-header${patientMode ? ' patient-header' : ''}`}><button className="brand brand-button" onClick={() => navigate('home')} aria-label="HIVeLink home"><span>HIVeLink</span></button><nav className="nav-links" aria-label={patientMode ? 'Patient navigation' : 'Guest navigation'}><button className={page === 'home' ? 'guest-nav-link active' : 'guest-nav-link'} onClick={() => navigate('home')}>Home</button><button className={page === 'knowledge' ? 'guest-nav-link active' : 'guest-nav-link'} onClick={() => navigate('knowledge')}>Information</button><button className={page === 'testing' ? 'guest-nav-link active' : 'guest-nav-link'} onClick={() => navigate('testing')}>Testing</button>{patientMode && patientPrivateNavItems.map(([key, label]) => <button className={`guest-nav-link ${page === key ? 'active' : ''}`} key={key} onClick={() => onPrivatePage(key)} aria-current={page === key ? 'page' : undefined}>{label}</button>)}</nav>{patientMode ? <div className="patient-header-actions"><span className="profile-name">{profileName}</span><button className="profile-icon" type="button" aria-label={`Open ${profileName}'s care dashboard`} title="Open care dashboard" onClick={onAccount}><CircleUser aria-hidden="true" className="profile-icon-glyph" color="currentColor" size={18} strokeWidth={1.6} /></button><button className="sign-out-button" onClick={onExit}>Sign out</button></div> : <button className="guest-auth-link" onClick={onExit}>Log in / Sign up <span>↗</span></button>}</header>
+    {patientMode ? <PatientHeader page={page === 'knowledge' ? 'information' : page} profileName={profileName} onNavigate={(nextPage) => {
+      if (nextPage === 'home' || nextPage === 'information' || nextPage === 'testing') navigate(nextPage === 'information' ? 'knowledge' : nextPage);
+      else onPrivatePage(nextPage);
+    }} onSignOut={onExit} /> : <header className="site-header guest-header"><button className="brand brand-button" onClick={() => navigate('home')} aria-label="HIVeLink home"><span>HIVeLink</span></button><nav className="nav-links" aria-label="Guest navigation"><button className={page === 'home' ? 'guest-nav-link active' : 'guest-nav-link'} onClick={() => navigate('home')}>Home</button><button className={page === 'knowledge' ? 'guest-nav-link active' : 'guest-nav-link'} onClick={() => navigate('knowledge')}>Information</button><button className={page === 'testing' ? 'guest-nav-link active' : 'guest-nav-link'} onClick={() => navigate('testing')}>Testing</button></nav><button className="guest-auth-link" onClick={onExit}>Log in / Sign up <span>↗</span></button></header>}
     <main key={page} id="guest-top" className="route-transition">{pageContent[page]}</main><footer><span className="footer-brand">HIVeLink</span><span>{patientMode ? 'Private patient view' : 'Public guest view · No account required'}</span><button className="footer-back" onClick={() => navigate('home')}>Back to home ↑</button></footer>
   </div>;
 }
@@ -746,21 +770,7 @@ function PatientDashboard({ currentUser, currentPatient, onPublicHub, onSignOut 
   return (
     <div className="patient-shell">
       <div className="topline"><span>WORLD AIDS DAY IS EVERY DAY</span><span className="topline-detail">Information. Care. Community.</span></div>
-      <header className="site-header guest-header patient-header">
-        <button className="brand brand-button" onClick={() => navigate('home')} aria-label="HIVeLink home"><span>HIVeLink</span></button>
-        <nav className="nav-links" aria-label="Patient navigation">
-          {[['home', 'Home'], ['information', 'Information'], ['testing', 'Testing'], ...patientPrivateNavItems].map(([key, label]) => (
-            <button className={`guest-nav-link ${page === key ? 'active' : ''}`} key={key} onClick={() => navigate(key)} aria-current={page === key ? 'page' : undefined}>{label}</button>
-          ))}
-        </nav>
-        <div className="patient-header-actions">
-          <span className="profile-name">{profileName}</span>
-          <button className={`profile-icon ${page === 'account' ? 'active' : ''}`} type="button" aria-label={`Open ${profileName}'s care dashboard`} aria-current={page === 'account' ? 'page' : undefined} onClick={() => navigate('account')} title="Open care dashboard">
-            <CircleUser aria-hidden="true" className="profile-icon-glyph" color="currentColor" size={18} strokeWidth={1.6} />
-          </button>
-          <button className="sign-out-button" onClick={onSignOut}>Sign out</button>
-        </div>
-      </header>
+      <PatientHeader page={page} profileName={profileName} onNavigate={navigate} onSignOut={onSignOut} />
       <main key={page} className="patient-main route-transition">{content[page]}</main>
       <footer>
         <span className="footer-brand">HIVeLink</span>
