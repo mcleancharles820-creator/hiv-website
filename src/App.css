@@ -2051,3 +2051,19 @@ body { background: #f7f7f8; }
   .guest-hub .testing-notes { display: grid; grid-template-columns: 1fr; }
   .guest-hub .testing-facilities { grid-template-columns: 1fr; }
 }
+
+.facility-map-grid { display: grid; gap: 10px; grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.facility-map-grid iframe { height: 285px; }
+@media (max-width: 700px) { .facility-map-grid { grid-template-columns: 1fr; } }
+
+.guest-hub .guest-auth-link { color: #fff; }
+.guest-hub .guest-auth-link:hover { color: #fff; }
+.guest-hub .text-button, .guest-hub a, .patient-shell .text-button, .patient-shell a { text-decoration: none; }
+.guest-hub .text-button:hover, .patient-shell .text-button:hover { text-decoration: none; }
+.guest-hub .text-button::after, .guest-hub .guest-auth-link span, .guest-hub .primary-button span, .patient-shell .text-button::after, .patient-shell .primary-button span { display: none; }
+
+.auth-message .eyebrow { color: #ffd9df; }
+.auth-message .eyebrow .pulse-dot { background: #ffd9df; }
+.auth-stamp { color: #ffd9df; }
+.auth-stamp strong { color: #fff; }
+.auth-visual:after { border-color: rgba(255, 217, 223, .42); }
