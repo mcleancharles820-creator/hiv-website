@@ -1017,7 +1017,7 @@ function PatientForm({ data, onClose, onSave }) {
               />}
             </label>
           ))}
-          <button className="primary-button" type="submit" disabled={saving}>{saving ? 'Saving…' : 'Save record'} <span>↗</span></button>
+          <button className="primary-button" type="submit" disabled={saving}>{saving ? 'Saving…' : (record.type === 'medication' ? 'Submit' : 'Save record')} <span>↗</span></button>
         </form>
       </div>
     </div>
