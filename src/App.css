@@ -2057,7 +2057,17 @@ body { background: #f7f7f8; }
 @media (max-width: 700px) { .facility-map-grid { grid-template-columns: 1fr; } }
 
 .guest-hub .guest-auth-link { color: #fff; }
-.guest-hub .guest-auth-link:hover { color: #fff; }
+.guest-hub .guest-auth-link {
+  background: #c51f36;
+  color: #fff;
+  transition: box-shadow .18s ease, transform .18s ease;
+}
+.guest-hub .guest-auth-link:hover {
+  background: #c51f36;
+  box-shadow: 0 5px 14px rgba(197, 31, 54, .2);
+  color: #fff;
+  transform: translateY(-2px);
+}
 .guest-hub .text-button, .guest-hub a, .patient-shell .text-button, .patient-shell a { text-decoration: none; }
 .guest-hub .text-button:hover, .patient-shell .text-button:hover { text-decoration: none; }
 .guest-hub .text-button::after, .guest-hub .guest-auth-link span, .guest-hub .primary-button span, .patient-shell .text-button::after, .patient-shell .primary-button span { display: none; }
@@ -2072,19 +2082,19 @@ body { background: #f7f7f8; }
   top: 0;
   z-index: 5;
 }
-.guest-hub .site-header.guest-header .brand { font-family: Inter, ui-sans-serif, system-ui, sans-serif; font-size: 21px; font-weight: 750; letter-spacing: -.055em; }
-.guest-hub .site-header.guest-header .nav-links { gap: clamp(3px, .45vw, 9px); }
+.guest-hub .site-header.guest-header .brand { font-family: 'Headland One', Georgia, serif; font-size: 28px; font-weight: 700; letter-spacing: -.045em; }
+.guest-hub .site-header.guest-header .nav-links { gap: clamp(14px, 1.5vw, 28px); }
 .guest-hub .site-header.guest-header .guest-nav-link {
   background: transparent;
   border: 0;
   border-radius: 8px;
   color: #62575b;
-  font-family: Inter, ui-sans-serif, system-ui, sans-serif;
-  font-size: 12px;
-  font-weight: 550;
-  line-height: 1.2;
+  font-family: 'Headland One', Georgia, serif;
+  font-size: 16px;
+  font-weight: 400;
+  line-height: 1.25;
   letter-spacing: 0;
-  padding: 10px 11px;
+  padding: 12px 14px;
   text-transform: none;
   transition: background .18s ease, color .18s ease;
 }
