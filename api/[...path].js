@@ -37,7 +37,7 @@ const tableConfig = {
   Patients: { sql: 'patients', id: 'patient_id', updated: true, columns: ['care_status', 'medical_notes', 'emergency_contact', 'emergency_phone', 'preferred_facility_id', 'assigned_worker_id'] },
   HealthWorkers: { sql: 'health_workers', id: 'worker_id', updated: true, columns: ['specialty', 'license_number', 'primary_facility_id', 'is_verified', 'is_available', 'bio_summary'] },
   Appointments: { sql: 'appointments', id: 'appointment_id', updated: true, columns: ['patient_id', 'worker_id', 'facility_id', 'appointment_date', 'appointment_time', 'appointment_type', 'status', 'notes'] },
-  MedicationRequests: { sql: 'medication_requests', id: 'request_id', updated: true, columns: ['patient_id', 'medication_id', 'medication_name', 'dosage', 'schedule', 'availability', 'status', 'reviewed_by_worker_id', 'review_notes'] },
+  MedicationRequests: { sql: 'medication_requests', id: 'request_id', updated: true, columns: ['patient_id', 'medication_id', 'medication_name', 'dosage', 'schedule', 'quantity_requested', 'is_refill', 'patient_notes', 'availability', 'status', 'reviewed_by_worker_id', 'review_notes'] },
   ChatSessions: { sql: 'chat_sessions', id: 'chat_session_id', columns: ['patient_id', 'worker_id', 'subject', 'status', 'preview', 'last_updated'] },
   ChatMessages: { sql: 'chat_messages', id: 'message_id', columns: ['chat_session_id', 'sender_user_id', 'sender_role', 'message_text', 'is_read'] },
   SupportGroupMembers: { sql: 'support_group_members', id: 'membership_id', columns: ['group_id', 'patient_id', 'role_in_group'] },
@@ -47,7 +47,6 @@ const tableConfig = {
 };
 const catalogTables = {
   Medications: 'medications', TestingFacilities: 'testing_facilities', EducationalResources: 'educational_resources',
-  PartnerOrganizations: 'partner_organizations',
 };
 
 function send(res, status, body) {
@@ -443,8 +442,25 @@ async function mutate(req, user, table, id) {
        for (const key of Object.keys(values)) if (!['appointment_date', 'appointment_time', 'appointment_type', 'facility_id', 'notes', 'status'].includes(key)) delete values[key];
        if (values.status && !['Requested', 'Cancelled'].includes(values.status)) return { status: 403, body: { error: 'Patients may only cancel or request appointments.' } };
     } else if (table === 'MedicationRequests') {
-      for (const key of Object.keys(values)) if (!['medication_name', 'dosage', 'schedule', 'availability', 'status'].includes(key)) delete values[key];
+      for (const key of Object.keys(values)) if (!['medication_id', 'medication_name', 'dosage', 'schedule', 'quantity_requested', 'is_refill', 'patient_notes', 'availability', 'status'].includes(key)) delete values[key];
       if (values.status && values.status !== 'Cancelled') return { status: 403, body: { error: 'Patients may only cancel medication requests.' } };
+      if (operation === 'update') {
+        for (const [key, maxLength] of [['medication_name', 150], ['dosage', 100], ['schedule', 150]]) {
+          if (Object.prototype.hasOwnProperty.call(values, key)) {
+            values[key] = String(values[key] || '').trim();
+            if (!values[key] || values[key].length > maxLength) return { status: 400, body: { error: 'Medication details are required and must fit their field limits.' } };
+          }
+        }
+        if (Object.prototype.hasOwnProperty.call(values, 'quantity_requested')) {
+          values.quantity_requested = Number(values.quantity_requested);
+          if (!Number.isSafeInteger(values.quantity_requested) || values.quantity_requested < 1 || values.quantity_requested > 1000) return { status: 400, body: { error: 'Quantity must be a whole number from 1 to 1000.' } };
+        }
+        if (Object.prototype.hasOwnProperty.call(values, 'is_refill') && typeof values.is_refill !== 'boolean') return { status: 400, body: { error: 'Refill must be true or false.' } };
+        if (Object.prototype.hasOwnProperty.call(values, 'patient_notes')) {
+          values.patient_notes = String(values.patient_notes || '').trim();
+          if (values.patient_notes.length > 500) return { status: 400, body: { error: 'Care team notes must be 500 characters or fewer.' } };
+        }
+      }
     } else if (table === 'ChatSessions') {
       for (const key of Object.keys(values)) if (!['preview', 'last_updated'].includes(key)) delete values[key];
     }
@@ -515,6 +531,20 @@ async function mutate(req, user, table, id) {
   if (table === 'MedicationRequests' && operation === 'insert' && user.role === 'patient') {
     values.patient_id = await patientIdForUser(user.user_id);
     values.status = 'Pending';
+    values.medication_name = String(values.medication_name || '').trim();
+    values.dosage = String(values.dosage || '').trim();
+    values.schedule = String(values.schedule || '').trim();
+    values.quantity_requested = Number(values.quantity_requested);
+    if (typeof values.is_refill !== 'boolean') return { status: 400, body: { error: 'Refill must be true or false.' } };
+    values.patient_notes = String(values.patient_notes || '').trim();
+    if (!values.patient_id) return { status: 403, body: { error: 'Your patient record is unavailable. Please sign in again.' } };
+    if (!values.medication_name || values.medication_name.length > 150 || !values.dosage || values.dosage.length > 100 || !values.schedule || values.schedule.length > 150) return { status: 400, body: { error: 'Medication, prescribed dosage, and schedule are required and must fit their field limits.' } };
+    if (!Number.isSafeInteger(values.quantity_requested) || values.quantity_requested < 1 || values.quantity_requested > 1000) return { status: 400, body: { error: 'Quantity must be a whole number from 1 to 1000.' } };
+    if (values.medication_id !== undefined && values.medication_id !== null) {
+      values.medication_id = Number(values.medication_id);
+      if (!Number.isSafeInteger(values.medication_id) || values.medication_id < 1) return { status: 400, body: { error: 'Choose a valid medication.' } };
+    }
+    if (values.patient_notes.length > 500) return { status: 400, body: { error: 'Care team notes must be 500 characters or fewer.' } };
   }
   if (table === 'ChatMessages' && operation === 'insert') {
     values.sender_user_id = user.user_id;

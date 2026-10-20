@@ -112,6 +112,9 @@ CREATE TABLE medication_requests (
     medication_name VARCHAR(150) NOT NULL,
     dosage VARCHAR(100) NOT NULL DEFAULT 'As prescribed',
     schedule VARCHAR(150) NOT NULL DEFAULT 'Ask your health worker',
+    quantity_requested INT NOT NULL DEFAULT 30 CHECK (quantity_requested BETWEEN 1 AND 1000),
+    is_refill BOOLEAN NOT NULL DEFAULT FALSE,
+    patient_notes VARCHAR(500),
     availability VARCHAR(50) NOT NULL DEFAULT 'In stock',
     status VARCHAR(50) NOT NULL DEFAULT 'Pending' CHECK (status IN ('Pending', 'Ready for review', 'Approved', 'Needs information', 'Dispensed', 'Cancelled')),
     reviewed_by_worker_id INT REFERENCES health_workers(worker_id) ON DELETE SET NULL,
@@ -238,18 +241,6 @@ CREATE TABLE educational_resources (
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
--- 17. Partner Organizations
-CREATE TABLE partner_organizations (
-    org_id SERIAL PRIMARY KEY,
-    name VARCHAR(200) NOT NULL,
-    description TEXT NOT NULL,
-    website_url VARCHAR(500) NOT NULL,
-    category VARCHAR(50) NOT NULL DEFAULT 'Referral',
-    display_order INT NOT NULL DEFAULT 1,
-    is_active BOOLEAN NOT NULL DEFAULT TRUE,
-    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
-);
-
 -- Indexes
 CREATE INDEX idx_users_role ON users(role);
 CREATE INDEX idx_patients_worker ON patients(assigned_worker_id);
@@ -291,15 +282,8 @@ VALUES
 (2, '02', 'Guest Essentials', 'Treatment works', 'With the right treatment, people living with HIV can live long, healthy lives.', 'Understand U=U', 2),
 (3, '03', 'Guest Essentials', 'Prevention is personal', 'Condoms, PrEP, PEP, and regular testing can all help.', 'Explore prevention', 3);
 
-INSERT INTO partner_organizations (org_id, name, description, website_url, category, display_order)
-VALUES
-(1, 'Philippine HIV & AIDS Support House', 'Community support and referrals', 'https://www.pamf.org.ph/', 'Community Support', 1),
-(2, 'AIDS Data Hub', 'HIV information and regional resources', 'https://www.aidsdatahub.org/', 'Data & Research', 2),
-(3, 'The Global Fund', 'Donate to end AIDS, TB, and malaria', 'https://www.globalfund.org/en/donate/', 'Global Donations', 3);
-
 SELECT setval('testing_facilities_facility_id_seq', (SELECT MAX(facility_id) FROM testing_facilities));
 SELECT setval('medications_medication_id_seq', (SELECT MAX(medication_id) FROM medications));
 SELECT setval('support_groups_group_id_seq', (SELECT MAX(group_id) FROM support_groups));
 SELECT setval('platform_services_service_id_seq', (SELECT MAX(service_id) FROM platform_services));
 SELECT setval('educational_resources_resource_id_seq', (SELECT MAX(resource_id) FROM educational_resources));
-SELECT setval('partner_organizations_org_id_seq', (SELECT MAX(org_id) FROM partner_organizations));

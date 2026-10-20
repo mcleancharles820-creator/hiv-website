@@ -1,0 +1,5 @@
+ALTER TABLE medication_requests
+  ADD COLUMN IF NOT EXISTS quantity_requested INT NOT NULL DEFAULT 30
+    CHECK (quantity_requested BETWEEN 1 AND 1000),
+  ADD COLUMN IF NOT EXISTS is_refill BOOLEAN NOT NULL DEFAULT FALSE,
+  ADD COLUMN IF NOT EXISTS patient_notes VARCHAR(500);

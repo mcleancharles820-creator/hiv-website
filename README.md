@@ -78,10 +78,11 @@ Production builds use the Vercel functions in `api/` instead of browser `localSt
 5. Run `api/migrations/003_password_recovery.sql` to track password changes and invalidate existing HIVeLink sessions after a reset.
 6. Run `api/migrations/004_gender_options.sql` to allow the new Male/Female/Other labels without invalidating existing gender values.
 7. Run `api/migrations/005_private_support_group.sql` to keep one active group, add aliases and live-chat storage, and enable membership-scoped Realtime RLS. Assign an eligible supervisor in the Admin > Support group page before allowing members to join.
-8. Copy the PostgreSQL connection string from Supabase. Use a connection pooler URL supported by Vercel and include `sslmode=require`.
-9. Create a long random session secret (at least 32 characters). Do not commit it or put it in React source.
-10. In Supabase Dashboard > Authentication > Providers > Email, enable email confirmations. Under URL Configuration, set the Site URL to the deployed app and allow that URL under Redirect URLs; password recovery redirects to the app root with `?password-reset=1`.
-11. Supabase's built-in email service needs no custom domain and is suitable for capstone testing, but it is rate-limited and may only deliver to authorized/verified addresses in the Supabase organization. To verify arbitrary recipients, configure a custom SMTP provider.
+8. Run `api/migrations/006_medication_request_details.sql` to add medication request quantity, refill status, and optional patient notes to an existing database. For a new database, `api/schema.sql` already includes these columns.
+9. Copy the PostgreSQL connection string from Supabase. Use a connection pooler URL supported by Vercel and include `sslmode=require`.
+10. Create a long random session secret (at least 32 characters). Do not commit it or put it in React source.
+11. In Supabase Dashboard > Authentication > Providers > Email, enable email confirmations. Under URL Configuration, set the Site URL to the deployed app and allow that URL under Redirect URLs; password recovery redirects to the app root with `?password-reset=1`.
+12. Supabase's built-in email service needs no custom domain and is suitable for capstone testing, but it is rate-limited and may only deliver to authorized/verified addresses in the Supabase organization. To verify arbitrary recipients, configure a custom SMTP provider.
 
 ### Vercel setup
 
@@ -98,6 +99,12 @@ Import the GitHub repository with `hiv-website` as its Root Directory. The inclu
 - `APP_URL` (optional): canonical HTTPS site origin for verification links; otherwise Vercel's deployment URL is used
 
 Deploy, then check `/api/health`; it should return `{"status":"ok"}`. New public and administrator-created accounts must verify through Supabase Auth before signing in. Existing accounts remain verified after the migration and are linked to Supabase Auth on their next successful sign-in. Supabase controls verification-link expiry and reuse. Admins can resend verification from the Users or Health Workers list. Supabase's built-in sender is limited/rate-limited for development; use custom SMTP if the capstone must deliver to arbitrary email addresses. Resend remains optional for custom admin/event notifications.
+
+### Deploying medication request details
+
+For an existing Supabase database, apply `api/migrations/006_medication_request_details.sql` in the Supabase SQL Editor before deploying the app code. The migration is safe to re-run and adds `quantity_requested` (integer, 1–1000, default 30), `is_refill` (boolean, default false), and `patient_notes` (up to 500 characters). Existing medication requests receive the default quantity and refill value. New Supabase databases get the same columns from `api/schema.sql`; do not run the full initializer on an existing database.
+
+After the migration succeeds, deploy the updated repository to Vercel (push the change to the connected Git branch or use the Vercel dashboard's redeploy action). Check the deployment build, open the patient Medication page, submit a request, then confirm the quantity, refill flag, and optional note appear in both the patient record and health worker medication request list. No new Vercel environment variables are needed.
 
 Chat Realtime uses authenticated Postgres Changes with row-level security. Patients receive changes only for their own private chat; workers only for assigned chats. The support-group conversation uses a separate alias-only message table: active members and the currently designated verified supervisor can read it, writes go through the API, and administrators do not receive group-message content. Patients can join with a chosen alias and leave at any time; after leaving, the API and RLS no longer return the conversation. Messages are retained for remaining members and supervisor moderation, so this is access control—not end-to-end encryption or a promise of anonymity. Do not share identifying or urgent medical details in the group; use private care channels for those.
 

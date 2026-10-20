@@ -48,11 +48,6 @@ const initialDatabase = {
     { resource_id: 1, resource_number: '01', category: 'Guest Essentials', title: 'Know your status', summary: 'Testing is the only way to know. Most results are ready quickly, and confidential options are available.', action_label: 'Find a test', display_order: 1, is_published: true, created_at: '2026-01-01T00:00:00Z' },
     { resource_id: 2, resource_number: '02', category: 'Guest Essentials', title: 'Treatment works', summary: 'With the right treatment, people living with HIV can live long, healthy lives. Undetectable means untransmittable.', action_label: 'Understand U=U', display_order: 2, is_published: true, created_at: '2026-01-01T00:00:00Z' },
     { resource_id: 3, resource_number: '03', category: 'Guest Essentials', title: 'Prevention is personal', summary: 'Condoms, PrEP, PEP, and regular testing can all help. Choose the tools that feel right for you.', action_label: 'Explore prevention', display_order: 3, is_published: true, created_at: '2026-01-01T00:00:00Z' }
-  ],
-  PartnerOrganizations: [
-    { org_id: 1, name: 'Philippine HIV & AIDS Support House', description: 'Community support and referrals ↗', website_url: 'https://www.pamf.org.ph/', category: 'Community Support', display_order: 1, is_active: true, created_at: '2026-01-01T00:00:00Z' },
-    { org_id: 2, name: 'AIDS Data Hub', description: 'HIV information and regional resources ↗', website_url: 'https://www.aidsdatahub.org/', category: 'Data & Research', display_order: 2, is_active: true, created_at: '2026-01-01T00:00:00Z' },
-    { org_id: 3, name: 'The Global Fund', description: 'Donate to end AIDS, TB, and malaria ↗', website_url: 'https://www.globalfund.org/en/donate/', category: 'Global Donations', display_order: 3, is_active: true, created_at: '2026-01-01T00:00:00Z' }
   ]
 };
 class DatabaseService {
@@ -646,14 +641,17 @@ class DatabaseService {
   /**
    * Medication Request Operations
    */
-  requestMedication({ patient_id, medication_id = null, medication_name, dosage = 'As prescribed', schedule = 'Ask your health worker', availability = 'In stock', status = 'Pending' }) {
-    if (this.useApi) return this.insert('MedicationRequests', { patient_id, medication_id, medication_name, dosage, schedule, availability, status });
+  requestMedication({ patient_id, medication_id = null, medication_name, dosage = 'As prescribed', schedule = 'Ask your health worker', quantity_requested = 30, is_refill = false, patient_notes = '', availability = 'In stock', status = 'Pending' }) {
+    if (this.useApi) return this.insert('MedicationRequests', { patient_id, medication_id, medication_name, dosage, schedule, quantity_requested, is_refill, patient_notes, availability, status });
     return this.insert('MedicationRequests', {
       patient_id: parseInt(patient_id, 10),
-      medication_id: medication_id ? parseInt(medication_id, 10) : null,
+      medication_id: medication_id ? Number(medication_id) : null,
       medication_name: String(medication_name),
       dosage: String(dosage),
       schedule: String(schedule),
+      quantity_requested: Number(quantity_requested),
+      is_refill: Boolean(is_refill),
+      patient_notes: String(patient_notes || ''),
       availability: String(availability),
       status: String(status),
       reviewed_by_worker_id: null,

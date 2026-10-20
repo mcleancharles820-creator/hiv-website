@@ -700,6 +700,8 @@ h1 { line-height: 1.02; }
   }
 }
 
+.patient-form input[type="checkbox"] { justify-self: start; width: auto; }
+
 .auth-shell {
   align-items: stretch;
   grid-template-columns: minmax(320px, 46%) minmax(0, 54%);

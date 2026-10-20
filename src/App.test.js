@@ -48,7 +48,6 @@ test('guest view shows only public awareness resources', () => {
   expect(screen.getByRole('button', { name: 'Home' })).toBeInTheDocument();
   expect(screen.getByRole('button', { name: 'Information' })).toBeInTheDocument();
   expect(screen.getByRole('button', { name: 'Testing' })).toBeInTheDocument();
-  expect(screen.getByRole('button', { name: 'Donate' })).toBeInTheDocument();
   expect(screen.getByRole('button', { name: /log in \/ sign up/i })).toBeInTheDocument();
 
   userEvent.click(screen.getByRole('button', { name: 'Information' }));
@@ -61,10 +60,6 @@ test('guest view shows only public awareness resources', () => {
   expect(screen.getByText(/^rural health unit$/i)).toBeInTheDocument();
   expect(screen.getByText(/romblon provincial hospital/i)).toBeInTheDocument();
   expect(screen.queryByRole('button', { name: /book an appointment/i })).not.toBeInTheDocument();
-
-  userEvent.click(screen.getByRole('button', { name: 'Donate' }));
-  expect(screen.getByRole('heading', { name: /help care travel further/i })).toBeInTheDocument();
-  expect(screen.queryByText(/my care plan/i)).not.toBeInTheDocument();
 });
 
 test('guest users can return to authentication', () => {

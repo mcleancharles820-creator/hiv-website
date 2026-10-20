@@ -29,7 +29,8 @@ This document explains the database structure, entity models, variables, data ty
 | **HealthWorkers** | Doctor/Nurse profiles | `worker_id` (PK, int), `user_id` (FK, int), `specialty` (string), `license_number` (string), `primary_facility_id` (FK, int), `is_available` (bool) | Belongs to `Users` (1:1), 1:N with `Patients`, `Appointments`, `ChatSessions`, `SupportGroups` |
 | **Patients** | Patient care records | `patient_id` (PK, int), `user_id` (FK, int), `assigned_worker_id` (FK, int), `preferred_facility_id` (FK, int), `care_status` (enum), `medical_notes` (text) | Belongs to `Users` (1:1), 1:N with `Appointments`, `MedicationRequests`, `ChatSessions`, M:N with `SupportGroups` |
 | **Medications** | Drug inventory catalog | `medication_id` (PK, int), `medication_code` (string), `name` (string), `category` (string), `detail` (string), `stock_status` (enum: In stock/Out of stock), `stock_quantity` (int) | 1:N with `MedicationRequests` |
-| **MedicationRequests** | Patient refill requests | `request_id` (PK, int), `patient_id` (FK, int), `medication_id` (FK, int), `medication_name` (string), `dosage` (string), `schedule` (string), `status` (enum: Pending/Approved/etc.), `reviewed_by_worker_id` (FK, int) | Belongs to `Patients`, `Medications`, `HealthWorkers` |
+| **MedicationRequests** | Patient medication requests | `request_id` (PK, int), `patient_id` (FK, int), `medication_id` (FK, int), `medication_name` (string), `dosage` (string), `schedule` (string), `quantity_requested` (integer, 1–1000), `is_refill` (boolean), `patient_notes` (string, up to 500 chars), `status` (enum: Pending/Approved/etc.), `reviewed_by_worker_id` (FK, int) | Belongs to `Patients`, `Medications`, `HealthWorkers` |
+
 | **Appointments** | Consultation bookings | `appointment_id` (PK, int), `patient_id` (FK, int), `worker_id` (FK, int), `facility_id` (FK, int), `appointment_date` (date), `appointment_time` (string), `appointment_type` (string), `status` (enum) | Belongs to `Patients`, `HealthWorkers`, `TestingFacilities` |
 | **ChatSessions** | Support tickets | `chat_session_id` (PK, int), `patient_id` (FK, int), `worker_id` (FK, int), `subject` (string), `status` (enum: Open/Closed), `preview` (string), `last_updated` (datetime) | Belongs to `Patients`, `HealthWorkers`, 1:N with `ChatMessages` |
 | **ChatMessages** | Confidential messages | `message_id` (PK, int), `chat_session_id` (FK, int), `sender_user_id` (FK, int), `sender_role` (enum), `message_text` (text), `is_read` (bool), `sent_at` (datetime) | Belongs to `ChatSessions`, `Users` |
@@ -42,6 +43,8 @@ This document explains the database structure, entity models, variables, data ty
 | **ActivityLogs** | Security audit trail | `log_id` (PK, int), `actor_user_id` (FK, int), `actor_name` (string), `action` (string), `category` (string), `created_at` (datetime) | FK to `Users` |
 | **EducationalResources**| Knowledge base | `resource_id` (PK, int), `resource_number` (string), `category` (string), `title` (string), `summary` (text), `action_label` (string) | Independent entity |
 | **PartnerOrganizations**| NGO directories | `org_id` (PK, int), `name` (string), `description` (text), `website_url` (string), `category` (string) | Independent entity |
+
+The medication request fields are part of `api/schema.sql` for new databases. For an existing Supabase database, apply `api/migrations/006_medication_request_details.sql` in the Supabase SQL Editor before deploying code that sends these fields. Existing rows receive a quantity of 30 and `is_refill = false`; notes remain empty until provided.
 
 ---
 
