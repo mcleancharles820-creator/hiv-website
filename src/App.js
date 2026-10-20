@@ -33,6 +33,33 @@ function normalizeGender(value) {
   })[value] || value || '';
 }
 
+function PasswordInput({ id, ...inputProps }) {
+  const [isVisible, setIsVisible] = useState(false);
+  return (
+    <div className="password-input-wrap">
+      <input id={id} {...inputProps} type={isVisible ? 'text' : 'password'} />
+      <button
+        aria-label={isVisible ? 'Hide password' : 'Show password'}
+        aria-pressed={isVisible}
+        className="password-visibility-toggle"
+        onClick={() => setIsVisible((visible) => !visible)}
+        type="button"
+      >
+        {isVisible ? 'Hide' : 'Show'}
+      </button>
+    </div>
+  );
+}
+
+function PasswordField({ label, id, ...inputProps }) {
+  return (
+    <div className="password-field">
+      <label htmlFor={id}>{label}</label>
+      <PasswordInput id={id} {...inputProps} />
+    </div>
+  );
+}
+
 
 const resources = [
   {
@@ -297,18 +324,18 @@ function AuthScreen({ onEnter, onPasswordRecoveryComplete }) {
         <div key={mode} className="auth-form-wrap route-transition">
           <div className="auth-page-label"><span>{verificationEmail ? 'VERIFY EMAIL' : mode === 'login' ? 'LOG IN' : mode === 'register' ? 'SIGN UP' : 'PASSWORD RECOVERY'}</span><span>01 / 01</span></div>
           <h2>{verificationEmail || mode === 'forgot-sent' ? <>Check your<br /><i>email.</i></> : mode === 'reset' ? <>Choose a new<br /><i>password.</i></> : mode === 'reset-complete' ? <>Password<br /><i>updated.</i></> : mode === 'forgot' ? <>Reset your<br /><i>password.</i></> : mode === 'login' ? <>Good to<br /><i>see you.</i></> : <>Make space<br /><i>for care.</i></>}</h2>
-          <p className="auth-intro">{verificationEmail ? `We sent a verification link to ${verificationEmail}. Verify your address, then return here to sign in.` : mode === 'forgot' ? 'Enter the email address associated with your account. We will send a secure password reset link if it matches an active account.' : mode === 'forgot-sent' ? `If an active account exists for ${resetEmail}, a password reset link has been sent.` : mode === 'reset' ? 'Create a new password to secure your account. Use at least 12 characters.' : mode === 'reset-complete' ? 'Your password has been changed. You can now sign in with your new password.' : mode === 'login' ? 'Sign in to keep your support journey in one private place.' : 'Create an account to save resources and connect with support.'}</p>
+          <p className="auth-intro">{verificationEmail ? `We sent a verification link to ${verificationEmail}. Verify your address, then return here to log in.` : mode === 'forgot' ? 'Enter the email address associated with your account. We will send a secure password reset link if it matches an active account.' : mode === 'forgot-sent' ? `If an active account exists for ${resetEmail}, a password reset link has been sent.` : mode === 'reset' ? 'Create a new password to secure your account. Use at least 12 characters.' : mode === 'reset-complete' ? 'Your password has been changed. You can now log in with your new password.' : mode === 'login' ? 'Log in to keep your support journey in one private place.' : 'Create an account to save resources and connect with support.'}</p>
           {verificationEmail ? <div className="verification-prompt">
             <p className="verification-address">{verificationEmail}</p>
             {verificationMessage && <p className="verification-feedback" role="status">{verificationMessage}</p>}
             <button className="primary-button" type="button" onClick={resendVerification} disabled={resendingVerification}>{resendingVerification ? 'Sending...' : 'Resend verification email'} <span>↗</span></button>
-            <button className="auth-switch" type="button" onClick={() => { setVerificationEmail(''); setVerificationMessage(''); returnToSignIn(); }}>Back to sign in</button>
+            <button className="auth-switch" type="button" onClick={() => { setVerificationEmail(''); setVerificationMessage(''); returnToSignIn(); }}>Back to log in</button>
           </div> : mode === 'forgot-sent' ? <div className="verification-prompt">
             {resetMessage && <p className="verification-feedback" role="status">{resetMessage}</p>}
-            <button className="primary-button" type="button" onClick={returnToSignIn}>Back to sign in <span>↗</span></button>
+            <button className="primary-button" type="button" onClick={returnToSignIn}>Back to log in <span>↗</span></button>
           </div> : mode === 'reset-complete' ? <div className="verification-prompt">
-            <p className="verification-feedback" role="status">Your password is ready. For your security, sign in again with the new password.</p>
-            <button className="primary-button" type="button" onClick={returnToSignIn}>Sign in <span>↗</span></button>
+            <p className="verification-feedback" role="status">Your password is ready. For your security, log in again with the new password.</p>
+            <button className="primary-button" type="button" onClick={returnToSignIn}>Log in <span>↗</span></button>
           </div> : <>
           <form key={mode} className={`auth-form ${mode === 'register' ? 'registration-form' : ''}`} onSubmit={handleSubmit} autoComplete="off">
             {mode === 'register' && <div className="field-row registration-name-row"><label>First Name<input name="firstName" required type="text" autoComplete="given-name" placeholder="First name" /></label><label>Middle Name<input name="middleName" required type="text" autoComplete="additional-name" placeholder="Middle name" /></label><label>Last Name<input name="lastName" required type="text" autoComplete="family-name" placeholder="Last name" /></label></div>}
@@ -316,16 +343,16 @@ function AuthScreen({ onEnter, onPasswordRecoveryComplete }) {
             {mode === 'login' && !db.useApi && <label>Account type<select name="role" value={role} onChange={(event) => setRole(event.target.value)} required><option value="patient">Patient / User</option><option value="health-worker">Health Worker</option><option value="admin">Admin</option></select></label>}
             {mode === 'register' && <div className="field-row"><label>Age<input name="age" required type="number" min="13" max="120" placeholder="Age" /></label><label>Date of Birth<input name="dateOfBirth" required type="date" /></label></div>}
             {mode === 'register' && <label>Gender<select name="gender" defaultValue="" required><option value="" disabled>Select an option</option><option>Male</option><option>Female</option><option>Other</option></select></label>}
-            {(mode === 'login' || mode === 'register') && <label>Password<input name="password" required minLength={mode === 'register' ? 12 : undefined} type="password" autoComplete={mode === 'login' ? 'current-password' : 'new-password'} placeholder="Enter your password" /></label>}
-            {(mode === 'reset' || mode === 'register') && <label>{mode === 'reset' ? 'New Password' : 'Confirm Password'}<input name={mode === 'reset' ? 'password' : 'confirmPassword'} required minLength={12} type="password" autoComplete="new-password" placeholder={mode === 'reset' ? 'Create a new password' : 'Re-enter your password'} /></label>}
-            {mode === 'reset' && <label>Confirm New Password<input name="confirmPassword" required minLength={12} type="password" autoComplete="new-password" placeholder="Re-enter your new password" /></label>}
+            {(mode === 'login' || mode === 'register') && <PasswordField id="auth-password" label="Password" name="password" required minLength={mode === 'register' ? 12 : undefined} autoComplete={mode === 'login' ? 'current-password' : 'new-password'} placeholder="Enter your password" />}
+            {(mode === 'reset' || mode === 'register') && <PasswordField id="auth-confirm-password" label={mode === 'reset' ? 'New Password' : 'Confirm Password'} name={mode === 'reset' ? 'password' : 'confirmPassword'} required minLength={12} autoComplete="new-password" placeholder={mode === 'reset' ? 'Create a new password' : 'Re-enter your password'} />}
+            {mode === 'reset' && <PasswordField id="auth-confirm-new-password" label="Confirm New Password" name="confirmPassword" required minLength={12} autoComplete="new-password" placeholder="Re-enter your new password" />}
             {mode === 'register' && <label>Contact Number <span className="optional">(optional)</span><input name="contactNumber" type="tel" autoComplete="off" placeholder="Your contact number" /></label>}
             {mode === 'register' && <label className="consent"><input name="terms" required type="checkbox" /><span>I agree to the <button type="button" className="legal-link" onClick={() => setLegalDocument('terms')}>Terms of Use</button> and have read the <button type="button" className="legal-link" onClick={() => setLegalDocument('privacy')}>Privacy Notice</button>.</span></label>}
             {error && <p className="form-error" role="alert">{error}</p>}
-            <button className="primary-button auth-submit" type="submit" disabled={isSubmitting}>{isSubmitting ? 'Please wait...' : mode === 'login' ? 'Sign in' : mode === 'register' ? 'Create my account' : mode === 'forgot' ? 'Send reset link' : 'Save new password'} <span>↗</span></button>
+            <button className="primary-button auth-submit" type="submit" disabled={isSubmitting}>{isSubmitting ? 'Please wait...' : mode === 'login' ? 'Log in' : mode === 'register' ? 'Create my account' : mode === 'forgot' ? 'Send reset link' : 'Save new password'} <span>↗</span></button>
           </form>
           {mode === 'login' && <button className="forgot-link" type="button" onClick={() => { setError(''); setResetMessage(''); setMode('forgot'); }}>Forgot your password?</button>}
-          {recoveryMode ? <button className="auth-switch" type="button" onClick={returnToSignIn}>Back to sign in <span>↗</span></button> : <>
+          {recoveryMode ? <button className="auth-switch" type="button" onClick={returnToSignIn}>Back to log in <span>↗</span></button> : <>
             <button className="auth-switch" type="button" onClick={() => { setMode(mode === 'login' ? 'register' : 'login'); setRole('patient'); setError(''); }}>{mode === 'login' ? 'New here? Sign up' : 'Already have an account? Log in'} <span>↗</span></button>
             <div className="guest-divider"><span>or</span></div>
             <button className="guest-button" type="button" onClick={() => onEnter('patient', true)}>Continue as guest <span>→</span></button>
@@ -871,6 +898,25 @@ function RecordActions({ onEdit, onDelete }) { return <div className="record-act
 function AppointmentRequestActions({ onEdit, onCancel }) { return <div className="record-actions"><button type="button" onClick={onEdit}>Update request</button><button type="button" onClick={() => confirmDeleteAction('Cancel this appointment request? The clinic will no longer treat it as an active request.', onCancel)}>Cancel request</button></div>; }
 function PatientForm({ data, onClose, onSave }) {
   const [record, setRecord] = useState(data);
+  const [saving, setSaving] = useState(false);
+  const [saveError, setSaveError] = useState('');
+  const handleSubmit = async (event) => {
+    event.preventDefault();
+    setSaving(true);
+    setSaveError('');
+    try {
+      const result = await onSave(record);
+      if (result?.error) {
+        setSaveError(result.error);
+        return;
+      }
+      onClose();
+    } catch (error) {
+      setSaveError(error?.message || 'The change could not be saved. Please try again.');
+    } finally {
+      setSaving(false);
+    }
+  };
   const fields = record.type === 'profile'
     ? [['name', 'Full name', 'text', 'Your full name'], ['email', 'Email address', 'email', 'you@example.com'], ['phone', 'Contact number', 'tel', 'Your contact number']]
     : record.type === 'medication'
@@ -885,7 +931,8 @@ function PatientForm({ data, onClose, onSave }) {
         <button className="close-button" onClick={onClose} aria-label="Close form">×</button>
         <p className="eyebrow">{record.id || record.appointment_id || record.request_id ? 'Edit record' : 'New record'}</p>
         <h2>{record.type === 'medication' ? 'Request medication' : record.type === 'chat' ? 'Start private chat' : record.type === 'worker-patient' ? 'Patient details' : 'Edit profile'}</h2>
-        <form onSubmit={(event) => { event.preventDefault(); onSave(record); }}>
+        <form onSubmit={handleSubmit}>
+          {saveError && <p className="form-error" role="alert">{saveError}</p>}
           {fields.map(([key, label, type = 'text', placeholder = '']) => (
             <label key={key}>
               {label}
@@ -903,7 +950,7 @@ function PatientForm({ data, onClose, onSave }) {
               />}
             </label>
           ))}
-          <button className="primary-button" type="submit">Save record <span>↗</span></button>
+          <button className="primary-button" type="submit" disabled={saving}>{saving ? 'Saving…' : 'Save record'} <span>↗</span></button>
         </form>
       </div>
     </div>
@@ -1173,12 +1220,8 @@ function AdminUserFormModal({ user, onClose, onSave }) {
             <input required type="email" autoComplete="email" value={formData.email} onChange={(e) => setFormData({ ...formData, email: e.target.value })} placeholder="you@example.com" />
           </label>
           {!isEdit && <>
-            <label>Password
-              <input required minLength={12} autoComplete="new-password" type="password" value={formData.password} onChange={(e) => setFormData({ ...formData, password: e.target.value })} placeholder="Create password" />
-            </label>
-            <label>Confirm Password
-              <input required minLength={12} autoComplete="new-password" type="password" value={formData.confirmPassword} onChange={(e) => setFormData({ ...formData, confirmPassword: e.target.value })} placeholder="Re-enter password" />
-            </label>
+            <PasswordField id="admin-user-password" label="Password" required minLength={12} autoComplete="new-password" value={formData.password} onChange={(e) => setFormData({ ...formData, password: e.target.value })} placeholder="Create password" />
+            <PasswordField id="admin-user-confirm-password" label="Confirm Password" required minLength={12} autoComplete="new-password" value={formData.confirmPassword} onChange={(e) => setFormData({ ...formData, confirmPassword: e.target.value })} placeholder="Re-enter password" />
           </>}
           <div className="field-row">
             <label>Age
@@ -1356,12 +1399,8 @@ function AdminHealthWorkerFormModal({ worker, onClose, onSave }) {
             </select>
           </label>}
           {!isEdit && <>
-            <label>Password
-              <input required minLength={12} autoComplete="new-password" type="password" value={formData.password} onChange={(e) => setFormData({ ...formData, password: e.target.value })} placeholder="Create password" />
-            </label>
-            <label>Confirm Password
-              <input required minLength={12} autoComplete="new-password" type="password" value={formData.confirmPassword} onChange={(e) => setFormData({ ...formData, confirmPassword: e.target.value })} placeholder="Re-enter password" />
-            </label>
+            <PasswordField id="admin-worker-password" label="Password" required minLength={12} autoComplete="new-password" value={formData.password} onChange={(e) => setFormData({ ...formData, password: e.target.value })} placeholder="Create password" />
+            <PasswordField id="admin-worker-confirm-password" label="Confirm Password" required minLength={12} autoComplete="new-password" value={formData.confirmPassword} onChange={(e) => setFormData({ ...formData, confirmPassword: e.target.value })} placeholder="Re-enter password" />
           </>}
           <div className="field-row">
             <label>Specialty
@@ -1556,7 +1595,18 @@ function HealthWorkerDashboard({ currentUser, currentWorker, onPublicHub, onSign
     : [];
 
   const navigate = (nextPage) => { setPage(nextPage); scrollPageToTop(); };
-  const updateRequest = (id, status) => db.update('MedicationRequests', id, { status });
+  const updateRequest = async (id, status) => {
+    const result = await db.update('MedicationRequests', id, { status });
+    if (result?.error || db.useApi) return result;
+    db.insert('ActivityLogs', {
+      actor_user_id: workerUser.user_id || null,
+      actor_name: workerUser.full_name || 'Health Worker',
+      action: `Updated medication request: ${status}`,
+      category: 'Medication Requests',
+      details: `Medication request #${id} status changed to ${status}.`,
+    });
+    return result;
+  };
   const updateAppointment = (id, status) => db.update('Appointments', id, { status });
   const savePatient = (patient) => {
     if (patient.id || patient.patient_id || patient.userId) {
@@ -1594,7 +1644,7 @@ function HealthWorkerDashboard({ currentUser, currentWorker, onPublicHub, onSign
       {assignmentNotice && <p className="form-status" role="status">{assignmentNotice}</p>}
       {claimablePatients.length > 0 && <section className="claimable-patients" aria-labelledby="claimable-heading"><div className="claimable-heading"><div><p className="eyebrow">Matching facility</p><h2 id="claimable-heading">Available patients</h2></div><span>{claimablePatients.length} unassigned</span></div><div className="worker-list">{claimablePatients.map((patient) => <article key={patient.patient_id}><div><strong>{patient.full_name}</strong><span>{patient.care_status || 'Active care plan'} · Patient #{patient.patient_id}</span></div><button className="admin-btn admin-btn-primary" type="button" onClick={() => claimPatient(patient)}>Assign to me</button></article>)}</div></section>}
       <h2 className="quick-heading">Assigned patients</h2><div className="worker-list">{workerPatients.map((patient) => <article key={patient.userId || patient.id}><div><strong>{patient.fullName || patient.name}</strong><span>{patient.email} · {patient.medicalNotes || patient.detail}{patient.userId === 1 && latestMessage ? ` · “${latestMessage}”` : ''} · <strong style={{ color: 'var(--coral)', fontWeight: 400 }}>{patient.servicesAvailedCount || 0} services availed</strong></span></div><div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}><StatusBadge status={patient.careStatus || patient.status} /><StatusBadge status={patient.accountStatus || 'Active'} /></div><div className="worker-actions"><button type="button" className="card-link" onClick={() => setInspectingUser(patient)}>View Services ↗</button><button className="card-link" onClick={() => setPatientEditor({ type: 'worker-patient', ...patient, id: patient.patientId, user_id: patient.userId, name: patient.fullName })}>Edit Care Plan</button></div></article>)}</div>{!workerPatients.length && <p className="empty-records">No patients are currently assigned to you.</p>}</PagePanel>,
-    medications: <PagePanel eyebrow="Treatment support" title={<>Medication<br /><i>requests.</i></>}><div className="worker-list">{requests.map((request) => <article key={request.id}><div><strong>{request.medication}</strong><span>Requested by {request.patient} · {request.dosage} · {request.schedule} · Quantity: {request.quantity ?? 30}{request.isRefill ? ' · Refill' : ''}</span>{request.notes && <span>Patient note: {request.notes}</span>}</div><StatusBadge status={request.status} /><div className="worker-actions"><button className="card-link" onClick={() => updateRequest(request.id, 'Approved')}>Approve</button><button className="card-link" onClick={() => updateRequest(request.id, 'Needs information')}>Request info</button></div></article>)}</div></PagePanel>,
+    medications: <PagePanel eyebrow="Treatment support" title={<>Medication<br /><i>requests.</i></>}><div className="worker-list">{requests.map((request) => <article key={request.id}><div><strong>{request.medication}</strong><span>Requested by {request.patient} · {request.dosage} · {request.schedule} · Quantity: {request.quantity ?? 30}{request.isRefill ? ' · Refill' : ''}</span>{request.notes && <span>Patient note: {request.notes}</span>}</div><StatusBadge status={request.status} /><div className="worker-actions"><button className="card-link" onClick={() => updateRequest(request.id, 'Approved')}>Approve</button><button className="card-link" onClick={() => updateRequest(request.id, 'Needs information')}>Request info</button></div></article>)}</div>{!requests.length && <p className="empty-records">Medication requests from your assigned patients will appear here. Assign the patient to your care team to review their request.</p>}</PagePanel>,
     appointments: <PagePanel eyebrow="Care schedule" title={<>Manage<br /><i>appointments.</i></>}><div className="worker-list">{appointments.map((appointment) => {
           const status = String(appointment.status || 'Requested');
           const isAwaitingConfirmation = ['requested', 'rescheduled'].includes(status.toLowerCase());

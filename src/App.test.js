@@ -20,10 +20,12 @@ afterEach(() => {
   jest.restoreAllMocks();
 });
 
-test('renders the sign in entry screen', () => {
+test('renders the log in entry screen', () => {
   render(<App />);
   expect(screen.queryByRole('link', { name: /hivelink/i })).not.toBeInTheDocument();
   expect(screen.getByRole('heading', { name: /good to see you/i })).toBeInTheDocument();
+  expect(screen.getByRole('button', { name: /^log in$/i })).toBeInTheDocument();
+  expect(screen.queryByRole('button', { name: /^sign in$/i })).not.toBeInTheDocument();
   expect(screen.getByRole('button', { name: /continue as guest/i })).toBeInTheDocument();
   expect(screen.getByRole('option', { name: /patient \/ user/i })).toBeInTheDocument();
   expect(screen.getByRole('option', { name: /health worker/i })).toBeInTheDocument();
@@ -34,7 +36,7 @@ test('blocks un-registered accounts from logging in with an error message', () =
   render(<App />);
   userEvent.type(screen.getByLabelText(/email address/i), 'unregistered@example.com');
   userEvent.type(screen.getByLabelText(/^password$/i), 'password123');
-  userEvent.click(screen.getByRole('button', { name: /^sign in/i }));
+  userEvent.click(screen.getByRole('button', { name: /^log in/i }));
 
   expect(screen.getByRole('alert')).toHaveTextContent(/account not found/i);
 });
@@ -170,7 +172,7 @@ test('admin can email a registered account from the user list', async () => {
   userEvent.selectOptions(screen.getByLabelText(/account type/i), 'admin');
   userEvent.type(screen.getByLabelText(/email address/i), 'mail.admin@example.com');
   userEvent.type(screen.getByLabelText(/^password$/i), 'securePassword123');
-  userEvent.click(screen.getByRole('button', { name: /^sign in/i }));
+  userEvent.click(screen.getByRole('button', { name: /^log in/i }));
   db.useApi = true;
   userEvent.click(screen.getByRole('button', { name: 'Users' }));
 
@@ -275,7 +277,7 @@ test('recovery link lets the user set a new password and returns to sign-in', as
       method: 'POST',
       body: JSON.stringify({ accessToken: 'recovery-access-token', password: 'a-new-secure-password' }),
     }));
-    userEvent.click(screen.getByRole('button', { name: /^sign in/i }));
+    userEvent.click(screen.getByRole('button', { name: /^log in/i }));
     expect(screen.getByRole('heading', { name: /good to see you/i })).toBeInTheDocument();
   } finally {
     db.useApi = previousApiMode;
@@ -344,7 +346,7 @@ test('patient submits an appointment request with a clinic, preferred time, and 
   render(<App />);
   userEvent.type(screen.getByLabelText(/email address/i), 'morgan@example.com');
   userEvent.type(screen.getByLabelText(/^password$/i), 'password');
-  userEvent.click(screen.getByRole('button', { name: /^sign in/i }));
+  userEvent.click(screen.getByRole('button', { name: /^log in/i }));
   expect(screen.getByRole('button', { name: /sign out/i })).toBeInTheDocument();
   expect(screen.getByRole('button', { name: 'Care' })).toBeInTheDocument();
 
@@ -437,7 +439,7 @@ test('health workers can confirm and complete patient appointment requests', () 
   userEvent.selectOptions(screen.getByLabelText(/account type/i), 'health-worker');
   userEvent.type(screen.getByLabelText(/email address/i), 'evelyn@risinghiv.org');
   userEvent.type(screen.getByLabelText(/^password$/i), 'password');
-  userEvent.click(screen.getByRole('button', { name: /^sign in/i }));
+  userEvent.click(screen.getByRole('button', { name: /^log in/i }));
   userEvent.click(screen.getByRole('button', { name: 'Appointments' }));
 
   expect(screen.getByText(/patient note: morning preferred/i)).toBeInTheDocument();
@@ -467,7 +469,7 @@ test('patient appointment cancellation waits for confirmation', () => {
   render(<App />);
   userEvent.type(screen.getByLabelText(/email address/i), 'morgan@example.com');
   userEvent.type(screen.getByLabelText(/^password$/i), 'password');
-  userEvent.click(screen.getByRole('button', { name: /^sign in/i }));
+  userEvent.click(screen.getByRole('button', { name: /^log in/i }));
   userEvent.click(screen.getByRole('button', { name: 'Testing' }));
   userEvent.click(screen.getByRole('button', { name: /request an appointment/i }));
   userEvent.click(screen.getByRole('button', { name: /cancel request/i }));
@@ -555,7 +557,7 @@ test('health workers have one supervised group and cannot create or remove group
   userEvent.selectOptions(screen.getByLabelText(/account type/i), 'health-worker');
   userEvent.type(screen.getByLabelText(/email address/i), 'evelyn@risinghiv.org');
   userEvent.type(screen.getByLabelText(/^password$/i), 'password');
-  userEvent.click(screen.getByRole('button', { name: /^sign in/i }));
+  userEvent.click(screen.getByRole('button', { name: /^log in/i }));
   userEvent.click(screen.getByRole('button', { name: 'Groups' }));
 
   expect(screen.getByRole('heading', { name: /one support group/i })).toBeInTheDocument();
@@ -576,7 +578,7 @@ test('patient public pages match the guest experience', () => {
   render(<App />);
   userEvent.type(screen.getByLabelText(/email address/i), 'morgan@example.com');
   userEvent.type(screen.getByLabelText(/^password$/i), 'password');
-  userEvent.click(screen.getByRole('button', { name: /^sign in/i }));
+  userEvent.click(screen.getByRole('button', { name: /^log in/i }));
 
   expect(screen.getByRole('heading', { name: /start with what you know/i })).toBeInTheDocument();
   userEvent.click(screen.getByRole('button', { name: 'Information' }));
@@ -601,7 +603,7 @@ test('patient private chat works as a health worker messenger', async () => {
   render(<App />);
   userEvent.type(screen.getByLabelText(/email address/i), 'morgan@example.com');
   userEvent.type(screen.getByLabelText(/^password$/i), 'password');
-  userEvent.click(screen.getByRole('button', { name: /^sign in/i }));
+  userEvent.click(screen.getByRole('button', { name: /^log in/i }));
   userEvent.click(screen.getByRole('button', { name: 'Private Chat' }));
 
   expect(screen.getByText('Elena Santos')).toBeInTheDocument();
@@ -624,7 +626,7 @@ test('patient chat recreates a missing session before sending a message', async 
   render(<App />);
   userEvent.type(screen.getByLabelText(/email address/i), 'morgan@example.com');
   userEvent.type(screen.getByLabelText(/^password$/i), 'password');
-  userEvent.click(screen.getByRole('button', { name: /^sign in/i }));
+  userEvent.click(screen.getByRole('button', { name: /^log in/i }));
   userEvent.click(screen.getByRole('button', { name: 'Private Chat' }));
   userEvent.type(screen.getByLabelText(/message health worker/i), 'I have a question.');
   userEvent.click(screen.getByRole('button', { name: /send message/i }));
@@ -754,12 +756,69 @@ test('patient medication page shows availability status', () => {
   render(<App />);
   userEvent.type(screen.getByLabelText(/email address/i), 'morgan@example.com');
   userEvent.type(screen.getByLabelText(/^password$/i), 'password');
-  userEvent.click(screen.getByRole('button', { name: /^sign in/i }));
+  userEvent.click(screen.getByRole('button', { name: /^log in/i }));
   userEvent.click(screen.getByRole('button', { name: 'Medication' }));
   expect(screen.getAllByText('Antiretroviral therapy').length).toBeGreaterThan(0);
   expect(screen.getAllByText('In stock').length).toBeGreaterThan(0);
   expect(screen.getAllByText('Out of stock').length).toBeGreaterThan(0);
   expect(screen.queryByLabelText(/availability/i)).not.toBeInTheDocument();
+});
+
+test('patient medication request is saved and appears in the assigned health worker inbox', async () => {
+  db.registerUser({ fullName: 'Audit Administrator', email: 'med.admin@example.com', password: 'password', role: 'admin' });
+  const worker = db.registerUser({ fullName: 'Dr. Medication Worker', email: 'med.worker@example.com', password: 'password', role: 'health-worker' });
+  const patient = db.registerUser({ fullName: 'Medication Patient', email: 'med.patient@example.com', password: 'password', role: 'patient' });
+  db.update('Patients', patient.patient.patient_id, { assigned_worker_id: worker.worker.worker_id });
+  const medicationService = db.getTable('PlatformServices').find((service) => service.service_key === 'medication_requests');
+  db.update('PlatformServices', medicationService.service_id, { is_enabled: true });
+
+  render(<App />);
+  userEvent.type(screen.getByLabelText(/email address/i), 'med.patient@example.com');
+  userEvent.type(screen.getByLabelText(/^password$/i), 'password');
+  userEvent.click(screen.getByRole('button', { name: /^log in/i }));
+  userEvent.click(screen.getByRole('button', { name: 'Medication' }));
+  userEvent.click(screen.getAllByRole('button', { name: /request medication/i })[0]);
+  userEvent.type(screen.getByLabelText(/current prescribed dosage/i), '1 tablet');
+  userEvent.type(screen.getByLabelText(/how you take it/i), 'Once daily');
+  userEvent.clear(screen.getByLabelText(/quantity requested/i));
+  userEvent.type(screen.getByLabelText(/quantity requested/i), '30');
+  userEvent.click(screen.getByRole('button', { name: /save record/i }));
+
+  await waitFor(() => expect(db.getTable('MedicationRequests')).toHaveLength(1));
+  const [request] = db.getTable('MedicationRequests');
+  expect(request).toMatchObject({
+    patient_id: patient.patient.patient_id,
+    medication_name: 'Antiretroviral therapy',
+    dosage: '1 tablet',
+    schedule: 'Once daily',
+    quantity_requested: 30,
+    is_refill: false,
+    status: 'Pending',
+  });
+
+  userEvent.click(screen.getByRole('button', { name: /sign out/i }));
+  userEvent.selectOptions(screen.getByLabelText(/account type/i), 'health-worker');
+  userEvent.type(screen.getByLabelText(/email address/i), 'med.worker@example.com');
+  userEvent.type(screen.getByLabelText(/^password$/i), 'password');
+  userEvent.click(screen.getByRole('button', { name: /^log in/i }));
+  userEvent.click(screen.getByRole('button', { name: 'Medications' }));
+
+  expect(await screen.findByText('Antiretroviral therapy')).toBeInTheDocument();
+  expect(screen.getByText(/Requested by Medication Patient/)).toBeInTheDocument();
+  expect(screen.getByText(/Quantity: 30/)).toBeInTheDocument();
+  userEvent.click(screen.getByRole('button', { name: 'Approve' }));
+  await waitFor(() => expect(db.findById('MedicationRequests', request.request_id).status).toBe('Approved'));
+  expect(db.getTable('ActivityLogs').some((log) => log.action === 'Updated medication request: Approved')).toBe(true);
+
+  userEvent.click(screen.getByRole('button', { name: /sign out/i }));
+  userEvent.selectOptions(screen.getByLabelText(/account type/i), 'admin');
+  userEvent.type(screen.getByLabelText(/email address/i), 'med.admin@example.com');
+  userEvent.type(screen.getByLabelText(/^password$/i), 'password');
+  userEvent.click(screen.getByRole('button', { name: /^log in/i }));
+  userEvent.click(screen.getByRole('button', { name: 'Activity logs' }));
+
+  expect(await screen.findByText('Submitted medication request')).toBeInTheDocument();
+  expect(screen.getByText('Updated medication request: Approved')).toBeInTheDocument();
 });
 
 test('health worker gets a care management workspace', () => {
@@ -774,7 +833,7 @@ test('health worker gets a care management workspace', () => {
   userEvent.selectOptions(screen.getByLabelText(/account type/i), 'health-worker');
   userEvent.type(screen.getByLabelText(/email address/i), 'evelyn@risinghiv.org');
   userEvent.type(screen.getByLabelText(/^password$/i), 'password');
-  userEvent.click(screen.getByRole('button', { name: /^sign in/i }));
+  userEvent.click(screen.getByRole('button', { name: /^log in/i }));
 
   expect(screen.getByRole('heading', { name: /care that connects/i })).toBeInTheDocument();
   expect(screen.getByText('Dr. Evelyn Garcia')).toBeInTheDocument();
@@ -827,7 +886,7 @@ test('health worker inbox shows assigned unread chats, marks messages read, and 
   userEvent.selectOptions(screen.getByLabelText(/account type/i), 'health-worker');
   userEvent.type(screen.getByLabelText(/email address/i), 'evelyn.chat@risinghiv.org');
   userEvent.type(screen.getByLabelText(/^password$/i), 'password');
-  userEvent.click(screen.getByRole('button', { name: /^sign in/i }));
+  userEvent.click(screen.getByRole('button', { name: /^log in/i }));
   userEvent.click(screen.getByRole('button', { name: 'Chats' }));
 
   expect(screen.getByRole('heading', { name: /conversation inbox/i })).toBeInTheDocument();
@@ -855,7 +914,7 @@ test('admin can assign a patient to a health worker', () => {
   userEvent.selectOptions(screen.getByLabelText(/account type/i), 'admin');
   userEvent.type(screen.getByLabelText(/email address/i), 'assign.admin@example.com');
   userEvent.type(screen.getByLabelText(/^password$/i), 'securePassword123');
-  userEvent.click(screen.getByRole('button', { name: /^sign in/i }));
+  userEvent.click(screen.getByRole('button', { name: /^log in/i }));
   userEvent.click(screen.getByRole('button', { name: 'Users' }));
   const patientCard = screen.getByText('Patient To Assign').closest('article');
   userEvent.click(within(patientCard).getByRole('button', { name: 'Edit' }));
@@ -873,7 +932,7 @@ test('health worker can claim an unassigned patient and access their chat', asyn
   userEvent.selectOptions(screen.getByLabelText(/account type/i), 'health-worker');
   userEvent.type(screen.getByLabelText(/email address/i), 'self.assign@example.com');
   userEvent.type(screen.getByLabelText(/^password$/i), 'securePassword123');
-  userEvent.click(screen.getByRole('button', { name: /^sign in/i }));
+  userEvent.click(screen.getByRole('button', { name: /^log in/i }));
   userEvent.click(screen.getByRole('button', { name: 'Patients' }));
   expect(screen.getByText(/no patients are currently assigned to you/i)).toBeInTheDocument();
   userEvent.click(await screen.findByRole('button', { name: /assign to me/i }));
@@ -895,7 +954,7 @@ test('admin can assign the private support group to one eligible supervisor', as
   userEvent.selectOptions(screen.getByLabelText(/account type/i), 'admin');
   userEvent.type(screen.getByLabelText(/email address/i), 'group.admin@example.com');
   userEvent.type(screen.getByLabelText(/^password$/i), 'securePassword123');
-  userEvent.click(screen.getByRole('button', { name: /^sign in/i }));
+  userEvent.click(screen.getByRole('button', { name: /^log in/i }));
   userEvent.click(screen.getByRole('button', { name: 'Support group' }));
   const supervisorSelect = screen.getByLabelText(/designated health-worker supervisor/i);
   expect(within(supervisorSelect).getByRole('option', { name: /Dr\. Private Supervisor/i })).toBeInTheDocument();
@@ -920,7 +979,7 @@ test('admin gets platform management pages and service toggles', () => {
   userEvent.selectOptions(screen.getByLabelText(/account type/i), 'admin');
   userEvent.type(screen.getByLabelText(/email address/i), 'admin@risinghiv.org');
   userEvent.type(screen.getByLabelText(/^password$/i), 'password');
-  userEvent.click(screen.getByRole('button', { name: /^sign in/i }));
+  userEvent.click(screen.getByRole('button', { name: /^log in/i }));
 
   expect(screen.getByRole('heading', { name: /keep care connected/i })).toBeInTheDocument();
   expect(screen.getByRole('button', { name: 'Users' })).toBeInTheDocument();
@@ -948,7 +1007,7 @@ test('patient navigation opens private chat, medication, and support groups outs
   render(<App />);
   userEvent.type(screen.getByLabelText(/email address/i), 'morgan@example.com');
   userEvent.type(screen.getByLabelText(/^password$/i), 'password');
-  userEvent.click(screen.getByRole('button', { name: /^sign in/i }));
+  userEvent.click(screen.getByRole('button', { name: /^log in/i }));
 
   expect(screen.getByRole('button', { name: 'Private Chat' })).toBeInTheDocument();
   expect(screen.getByRole('button', { name: 'Medication' })).toBeInTheDocument();
@@ -1046,7 +1105,7 @@ test('admin dashboard starts with all data and metrics at 0', () => {
   userEvent.selectOptions(screen.getByLabelText(/account type/i), 'admin');
   userEvent.type(screen.getByLabelText(/email address/i), 'admin.zero@risinghiv.org');
   userEvent.type(screen.getByLabelText(/^password$/i), 'securePassword99');
-  userEvent.click(screen.getByRole('button', { name: /^sign in/i }));
+  userEvent.click(screen.getByRole('button', { name: /^log in/i }));
 
   expect(screen.getByRole('heading', { name: /keep care connected/i })).toBeInTheDocument();
   // Overview tiles should show 0 for patients, 0 for workers, 0 for appointments, 0 for chats
@@ -1069,7 +1128,7 @@ test('admin can perform full CRUD on users, see full user info, and inspect avai
   userEvent.selectOptions(screen.getByLabelText(/account type/i), 'admin');
   userEvent.type(screen.getByLabelText(/email address/i), 'admin.crud@risinghiv.org');
   userEvent.type(screen.getByLabelText(/^password$/i), 'securePassword99');
-  userEvent.click(screen.getByRole('button', { name: /^sign in/i }));
+  userEvent.click(screen.getByRole('button', { name: /^log in/i }));
 
   userEvent.click(screen.getByRole('button', { name: 'Users' }));
 
@@ -1159,7 +1218,7 @@ test('admin can perform full CRUD on health workers, see full worker details, an
   userEvent.selectOptions(screen.getByLabelText(/account type/i), 'admin');
   userEvent.type(screen.getByLabelText(/email address/i), 'admin.worker@risinghiv.org');
   userEvent.type(screen.getByLabelText(/^password$/i), 'securePassword99');
-  userEvent.click(screen.getByRole('button', { name: /^sign in/i }));
+  userEvent.click(screen.getByRole('button', { name: /^log in/i }));
 
   userEvent.click(screen.getByRole('button', { name: 'Health workers' }));
 
@@ -1251,7 +1310,7 @@ test('patient can view all services they have availed with their respective stat
   render(<App />);
   userEvent.type(screen.getByLabelText(/email address/i), 'jordan.services@example.com');
   userEvent.type(screen.getByLabelText(/^password$/i), 'password123');
-  userEvent.click(screen.getByRole('button', { name: /^sign in/i }));
+  userEvent.click(screen.getByRole('button', { name: /^log in/i }));
 
   // Open Account / Care dashboard
   const profileButton = screen.getByRole('button', { name: /open .*care dashboard/i });

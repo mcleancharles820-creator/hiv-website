@@ -1536,3 +1536,419 @@ h1 { line-height: 1.02; }
     row-gap: 14px;
   }
 }
+
+/* Modern white and red dashboard refresh */
+:root {
+  --ink: #2f1720;
+  --muted: #71656a;
+  --cream: #f7f7f8;
+  --coral: #c51f36;
+  --coral-pressed: #a8182c;
+  --mint: #f8dfe3;
+  --line: #e8e1e3;
+}
+
+body,
+button,
+input,
+textarea,
+select {
+  font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+}
+
+body { background: #f7f7f8; }
+.topline { background: #94192c; color: #fff; padding-bottom: 8px; padding-top: 8px; }
+.topline-detail { color: #f3cbd1; }
+.brand { font-family: inherit; font-size: 21px; font-weight: 750; letter-spacing: -.055em; }
+.brand em { color: var(--coral); }
+.primary-button,
+.header-action,
+.guest-button,
+.admin-btn,
+.service-toggle { border-radius: 9px; font-family: inherit; font-weight: 650; letter-spacing: .015em; }
+.primary-button { box-shadow: 0 5px 12px rgba(197, 31, 54, .14); padding: 12px 16px; transition: background .18s ease, box-shadow .18s ease, transform .18s ease; }
+.primary-button:hover { background: var(--coral-pressed); box-shadow: 0 7px 16px rgba(197, 31, 54, .2); transform: translateY(-1px); }
+.primary-button:focus-visible,
+.guest-nav-link:focus-visible,
+.patient-nav button:focus-visible,
+.card-link:focus-visible,
+.admin-btn:focus-visible { outline: 3px solid rgba(197, 31, 54, .25); outline-offset: 2px; }
+
+/* Signed-in patient, worker, and admin workspaces */
+.patient-shell { background: #f5f6f8; min-height: 100vh; }
+.patient-shell > .topline { display: none; }
+.patient-shell .patient-header {
+  background: rgba(255, 255, 255, .96);
+  border-bottom: 1px solid #e9e5e7;
+  box-shadow: 0 4px 18px rgba(44, 20, 27, .045);
+  gap: 24px;
+  min-height: 72px;
+  padding: 12px clamp(20px, 4vw, 58px);
+  position: sticky;
+  top: 0;
+  z-index: 5;
+}
+.patient-shell .brand { flex: 0 0 auto; }
+.patient-shell .nav-links,
+.patient-shell .patient-nav {
+  align-items: center;
+  gap: 5px;
+  margin: 0 auto;
+}
+.patient-shell .guest-nav-link,
+.patient-shell .patient-nav button {
+  background: transparent;
+  border: 0;
+  border-radius: 8px;
+  color: #62575b;
+  font-family: inherit;
+  font-size: 12px;
+  font-weight: 550;
+  line-height: 1.2;
+  letter-spacing: 0;
+  padding: 10px 11px;
+  text-transform: none;
+  transition: background .18s ease, color .18s ease;
+}
+.patient-shell .guest-nav-link:hover,
+.patient-shell .guest-nav-link.active,
+.patient-shell .patient-nav button:hover,
+.patient-shell .patient-nav button.active {
+  background: #fff0f2;
+  color: #a8182c;
+}
+.patient-shell .patient-header-actions { align-items: center; display: flex; gap: 12px; }
+.patient-shell .profile-name { color: #4b3e43; font-size: 12px; font-weight: 600; }
+.patient-shell .profile-icon { background: #fff0f2; border: 1px solid #f1d7dc; border-radius: 50%; color: var(--coral); height: 36px; width: 36px; }
+.patient-shell .sign-out-button { border: 1px solid #e7dadd; border-radius: 8px; color: #66585d; font-family: inherit; font-size: 11px; font-weight: 600; line-height: 1.2; padding: 9px 12px; text-decoration: none; }
+.patient-shell .sign-out-button:hover { background: #fff0f2; border-color: #edc4cb; color: #a8182c; }
+.patient-shell .patient-main {
+  max-width: 1360px;
+  min-height: calc(100vh - 154px);
+  padding: 44px clamp(20px, 4vw, 58px) 72px;
+}
+.patient-shell .patient-main > .eyebrow {
+  align-items: center;
+  background: #fff0f2;
+  border: 1px solid #f1d9dd;
+  border-radius: 999px;
+  display: inline-flex;
+  font-family: inherit;
+  font-size: 10px;
+  font-weight: 700;
+  line-height: 1.2;
+  letter-spacing: .08em;
+  margin-bottom: 16px;
+  padding: 8px 12px;
+}
+.patient-shell .patient-main h1 {
+  color: #2f1720;
+  font-family: inherit;
+  font-size: clamp(34px, 4vw, 48px);
+  font-weight: 730;
+  line-height: 1.08;
+  letter-spacing: -.055em;
+  margin-bottom: 14px;
+  max-width: 780px;
+}
+.patient-shell .patient-main h1 i { color: var(--coral); font-style: normal; }
+.patient-shell .dashboard-intro,
+.patient-shell .patient-main > .dashboard-intro { color: #71656a; font-size: 14px; line-height: 1.6; max-width: 650px; }
+.patient-shell .patient-panel-content {
+  background: #fff;
+  border: 1px solid #ebe6e8;
+  border-radius: 16px;
+  box-shadow: 0 8px 26px rgba(44, 20, 27, .045);
+  margin-top: 26px;
+  max-width: none;
+  padding: clamp(18px, 2.5vw, 30px);
+}
+.patient-shell .patient-panel-content > h2,
+.patient-shell .quick-heading { color: #38262c; font-family: inherit; font-size: 20px; font-weight: 680; line-height: 1.3; letter-spacing: -.025em; margin: 0 0 18px; }
+.patient-shell .dashboard-tiles,
+.patient-shell .report-grid { gap: 16px; margin: 32px 0 38px; }
+.patient-shell .dashboard-tile {
+  background: #fff;
+  border: 1px solid #ebe6e8;
+  border-radius: 13px;
+  box-shadow: 0 4px 12px rgba(44, 20, 27, .035);
+  min-height: 132px;
+  padding: 19px;
+}
+.patient-shell .dashboard-tile > span { color: #71656a; font-family: inherit; font-size: 11px; font-weight: 600; line-height: 1.4; letter-spacing: .02em; text-transform: none; }
+.patient-shell .dashboard-tile strong { color: #a8182c; font-family: inherit; font-size: 28px; font-weight: 720; line-height: 1.2; letter-spacing: -.04em; }
+.patient-shell .dashboard-tile small { color: #83777b; font-size: 11px; }
+.patient-shell .care-grid { gap: 16px; }
+.patient-shell .care-grid .dashboard-card {
+  background: #fff;
+  border: 1px solid #ebe6e8;
+  border-radius: 13px;
+  box-shadow: 0 4px 12px rgba(44, 20, 27, .035);
+  min-height: 195px;
+  padding: 21px;
+  transition: border-color .18s ease, box-shadow .18s ease, transform .18s ease;
+}
+.patient-shell .care-grid .dashboard-card:hover { border-color: #edc4cb; box-shadow: 0 9px 22px rgba(44, 20, 27, .075); transform: translateY(-2px); }
+.patient-shell .care-grid .dashboard-card h2 { font-family: inherit; font-size: 18px; font-weight: 680; line-height: 1.3; margin: 18px 0 8px; }
+.patient-shell .care-grid .dashboard-card p { color: #71656a; font-size: 12px; line-height: 1.55; min-height: 54px; }
+.patient-shell .card-link,
+.patient-shell .text-button { color: #a8182c; font-family: inherit; font-size: 11px; font-weight: 650; line-height: 1.4; letter-spacing: 0; text-transform: none; }
+.patient-shell .patient-info-grid,
+.patient-shell .testing-notes { gap: 14px; }
+.patient-shell .patient-info-grid article,
+.patient-shell .testing-notes > div {
+  background: #fff7f8;
+  border: 1px solid #f1e2e5;
+  border-radius: 12px;
+  padding: 20px;
+}
+.patient-shell .patient-info-grid article + article { padding-left: 20px; }
+.patient-shell .profile-card {
+  background: #fff;
+  border: 1px solid #ebe6e8;
+  border-radius: 13px;
+  gap: 0 22px;
+  padding: 22px;
+}
+.patient-shell .profile-card > div { border-bottom: 1px solid #f0ebed; padding: 14px 0; }
+.patient-shell .profile-card > div > span { color: #81767a; font-family: inherit; font-size: 10px; font-weight: 650; line-height: 1.4; letter-spacing: .06em; }
+.patient-shell .profile-card strong { font-size: 14px; font-weight: 600; }
+.patient-shell .record-list,
+.patient-shell .worker-list,
+.patient-shell .service-list { border: 0; max-width: none; }
+.patient-shell .record-list article,
+.patient-shell .worker-list article,
+.patient-shell .service-list article,
+.patient-shell .admin-list article {
+  background: #fff;
+  border: 1px solid #ebe6e8;
+  border-radius: 11px;
+  margin-bottom: 10px;
+  padding: 17px 18px;
+}
+.patient-shell .record-list strong,
+.patient-shell .worker-list strong,
+.patient-shell .service-list strong,
+.patient-shell .admin-list strong { color: #38262c; font-size: 13px; font-weight: 650; }
+.patient-shell .record-list span,
+.patient-shell .worker-list span,
+.patient-shell .service-list span,
+.patient-shell .admin-list span { color: #71656a; font-family: inherit; font-size: 12px; line-height: 1.5; letter-spacing: 0; text-transform: none; }
+.patient-shell .worker-list article > div:first-child { gap: 6px; }
+.patient-shell .patient-form,
+.patient-shell .support-modal,
+.patient-shell .detail-modal {
+  background: #fff;
+  border: 1px solid #eee6e8;
+  border-radius: 16px;
+  box-shadow: 0 24px 80px rgba(32, 12, 18, .22);
+}
+.patient-shell .patient-form h2 { font-family: inherit; font-size: 26px; font-weight: 700; line-height: 1.2; letter-spacing: -.04em; }
+.patient-shell .patient-form label,
+.patient-shell .settings-list label { color: #53464b; font-size: 11px; font-weight: 650; letter-spacing: .01em; text-transform: none; }
+.patient-shell .patient-form input,
+.patient-shell .patient-form select,
+.patient-shell .patient-form textarea,
+.patient-shell .settings-list input[type=email],
+.patient-shell .settings-list label > input:not([type=checkbox]) {
+  background: #fff;
+  border: 1px solid #e4dcdf;
+  border-radius: 8px;
+  font-family: inherit;
+  font-size: 13px;
+  line-height: 1.45;
+  padding: 11px 12px;
+}
+.patient-shell .patient-form input:focus,
+.patient-shell .patient-form textarea:focus,
+.patient-shell .settings-list input:focus { border-color: #d85b6c; box-shadow: 0 0 0 3px rgba(197, 31, 54, .1); outline: 0; }
+.patient-shell .status-badge { border-radius: 999px; font-family: inherit; font-size: 10px; font-weight: 650; line-height: 1.2; padding: 6px 9px; }
+.patient-shell .admin-toolbar { background: #fff; border: 1px solid #ebe6e8; border-radius: 12px; padding: 14px; }
+.patient-shell .admin-search-input,
+.patient-shell .admin-filter-select { background-color: #fff; border-radius: 8px; }
+.patient-shell footer { background: #fff; border-top: 1px solid #e9e5e7; color: #71656a; padding-left: clamp(20px, 4vw, 58px); padding-right: clamp(20px, 4vw, 58px); }
+.patient-shell .patient-public-link,
+.patient-shell .footer-back { color: #71656a; font-family: inherit; font-size: 11px; font-weight: 600; line-height: 1.4; }
+
+/* Public pages and sign-in use the same cleaner type, spacing, and red accents. */
+.guest-hub,
+.app-shell,
+.auth-shell,
+.dashboard-shell { background: #f7f7f8; }
+.guest-header,
+.site-header { background: #fff; }
+.guest-hub .guest-header { border-bottom-color: #e9e5e7; padding-bottom: 17px; padding-top: 17px; }
+.guest-hub .guest-nav-link { border-radius: 8px; font-family: inherit; font-size: 11px; font-weight: 600; line-height: 1.3; letter-spacing: .01em; padding: 9px 10px; text-transform: none; }
+.guest-hub .guest-nav-link:hover,
+.guest-hub .guest-nav-link.active { background: #fff0f2; color: #a8182c; }
+.guest-hub h1,
+.guest-hub h2,
+.auth-shell h1,
+.auth-shell h2 { font-family: Inter, ui-sans-serif, system-ui, sans-serif; letter-spacing: -.055em; }
+.guest-hub h1 { font-weight: 730; }
+.guest-hub .guest-hero { padding-bottom: 70px; padding-top: 65px; }
+.guest-hub .guest-hero-art,
+.guest-hub .guest-testing { border-radius: 16px; }
+.auth-shell { gap: 0; }
+.auth-visual { background: #94192c; }
+.auth-message h1 span,
+.auth-stamp strong { color: #ffd9df; }
+.auth-panel { background: #fff; }
+.auth-form-wrap { background: #fff; border: 1px solid #eee6e8; border-radius: 18px; box-shadow: 0 12px 38px rgba(44, 20, 27, .06); margin-top: 8vh; padding: 32px; }
+.auth-form-wrap h2 { font-size: 38px; font-weight: 720; line-height: 1.05; }
+.auth-form input,
+.auth-form select { border: 1px solid #e4dcdf; border-radius: 8px; font-family: inherit; font-size: 14px; line-height: 1.4; padding: 11px 12px; }
+.auth-form input:focus,
+.auth-form select:focus { border-color: #d85b6c; box-shadow: 0 0 0 3px rgba(197, 31, 54, .1); }
+.auth-tabs button { font-family: inherit; font-size: 11px; font-weight: 650; line-height: 1.3; letter-spacing: .02em; text-transform: none; }
+.dashboard-header { background: #fff; padding-bottom: 16px; padding-top: 16px; }
+.dashboard-main { padding-top: 62px; }
+.dashboard-main h1 { font: 730 clamp(40px, 5vw, 58px)/1.08 Inter, ui-sans-serif, system-ui, sans-serif; letter-spacing: -.055em; }
+.dashboard-cards { border: 0; gap: 16px; margin-top: 42px; }
+.dashboard-card,
+.dashboard-card + .dashboard-card { background: #fff; border: 1px solid #ebe6e8; border-radius: 13px; min-height: 210px; padding: 22px; }
+.dashboard-card h2 { font: 680 18px/1.3 Inter, ui-sans-serif, system-ui, sans-serif; margin: 22px 0 9px; }
+
+@media (max-width: 900px) {
+  .patient-shell .patient-header { gap: 12px; }
+  .patient-shell .nav-links,
+  .patient-shell .patient-nav { flex-wrap: wrap; justify-content: center; }
+  .patient-shell .profile-name { display: none; }
+}
+
+@media (max-width: 700px) {
+  .patient-shell .patient-header { align-items: center; position: static; }
+  .patient-shell .nav-links,
+  .patient-shell .patient-nav { flex: 1 0 100%; justify-content: flex-start; order: 3; overflow-x: auto; }
+  .patient-shell .patient-main { padding-bottom: 42px; padding-top: 30px; }
+  .patient-shell .patient-main h1 { font-size: 34px; }
+  .patient-shell .patient-panel-content { border-radius: 12px; padding: 16px; }
+  .patient-shell .dashboard-tiles,
+  .patient-shell .report-grid { display: grid; grid-template-columns: 1fr; }
+  .patient-shell .patient-info-grid { display: grid; grid-template-columns: 1fr; }
+  .patient-shell .patient-info-grid article + article { padding: 20px; }
+  .patient-shell .profile-card { display: block; padding: 16px; }
+  .patient-shell .worker-list article,
+  .patient-shell .record-list article,
+  .patient-shell .admin-list article { gap: 12px; padding: 14px; }
+  .auth-form-wrap { margin-top: 38px; padding: 23px 18px; }
+  .guest-hub .guest-hero { padding-top: 42px; }
+}
+
+/* Tablet and phone layouts */
+@media (max-width: 1100px) {
+  .patient-shell .patient-header {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: space-between;
+  }
+  .patient-shell .patient-header > .brand { order: 1; }
+  .patient-shell .patient-header-actions { margin-left: auto; order: 2; }
+  .patient-shell .patient-header > .nav-links,
+  .patient-shell .patient-header > .patient-nav {
+    flex: 1 0 100%;
+    justify-content: flex-start;
+    margin: 0;
+    order: 3;
+    overflow-x: auto;
+    overscroll-behavior-x: contain;
+    scrollbar-width: thin;
+    white-space: nowrap;
+  }
+  .patient-shell .patient-header .guest-nav-link,
+  .patient-shell .patient-header .patient-nav button { flex: 0 0 auto; }
+  .patient-shell .patient-main { padding-left: clamp(22px, 4vw, 42px); padding-right: clamp(22px, 4vw, 42px); }
+  .patient-shell .worker-list article { grid-template-columns: minmax(0, 1fr) auto; }
+  .patient-shell .worker-list article .worker-actions { grid-column: 1 / -1; justify-content: flex-start; }
+  .patient-shell .admin-entity-details-grid { grid-template-columns: repeat(auto-fit, minmax(min(100%, 170px), 1fr)); }
+}
+
+@media (max-width: 700px) {
+  .patient-shell .patient-header { gap: 10px; padding: 11px 16px; }
+  .patient-shell .patient-header .brand { font-size: 19px; }
+  .patient-shell .patient-header-actions { gap: 8px; }
+  .patient-shell .patient-header .status-badge,
+  .patient-shell .patient-header .text-button { font-size: 9px !important; }
+  .patient-shell .patient-header .sign-out-button { font-size: 10px; padding: 8px 9px; }
+  .patient-shell .patient-header > .nav-links,
+  .patient-shell .patient-header > .patient-nav { gap: 3px; margin: 0 -2px; }
+  .patient-shell .patient-header .guest-nav-link,
+  .patient-shell .patient-header .patient-nav button { font-size: 11px; padding: 9px 10px; }
+  .patient-shell .patient-main { padding-left: 16px; padding-right: 16px; }
+  .patient-shell .patient-main h1 { font-size: clamp(30px, 8vw, 36px); overflow-wrap: anywhere; }
+  .patient-shell .patient-main > .eyebrow { font-size: 9px; }
+  .patient-shell .patient-panel-content { margin-top: 20px; }
+  .patient-shell .dashboard-tiles,
+  .patient-shell .report-grid,
+  .patient-shell .patient-actions,
+  .patient-shell .care-grid { grid-template-columns: minmax(0, 1fr); }
+  .patient-shell .dashboard-tile { min-height: 0; }
+  .patient-shell .record-list article,
+  .patient-shell .worker-list article { grid-template-columns: minmax(0, 1fr); }
+  .patient-shell .record-list article > *,
+  .patient-shell .worker-list article > * { min-width: 0; }
+  .patient-shell .record-list article > .record-actions,
+  .patient-shell .worker-list article > .worker-actions { grid-column: 1; }
+  .patient-shell .worker-list article > .status-badge { justify-self: start; }
+  .patient-shell .service-list article { display: flex !important; flex-wrap: wrap; gap: 12px; }
+  .patient-shell .service-list article > div:first-child { flex: 1 0 100%; min-width: 0; }
+  .patient-shell .service-list article > div:last-child { margin-left: auto; }
+  .patient-shell .admin-card-actions { flex-wrap: wrap; }
+  .patient-shell .service-availed-meta { align-items: flex-start; flex-direction: column; gap: 8px; }
+  .patient-shell .modal-backdrop { align-items: flex-start; overflow-y: auto; padding: 12px; }
+  .patient-shell .patient-form,
+  .patient-shell .detail-modal { margin: auto 0; max-height: calc(100dvh - 24px); overflow-y: auto; padding: 40px 18px 20px; }
+  .patient-shell .patient-form h2 { font-size: 23px; }
+  .patient-shell .admin-registration-name-row,
+  .patient-shell .registration-name-row { grid-template-columns: minmax(0, 1fr); }
+  .patient-shell .modal-tabs { flex-wrap: wrap; gap: 12px; }
+  .patient-shell .modal-tab-btn { font-size: 9px; }
+  .patient-shell footer { align-items: flex-start; flex-wrap: wrap; gap: 12px; padding: 20px 16px; }
+  .patient-shell footer > * { max-width: 100%; }
+  .admin-toolbar,
+  .admin-search-wrap,
+  .admin-filters { min-width: 0; width: 100%; }
+  .admin-filters { align-items: stretch; }
+  .admin-filter-select { min-width: 0; }
+  .auth-visual { min-height: 210px; }
+  .auth-message { top: 40%; }
+  .auth-message h1 { font-size: 48px; }
+  .auth-panel { padding: 20px 16px 32px; }
+  .auth-form-wrap { width: 100%; }
+  .guest-hub .guest-header { gap: 12px; }
+  .guest-hub .guest-header .nav-links { flex-wrap: nowrap; overflow-x: auto; }
+  .guest-hub .guest-hero { display: block; padding-left: 18px; padding-right: 18px; }
+}
+
+@media (max-width: 380px) {
+  .patient-shell .patient-header { padding-left: 12px; padding-right: 12px; }
+  .patient-shell .patient-header .brand { font-size: 17px; }
+  .patient-shell .patient-header .sign-out-button { padding: 7px; }
+  .patient-shell .patient-main { padding-left: 12px; padding-right: 12px; }
+  .patient-shell .patient-panel-content { padding: 13px; }
+  .patient-shell .worker-actions { gap: 10px; }
+  .patient-shell .auth-form-wrap { padding-left: 15px; padding-right: 15px; }
+  .field-row { grid-template-columns: minmax(0, 1fr); }
+}
+
+.password-field { display: grid; gap: 7px; min-width: 0; }
+.password-field > label { color: inherit; }
+.password-input-wrap { min-width: 0; position: relative; width: 100%; }
+.password-input-wrap > input { padding-right: 68px !important; }
+.password-visibility-toggle {
+  background: transparent;
+  border: 0;
+  border-radius: 6px;
+  color: #a8182c;
+  cursor: pointer;
+  font: 650 11px/1.2 Inter, ui-sans-serif, system-ui, sans-serif;
+  min-height: 30px;
+  min-width: 44px;
+  padding: 6px 8px;
+  position: absolute;
+  right: 6px;
+  top: 50%;
+  transform: translateY(-50%);
+}
+.password-visibility-toggle:hover { background: #fff0f2; color: #811326; }
+.password-visibility-toggle:focus-visible { outline: 2px solid rgba(197, 31, 54, .4); outline-offset: 1px; }

@@ -643,7 +643,7 @@ class DatabaseService {
    */
   requestMedication({ patient_id, medication_id = null, medication_name, dosage = 'As prescribed', schedule = 'Ask your health worker', quantity_requested = 30, is_refill = false, patient_notes = '', availability = 'In stock', status = 'Pending' }) {
     if (this.useApi) return this.insert('MedicationRequests', { patient_id, medication_id, medication_name, dosage, schedule, quantity_requested, is_refill, patient_notes, availability, status });
-    return this.insert('MedicationRequests', {
+    const request = this.insert('MedicationRequests', {
       patient_id: parseInt(patient_id, 10),
       medication_id: medication_id ? Number(medication_id) : null,
       medication_name: String(medication_name),
@@ -658,6 +658,16 @@ class DatabaseService {
       review_notes: null,
       requested_at: new Date().toISOString(),
     });
+    const patient = this.findById('Patients', request.patient_id);
+    const user = patient ? this.findById('Users', patient.user_id) : null;
+    this.insert('ActivityLogs', {
+      actor_user_id: user?.user_id || null,
+      actor_name: user?.full_name || 'Patient',
+      action: 'Submitted medication request',
+      category: 'Medication Requests',
+      details: `Medication request #${request.request_id} submitted for patient ID #${request.patient_id}.`,
+    });
+    return request;
   }
 
   /**

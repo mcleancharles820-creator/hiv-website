@@ -200,6 +200,17 @@ async function bestEffort(task) {
   try { await task(); } catch (error) { console.error('Email notification failed:', error.message); }
 }
 
+async function logActivity(user, action, category, details) {
+  try {
+    await pool.query(
+      'INSERT INTO activity_logs (actor_user_id, actor_name, action, category, details) VALUES ($1,$2,$3,$4,$5)',
+      [user.user_id, user.full_name, action, category, details],
+    );
+  } catch (error) {
+    console.error('Could not write activity log:', error.message);
+  }
+}
+
 async function loadSnapshot(user) {
   const snapshot = { SupportGroupMembers: [], SupportGroupMessages: [] };
   const queries = Object.entries(catalogTables).map(async ([key, table]) => {
@@ -1349,10 +1360,14 @@ module.exports = async function handler(req, res) {
         }
         if (table === 'Appointments' && req.method === 'PATCH' && record.status) await bestEffort(() => notifyPatientRecord(table, id, 'Appointment status updated', `Your appointment status is now ${record.status}. Sign in to HIVeLink for details.`));
         if (table === 'MedicationRequests' && req.method === 'POST') {
+          await logActivity(user, 'Submitted medication request', 'Medication Requests', `Medication request #${result.body.record.request_id} submitted for patient ID #${result.body.record.patient_id}.`);
           const patient = await pool.query('SELECT user_id FROM patients WHERE patient_id = $1', [result.body.record.patient_id]);
           if (patient.rows[0]) await bestEffort(() => sendRegisteredEmail(patient.rows[0].user_id, { subject: 'Medication request received', text: 'Your medication request was received. Sign in to HIVeLink to review its current status.' }));
         }
-        if (table === 'MedicationRequests' && req.method === 'PATCH' && record.status) await bestEffort(() => notifyPatientRecord(table, id, 'Medication request updated', `Your medication request status is now ${record.status}. Sign in to HIVeLink for details.`));
+        if (table === 'MedicationRequests' && req.method === 'PATCH' && record.status) {
+          await logActivity(user, `Updated medication request: ${record.status}`, 'Medication Requests', `Medication request #${id} status changed to ${record.status}.`);
+          await bestEffort(() => notifyPatientRecord(table, id, 'Medication request updated', `Your medication request status is now ${record.status}. Sign in to HIVeLink for details.`));
+        }
         if (table === 'ChatMessages' && req.method === 'POST') await bestEffort(() => notifyChatCounterparty(result.body.record.chat_session_id, user.role));
       }
       return send(res, result.status, result.body);
