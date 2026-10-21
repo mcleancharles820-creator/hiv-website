@@ -2211,28 +2211,29 @@ body { background: #f7f7f8; }
 /* Use the same patient header geometry on private and public patient pages. */
 .patient-shell .site-header.patient-header {
   align-items: center;
-  display: flex;
+  display: grid;
   flex-wrap: nowrap;
-  gap: 24px;
-  justify-content: space-between;
+  column-gap: 28px;
+  grid-template-columns: max-content minmax(0, 1fr) max-content;
   padding: 12px clamp(20px, 4vw, 58px);
 }
 .patient-shell .site-header.patient-header .nav-links {
   align-items: center;
   display: flex;
-  flex: 1 1 auto;
+  flex: 0 1 auto;
   gap: 22px;
   justify-content: center;
-  margin-left: auto;
-  margin-right: 7%;
+  justify-self: center;
+  margin: 0;
   min-width: 0;
   overflow: visible;
   position: static;
   transform: none;
   white-space: nowrap;
 }
+.patient-shell .site-header.patient-header .patient-header-actions { justify-self: end; }
 @media (max-width: 1250px) {
-  .patient-shell .site-header.patient-header { flex-wrap: wrap; gap: 10px 16px; }
+  .patient-shell .site-header.patient-header { display: flex; flex-wrap: wrap; gap: 10px 16px; }
   .patient-shell .site-header.patient-header > .brand { order: 1; }
   .patient-shell .site-header.patient-header > .patient-header-actions { margin-left: auto; order: 2; }
   .patient-shell .site-header.patient-header > .nav-links {
@@ -2249,3 +2250,4 @@ body { background: #f7f7f8; }
   .patient-shell .site-header.patient-header { align-items: center; gap: 10px; padding: 10px 16px; }
   .patient-shell .site-header.patient-header > .nav-links { flex-wrap: nowrap; gap: 3px; margin: 0; }
 }
+html { scrollbar-gutter: stable; }
