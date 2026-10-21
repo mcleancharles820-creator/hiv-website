@@ -2159,3 +2159,51 @@ body { background: #f7f7f8; }
 .auth-stamp { color: #ffd9df; }
 .auth-stamp strong { color: #fff; }
 .auth-visual:after { border-color: rgba(255, 217, 223, .42); }
+
+/* The guest navbar follows the patient navbar's typography and spacing. */
+.guest-hub:not(.patient-guest-hub) .site-header.guest-header .nav-links {
+  gap: 34px;
+  justify-content: center;
+}
+.guest-hub:not(.patient-guest-hub) .site-header.guest-header .guest-nav-link {
+  background: transparent;
+  border: 0;
+  border-radius: 8px;
+  color: #62575b;
+  font-family: inherit;
+  font-size: 12px;
+  font-weight: 550;
+  line-height: 1.2;
+  letter-spacing: 0;
+  padding: 10px 11px;
+  text-transform: none;
+  transition: background .18s ease, color .18s ease;
+}
+.guest-hub:not(.patient-guest-hub) .site-header.guest-header .guest-nav-link:hover,
+.guest-hub:not(.patient-guest-hub) .site-header.guest-header .guest-nav-link.active {
+  background: #fff0f2;
+  color: #a8182c;
+}
+@media (max-width: 700px) {
+  .guest-hub:not(.patient-guest-hub) .site-header.guest-header .nav-links { gap: 3px; }
+}
+
+/* Keep the patient header consistent while viewing Home, Information, and Testing. */
+.patient-guest-hub .site-header.patient-header .nav-links {
+  gap: 34px;
+  margin-left: auto;
+  margin-right: 7%;
+}
+.patient-guest-hub .site-header.patient-header .profile-name {
+  color: #4b3e43;
+  font: 600 12px/1.3 'Headland One', Georgia, serif;
+}
+.patient-guest-hub .site-header.patient-header .sign-out-button {
+  font: 600 11px/1.2 'Headland One', Georgia, serif;
+}
+@media (max-width: 1250px) {
+  .patient-guest-hub .site-header.patient-header .nav-links { margin: 0; }
+}
+@media (max-width: 700px) {
+  .patient-guest-hub .site-header.patient-header .nav-links { gap: 3px; margin: 0; }
+}
