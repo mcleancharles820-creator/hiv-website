@@ -110,13 +110,12 @@ const patientPrivateNavItems = [
   ['support', 'Support Groups'],
 ];
 
-function PatientHeader({ page, profileName, onNavigate, onSignOut, publicSection = false }) {
-  const publicNavItems = [['home', 'Home'], ['information', 'Information'], ['testing', 'Testing']];
-  const items = publicSection ? publicNavItems : patientPrivateNavItems;
+function PatientHeader({ page, profileName, onNavigate, onSignOut }) {
+  const items = [['home', 'Home'], ['information', 'Information'], ['testing', 'Testing'], ...patientPrivateNavItems];
   return (
     <header className="site-header guest-header patient-header">
       <button className="brand brand-button" onClick={() => onNavigate('home')} aria-label="HIVeLink home"><span>HIVeLink</span></button>
-      <nav className="nav-links" aria-label={publicSection ? 'Patient information navigation' : 'Patient care navigation'}>
+      <nav className="nav-links" aria-label="Patient navigation">
         {items.map(([key, label]) => (
           <button className={`guest-nav-link ${page === key ? 'active' : ''}`} key={key} onClick={() => onNavigate(key)} aria-current={page === key ? 'page' : undefined}>{label}</button>
         ))}
@@ -235,7 +234,7 @@ function GuestHub({ onExit, patientMode = false, appointmentsEnabled = true, onP
 
   return <div className={patientMode ? 'patient-shell guest-hub patient-guest-hub' : 'guest-hub'}>
     <div className="topline"><span>WORLD AIDS DAY IS EVERY DAY</span><span className="topline-detail">Information. Care. Community.</span></div>
-    {patientMode ? <PatientHeader publicSection page={page === 'knowledge' ? 'information' : page} profileName={profileName} onNavigate={(nextPage) => {
+    {patientMode ? <PatientHeader page={page === 'knowledge' ? 'information' : page} profileName={profileName} onNavigate={(nextPage) => {
       if (nextPage === 'home' || nextPage === 'information' || nextPage === 'testing') navigate(nextPage === 'information' ? 'knowledge' : nextPage);
       else onPrivatePage(nextPage);
     }} onSignOut={onExit} /> : <header className="site-header guest-header"><button className="brand brand-button" onClick={() => navigate('home')} aria-label="HIVeLink home"><span>HIVeLink</span></button><nav className="nav-links" aria-label="Guest navigation"><button className={page === 'home' ? 'guest-nav-link active' : 'guest-nav-link'} onClick={() => navigate('home')}>Home</button><button className={page === 'knowledge' ? 'guest-nav-link active' : 'guest-nav-link'} onClick={() => navigate('knowledge')}>Information</button><button className={page === 'testing' ? 'guest-nav-link active' : 'guest-nav-link'} onClick={() => navigate('testing')}>Testing</button></nav><button className="guest-auth-link" onClick={onExit}>Log in / Sign up <span>↗</span></button></header>}
