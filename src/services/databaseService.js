@@ -28,7 +28,7 @@ const initialDatabase = {
     { medication_id: 4, medication_code: 'opportunistic', name: 'Preventive care medication', category: 'Preventive Care', detail: 'For infection prevention · Prescription required', default_dosage: 'As directed', stock_status: 'Out of stock', stock_quantity: 0, prescription_needed: true, is_active: true, created_at: '2026-01-01T00:00:00Z', updated_at: '2026-01-01T00:00:00Z' }
   ],
   TestingFacilities: [
-    { facility_id: 1, name: 'Rural Health Unit', facility_type: 'Rural Health Unit', address: 'Barangay Dap-dap, Odiongan', city: 'Odiongan', province: 'Romblon', country: 'Philippines', latitude: 12.401000, longitude: 121.990000, contact_phone: '+63 917 123 4567', services_offered: 'Confidential HIV Testing, PrEP counseling', operating_hours: 'Mon-Fri 8:00 AM - 5:00 PM', maps_url: 'https://www.google.com/maps/search/Rural+Health+Unit+Odiongan+Romblon', is_active: true, created_at: '2026-01-01T00:00:00Z' },
+    { facility_id: 1, name: 'Rural Health Unit', facility_type: 'Rural Health Unit', address: 'JP Laurel St, Odiongan, Romblon', city: 'Odiongan', province: 'Romblon', country: 'Philippines', latitude: 12.398440, longitude: 121.982580, contact_phone: '+63 917 123 4567', services_offered: 'Confidential HIV Testing, PrEP counseling', operating_hours: 'Mon-Fri 8:00 AM - 5:00 PM', maps_url: 'https://www.google.com/maps/search/?api=1&query=12.39844%2C121.98258', is_active: true, created_at: '2026-01-01T00:00:00Z' },
     { facility_id: 2, name: 'Romblon Provincial Hospital', facility_type: 'Provincial Hospital', address: 'Liwanag, Odiongan', city: 'Odiongan', province: 'Romblon', country: 'Philippines', latitude: 12.405500, longitude: 121.986200, contact_phone: '+63 920 987 6543', services_offered: 'HIV Treatment Hub, ART Dispensing, Confirmatory Testing', operating_hours: '24/7 Care', maps_url: 'https://www.google.com/maps/search/Romblon+Provincial+Hospital+Odiongan', is_active: true, created_at: '2026-01-01T00:00:00Z' }
   ],
   SupportGroups: [
@@ -38,7 +38,7 @@ const initialDatabase = {
     { service_id: 1, service_key: 'testing_referrals', name: 'HIV testing referrals', detail: 'Local testing and facility guidance', is_enabled: true, display_order: 1, updated_at: '2026-01-01T00:00:00Z' },
     { service_id: 2, service_key: 'treatment_referrals', name: 'Treatment referrals', detail: 'Connect patients to treatment hubs', is_enabled: true, display_order: 2, updated_at: '2026-01-01T00:00:00Z' },
     { service_id: 3, service_key: 'chat_support', name: 'Private chat support', detail: 'Patient to health worker messaging', is_enabled: true, display_order: 3, updated_at: '2026-01-01T00:00:00Z' },
-    { service_id: 4, service_key: 'medication_requests', name: 'Medication requests', detail: 'Treatment availability requests', is_enabled: false, display_order: 4, updated_at: '2026-01-01T00:00:00Z' }
+    { service_id: 4, service_key: 'medication_requests', name: 'Medication requests', detail: 'Treatment availability requests', is_enabled: true, display_order: 4, updated_at: '2026-01-01T00:00:00Z' }
   ],
   SystemSettings: [
     { setting_key: 'platform_name', setting_value: 'HIVeLink', data_type: 'string', description: 'Platform brand name', updated_at: '2026-01-01T00:00:00Z' },
