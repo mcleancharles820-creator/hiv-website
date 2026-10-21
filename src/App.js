@@ -171,15 +171,15 @@ function FacilityMap() {
         maxZoom: 19,
       }).addTo(map);
       [
-        { name: 'Odiongan Rural Health Unit', position: [12.401, 121.990] },
-        { name: 'Romblon Provincial Hospital', position: [12.39459, 121.98408] },
-      ].forEach(({ name, position }) => {
+        { name: 'Odiongan Rural Health Unit', address: '9XXJ+WXX, JP Laurel St, Odiongan, Romblon', position: [12.39998, 121.98136] },
+        { name: 'Romblon Provincial Hospital', address: 'Liwanag, Odiongan, Romblon', position: [12.39459, 121.98408] },
+      ].forEach(({ name, address, position }) => {
         window.L.circleMarker(position, { color: '#a8182c', fillColor: '#d21f3c', fillOpacity: 1, radius: 8, weight: 3 })
           .addTo(map)
           .bindTooltip(name, { permanent: true, direction: 'top', offset: [0, -7], className: 'facility-map-label' })
-          .bindPopup(`<strong>${name}</strong>`);
+          .bindPopup(`<strong>${name}</strong><br />${address}`);
       });
-      map.fitBounds([[12.39459, 121.98408], [12.401, 121.990]], { padding: [65, 65] });
+      map.fitBounds([[12.39459, 121.98136], [12.39998, 121.98408]], { padding: [65, 65] });
     };
 
     if (window.L) {

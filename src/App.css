@@ -2162,7 +2162,7 @@ body { background: #f7f7f8; }
 
 /* The guest navbar follows the patient navbar's typography and spacing. */
 .guest-hub:not(.patient-guest-hub) .site-header.guest-header .nav-links {
-  gap: 34px;
+  gap: 22px;
   justify-content: center;
 }
 .guest-hub:not(.patient-guest-hub) .site-header.guest-header .guest-nav-link {
@@ -2190,7 +2190,7 @@ body { background: #f7f7f8; }
 
 /* Keep the patient header consistent while viewing Home, Information, and Testing. */
 .patient-guest-hub .site-header.patient-header .nav-links {
-  gap: 34px;
+  gap: 22px;
   margin-left: auto;
   margin-right: 7%;
 }
@@ -2221,7 +2221,7 @@ body { background: #f7f7f8; }
   align-items: center;
   display: flex;
   flex: 1 1 auto;
-  gap: 34px;
+  gap: 22px;
   justify-content: center;
   margin-left: auto;
   margin-right: 7%;
