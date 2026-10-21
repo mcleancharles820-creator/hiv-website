@@ -131,27 +131,6 @@ function PrivatePatientHeader({ page, profileName, onNavigate, onSignOut }) {
   );
 }
 
-function PublicPatientHeader({ page, profileName, onNavigate, onSignOut }) {
-  const items = [['home', 'Home'], ['information', 'Information'], ['testing', 'Testing']];
-  return (
-    <header className="site-header guest-header patient-header public-patient-header">
-      <button className="brand brand-button" onClick={() => onNavigate('home')} aria-label="HIVeLink home"><span>HIVeLink</span></button>
-      <nav className="nav-links" aria-label="Public patient navigation">
-        {items.map(([key, label]) => (
-          <button className={`guest-nav-link ${page === key ? 'active' : ''}`} key={key} onClick={() => onNavigate(key)} aria-current={page === key ? 'page' : undefined}>{label}</button>
-        ))}
-      </nav>
-      <div className="patient-header-actions">
-        <span className="profile-name">{profileName}</span>
-        <button className={`profile-icon ${page === 'account' ? 'active' : ''}`} type="button" aria-label={`Open ${profileName}'s care dashboard`} aria-current={page === 'account' ? 'page' : undefined} onClick={() => onNavigate('account')} title="Open care dashboard">
-          <CircleUser aria-hidden="true" className="profile-icon-glyph" color="currentColor" size={18} strokeWidth={1.6} />
-        </button>
-        <button className="sign-out-button" onClick={onSignOut}>Sign out</button>
-      </div>
-    </header>
-  );
-}
-
 function localDateValue(date = new Date()) {
   const year = date.getFullYear();
   const month = String(date.getMonth() + 1).padStart(2, '0');
@@ -255,7 +234,7 @@ function GuestHub({ onExit, patientMode = false, appointmentsEnabled = true, onP
 
   return <div className={patientMode ? 'patient-shell guest-hub patient-guest-hub' : 'guest-hub'}>
     <div className="topline"><span>WORLD AIDS DAY IS EVERY DAY</span><span className="topline-detail">Information. Care. Community.</span></div>
-    {patientMode ? <PublicPatientHeader page={page === 'knowledge' ? 'information' : page} profileName={profileName} onNavigate={(nextPage) => {
+    {patientMode ? <PrivatePatientHeader page={page === 'knowledge' ? 'information' : page} profileName={profileName} onNavigate={(nextPage) => {
       if (nextPage === 'home' || nextPage === 'information' || nextPage === 'testing') navigate(nextPage === 'information' ? 'knowledge' : nextPage);
       else onPrivatePage(nextPage);
     }} onSignOut={onExit} /> : <header className="site-header guest-header"><button className="brand brand-button" onClick={() => navigate('home')} aria-label="HIVeLink home"><span>HIVeLink</span></button><nav className="nav-links" aria-label="Guest navigation"><button className={page === 'home' ? 'guest-nav-link active' : 'guest-nav-link'} onClick={() => navigate('home')}>Home</button><button className={page === 'knowledge' ? 'guest-nav-link active' : 'guest-nav-link'} onClick={() => navigate('knowledge')}>Information</button><button className={page === 'testing' ? 'guest-nav-link active' : 'guest-nav-link'} onClick={() => navigate('testing')}>Testing</button></nav><button className="guest-auth-link" onClick={onExit}>Log in / Sign up <span>↗</span></button></header>}
