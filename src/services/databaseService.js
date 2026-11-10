@@ -642,6 +642,10 @@ class DatabaseService {
    * Medication Request Operations
    */
   requestMedication({ patient_id, medication_id = null, medication_name, dosage = 'As prescribed', schedule = 'Ask your health worker', quantity_requested = 30, is_refill = false, patient_notes = '', availability = 'In stock', status = 'Pending' }) {
+    const requestingPatient = this.getTable('Patients').find((record) => Number(record.patient_id) === Number(patient_id));
+    if (!requestingPatient?.has_doctors_prescription || !requestingPatient?.medication_request_eligible) {
+      return { error: 'A health worker must confirm your doctor’s prescription and medication request eligibility before you can submit a request.' };
+    }
     if (this.useApi) return this.insert('MedicationRequests', { patient_id, medication_id, medication_name, dosage, schedule, quantity_requested, is_refill, patient_notes, availability, status });
     const request = this.insert('MedicationRequests', {
       patient_id: parseInt(patient_id, 10),
@@ -924,6 +928,8 @@ class DatabaseService {
           gender: u.gender || 'Not specified',
           accountStatus: u.is_active !== false ? 'Active' : 'Inactive',
           careStatus: patient?.care_status || 'Active care plan',
+          hasDoctorsPrescription: patient?.has_doctors_prescription === true,
+          medicationRequestEligible: patient?.medication_request_eligible === true,
           medicalNotes: patient?.medical_notes || 'No medical notes provided.',
           emergencyContact: patient?.emergency_contact || 'None',
           emergencyPhone: patient?.emergency_phone || 'None',

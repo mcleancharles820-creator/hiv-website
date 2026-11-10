@@ -51,6 +51,8 @@ test('guest view shows only public awareness resources', () => {
   expect(screen.getByRole('button', { name: 'Information' })).toBeInTheDocument();
   expect(screen.getByRole('button', { name: 'Testing' })).toBeInTheDocument();
   expect(screen.getByRole('button', { name: /log in \/ sign up/i })).toBeInTheDocument();
+  expect(document.querySelector('.guest-header')).toBeInTheDocument();
+  expect(document.querySelector('.user-header')).not.toBeInTheDocument();
 
   userEvent.click(screen.getByRole('button', { name: 'Information' }));
   expect(screen.getByRole('heading', { name: /knowledge without stigma/i })).toBeInTheDocument();
@@ -764,11 +766,61 @@ test('patient medication page shows availability status', () => {
   expect(screen.queryByLabelText(/availability/i)).not.toBeInTheDocument();
 });
 
+test('patient medication requests stay blocked until a worker confirms prescription and eligibility', async () => {
+  const worker = db.registerUser({ fullName: 'Dr. Care Worker', email: 'eligibility.worker@example.com', password: 'password', role: 'health-worker' });
+  const patient = db.registerUser({ fullName: 'Care Patient', email: 'eligibility.patient@example.com', password: 'password', role: 'patient' });
+  db.update('Patients', patient.patient.patient_id, { assigned_worker_id: worker.worker.worker_id });
+  const medicationService = db.getTable('PlatformServices').find((service) => service.service_key === 'medication_requests');
+  db.update('PlatformServices', medicationService.service_id, { is_enabled: true });
+
+  render(<App />);
+  userEvent.type(screen.getByLabelText(/email address/i), 'eligibility.patient@example.com');
+  userEvent.type(screen.getByLabelText(/^password$/i), 'password');
+  userEvent.click(screen.getByRole('button', { name: /^log in/i }));
+  userEvent.click(screen.getByRole('button', { name: 'Medication' }));
+
+  expect(screen.getByRole('status')).toHaveTextContent(/prescription is on file and marks you eligible/i);
+  expect(screen.queryByRole('button', { name: /request medication/i })).not.toBeInTheDocument();
+  expect(db.requestMedication({
+    patient_id: patient.patient.patient_id,
+    medication_name: 'Antiretroviral therapy',
+  })).toMatchObject({ error: expect.stringMatching(/must confirm/i) });
+  expect(db.getTable('MedicationRequests')).toHaveLength(0);
+});
+
+test('health worker can update patient prescription and medication eligibility', async () => {
+  const worker = db.registerUser({ fullName: 'Dr. Eligibility Worker', email: 'worker.flags@example.com', password: 'password', role: 'health-worker' });
+  const patient = db.registerUser({ fullName: 'Eligibility Patient', email: 'patient.flags@example.com', password: 'password', role: 'patient' });
+  db.update('Patients', patient.patient.patient_id, { assigned_worker_id: worker.worker.worker_id });
+
+  render(<App />);
+  userEvent.selectOptions(screen.getByLabelText(/account type/i), 'health-worker');
+  userEvent.type(screen.getByLabelText(/email address/i), 'worker.flags@example.com');
+  userEvent.type(screen.getByLabelText(/^password$/i), 'password');
+  userEvent.click(screen.getByRole('button', { name: /^log in/i }));
+  userEvent.click(screen.getByRole('button', { name: 'Patients' }));
+  userEvent.click(await screen.findByRole('button', { name: 'Edit Care Plan' }));
+
+  const prescriptionCheckbox = screen.getByLabelText(/doctor’s prescription is on file/i);
+  const eligibilityCheckbox = screen.getByLabelText(/eligible for medication requests/i);
+  expect(eligibilityCheckbox).toBeDisabled();
+  userEvent.click(prescriptionCheckbox);
+  expect(eligibilityCheckbox).toBeEnabled();
+  userEvent.click(eligibilityCheckbox);
+  userEvent.click(screen.getByRole('button', { name: /save record/i }));
+
+  await waitFor(() => expect(db.findById('Patients', patient.patient.patient_id)).toMatchObject({
+    has_doctors_prescription: true,
+    medication_request_eligible: true,
+  }));
+});
+
 test('patient medication request is saved and appears in the assigned health worker inbox', async () => {
   db.registerUser({ fullName: 'Audit Administrator', email: 'med.admin@example.com', password: 'password', role: 'admin' });
   const worker = db.registerUser({ fullName: 'Dr. Medication Worker', email: 'med.worker@example.com', password: 'password', role: 'health-worker' });
   const patient = db.registerUser({ fullName: 'Medication Patient', email: 'med.patient@example.com', password: 'password', role: 'patient' });
   db.update('Patients', patient.patient.patient_id, { assigned_worker_id: worker.worker.worker_id });
+  db.update('Patients', patient.patient.patient_id, { has_doctors_prescription: true, medication_request_eligible: true });
   const medicationService = db.getTable('PlatformServices').find((service) => service.service_key === 'medication_requests');
   db.update('PlatformServices', medicationService.service_id, { is_enabled: true });
 
@@ -776,13 +828,15 @@ test('patient medication request is saved and appears in the assigned health wor
   userEvent.type(screen.getByLabelText(/email address/i), 'med.patient@example.com');
   userEvent.type(screen.getByLabelText(/^password$/i), 'password');
   userEvent.click(screen.getByRole('button', { name: /^log in/i }));
+  expect(document.querySelector('.user-header')).toBeInTheDocument();
+  expect(document.querySelector('.guest-header')).not.toBeInTheDocument();
   userEvent.click(screen.getByRole('button', { name: 'Medication' }));
   userEvent.click(screen.getAllByRole('button', { name: /request medication/i })[0]);
   userEvent.type(screen.getByLabelText(/current prescribed dosage/i), '1 tablet');
   userEvent.type(screen.getByLabelText(/how you take it/i), 'Once daily');
   userEvent.clear(screen.getByLabelText(/quantity requested/i));
   userEvent.type(screen.getByLabelText(/quantity requested/i), '30');
-  userEvent.click(screen.getByRole('button', { name: /save record/i }));
+  userEvent.click(screen.getByRole('button', { name: /^submit/i }));
 
   await waitFor(() => expect(db.getTable('MedicationRequests')).toHaveLength(1));
   const [request] = db.getTable('MedicationRequests');
@@ -1288,6 +1342,7 @@ test('patient can view all services they have availed with their respective stat
   });
 
   const patientId = registered.patient.patient_id;
+  db.update('Patients', patientId, { has_doctors_prescription: true, medication_request_eligible: true });
 
   // Patient avails multiple services:
   db.bookAppointment({
@@ -1331,7 +1386,3 @@ test('patient can view all services they have availed with their respective stat
   expect(screen.getByText(/antiretroviral therapy \(art\)/i)).toBeInTheDocument();
   expect(screen.getByText('Approved')).toBeInTheDocument();
 });
-
-
-
-

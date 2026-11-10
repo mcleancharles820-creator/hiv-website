@@ -110,10 +110,10 @@ const patientPrivateNavItems = [
   ['support', 'Support Groups'],
 ];
 
-function PrivatePatientHeader({ page, profileName, onNavigate, onSignOut }) {
+function UserNavbar({ page, profileName, onNavigate, onSignOut }) {
   const items = [['home', 'Home'], ['information', 'Information'], ['testing', 'Testing'], ...patientPrivateNavItems];
   return (
-    <header className="site-header guest-header patient-header">
+    <header className="site-header user-header patient-header">
       <button className="brand brand-button" onClick={() => onNavigate('home')} aria-label="HIVeLink home"><span>HIVeLink</span></button>
       <nav className="nav-links" aria-label="Patient navigation">
         {items.map(([key, label]) => (
@@ -232,14 +232,28 @@ function GuestHub({ onExit, patientMode = false, appointmentsEnabled = true, onP
     testing: <section className="guest-testing guest-page" id="guest-testing"><div className="guest-section-intro"><p className="eyebrow">Find your next step</p><h1>Testing and<br /><i>treatment.</i></h1><p>Testing is confidential. Treatment is available, and early care makes a difference.</p><a className="text-button" href="https://www.google.com/maps/dir/?api=1&origin=12.39844%2C121.98258&destination=12.39459,121.98408" target="_blank" rel="noreferrer">Open in Google Maps ↗</a>{patientMode && (appointmentsEnabled ? <button className="primary-button patient-testing-button" onClick={() => onPrivatePage('appointments')}>Request an appointment <span>↗</span></button> : <p className="form-error patient-testing-button" role="status">Online appointment requests are currently unavailable. Contact your clinic directly.</p>)}</div><div className="map-wrap"><FacilityMap /><p className="map-caption"><strong>Odiongan, Romblon</strong><span>OpenStreetMap with both facilities marked. Select a pin for its name.</span></p></div><div className="testing-facilities"><div className="facility-heading"><p className="eyebrow">Local care contacts</p><h2>Care to<br /><i>contact first.</i></h2><p>Call ahead and ask about HIV testing, treatment referral, and current clinic schedules.</p></div><div className="facility-list"><a href="https://www.google.com/maps/search/?api=1&query=12.39844%2C121.98258" target="_blank" rel="noreferrer"><strong>Rural Health Unit</strong><span>9XXJ+WXX, JP Laurel St, Odiongan, Romblon · Find on map ↗</span></a><a href="https://www.google.com/maps/search/?api=1&query=Romblon+Provincial+Hospital+Liwanag+Odiongan" target="_blank" rel="noreferrer"><strong>Romblon Provincial Hospital</strong><span>Barangay Liwanag, Odiongan · Find on map ↗</span></a></div></div><div className="testing-notes"><div><span>01</span><h2>Where to begin</h2><p>Visit your local Rural Health Unit, municipal health office, or a hospital and ask about confidential HIV testing.</p></div><div><span>02</span><h2>Where to get treated</h2><p>Ask a health worker about referral to an HIV treatment hub. They can guide you to care, medicines, and follow-up.</p></div><div><span>03</span><h2>Need urgent help?</h2><p>PEP may prevent HIV after a recent exposure and works best as soon as possible. Visit a health facility or emergency department.</p></div></div></section>,
   };
 
+  const guestNavItems = [['home', 'Home'], ['knowledge', 'Information'], ['testing', 'Testing']];
+
   return <div className={patientMode ? 'patient-shell guest-hub patient-guest-hub' : 'guest-hub'}>
     <div className="topline"><span>WORLD AIDS DAY IS EVERY DAY</span><span className="topline-detail">Information. Care. Community.</span></div>
-    {patientMode ? <PrivatePatientHeader page={page === 'knowledge' ? 'information' : page} profileName={profileName} onNavigate={(nextPage) => {
+    {patientMode ? <UserNavbar page={page === 'knowledge' ? 'information' : page} profileName={profileName} onNavigate={(nextPage) => {
       if (nextPage === 'home' || nextPage === 'information' || nextPage === 'testing') navigate(nextPage === 'information' ? 'knowledge' : nextPage);
       else onPrivatePage(nextPage);
-    }} onSignOut={onExit} /> : <header className="site-header guest-header"><button className="brand brand-button" onClick={() => navigate('home')} aria-label="HIVeLink home"><span>HIVeLink</span></button><nav className="nav-links" aria-label="Guest navigation"><button className={page === 'home' ? 'guest-nav-link active' : 'guest-nav-link'} onClick={() => navigate('home')}>Home</button><button className={page === 'knowledge' ? 'guest-nav-link active' : 'guest-nav-link'} onClick={() => navigate('knowledge')}>Information</button><button className={page === 'testing' ? 'guest-nav-link active' : 'guest-nav-link'} onClick={() => navigate('testing')}>Testing</button></nav><button className="guest-auth-link" onClick={onExit}>Log in / Sign up <span>↗</span></button></header>}
+    }} onSignOut={onExit} /> : <GuestNavbar page={page} items={guestNavItems} onNavigate={navigate} onSignIn={onExit} />}
     <main key={page} id="guest-top" className="route-transition">{pageContent[page]}</main><footer><span className="footer-brand">HIVeLink</span><span>{patientMode ? 'Private patient view' : 'Public guest view · No account required'}</span><button className="footer-back" onClick={() => navigate('home')}>Back to home ↑</button></footer>
   </div>;
+}
+
+function GuestNavbar({ page, items, onNavigate, onSignIn }) {
+  return (
+    <header className="site-header guest-header">
+      <button className="brand brand-button" onClick={() => onNavigate('home')} aria-label="HIVeLink home"><span>HIVeLink</span></button>
+      <nav className="nav-links" aria-label="Guest navigation">
+        {items.map(([key, label]) => <button className={`guest-nav-link ${page === key ? 'active' : ''}`} key={key} onClick={() => onNavigate(key)} aria-current={page === key ? 'page' : undefined}>{label}</button>)}
+      </nav>
+      <button className="guest-auth-link" onClick={onSignIn}>Log in / Sign up <span>↗</span></button>
+    </header>
+  );
 }
 
 function AuthScreen({ onEnter, onPasswordRecoveryComplete }) {
@@ -629,7 +643,7 @@ function PatientDashboard({ currentUser, currentPatient, onPublicHub, onSignOut 
 
   const activeUserId = currentUser?.user_id;
   const activeUser = (activeUserId ? db.findById('Users', activeUserId) : null) || currentUser || { full_name: 'Your Account', email: '', contact_number: '' };
-  const patientRecord = currentPatient || (activeUserId ? db.getTable('Patients').find((p) => p.user_id === activeUserId) : null) || db.getTable('Patients')[0] || { patient_id: null, user_id: activeUserId };
+  const patientRecord = (activeUserId ? db.getTable('Patients').find((p) => p.user_id === activeUserId) : null) || currentPatient || db.getTable('Patients')[0] || { patient_id: null, user_id: activeUserId };
   const activePatientId = patientRecord.patient_id;
 
   const profileName = activeUser.full_name || 'Your Account';
@@ -682,6 +696,7 @@ function PatientDashboard({ currentUser, currentPatient, onPublicHub, onSignOut 
         ? await db.update('Appointments', record.appointment_id || record.id, appointmentFields)
         : await db.bookAppointment({ patient_id: activePatientId, worker_id: null, ...appointmentFields });
     } else if (record.type === 'medication') {
+      if (!canRequestMedication) return { error: 'A health worker must confirm your doctor’s prescription and medication request eligibility before you can submit or update a request.' };
       if (record.id) {
         result = await db.update('MedicationRequests', record.id, {
           medication_id: record.medicationId,
@@ -725,6 +740,9 @@ function PatientDashboard({ currentUser, currentPatient, onPublicHub, onSignOut 
   const isTestingEnabled = db.getTable('PlatformServices').find((s) => s.service_key === 'testing_referrals')?.is_enabled ?? true;
   const isTreatmentEnabled = db.getTable('PlatformServices').find((s) => s.service_key === 'treatment_referrals')?.is_enabled ?? true;
   const isMedicationRequestsEnabled = db.getTable('PlatformServices').find((s) => s.service_key === 'medication_requests')?.is_enabled ?? true;
+  const hasDoctorsPrescription = patientRecord.has_doctors_prescription === true;
+  const isMedicationRequestEligible = patientRecord.medication_request_eligible === true;
+  const canRequestMedication = hasDoctorsPrescription && isMedicationRequestEligible;
 
   const content = {
     home: <section className="patient-public-home"><p className="eyebrow"><span className="pulse-dot" /> Patient public view</p><h1>Start with<br /><i>what you know.</i></h1><p className="dashboard-intro">Clear HIV and AIDS information, local testing guidance, and trusted ways to support the community.</p><img src="https://images.unsplash.com/photo-1576091160399-112ba8d25d1d?auto=format&fit=crop&w=1100&q=85" alt="Healthcare professional speaking with a patient" /></section>,
@@ -757,7 +775,7 @@ function PatientDashboard({ currentUser, currentPatient, onPublicHub, onSignOut 
         </>;
       }} />
     </PagePanel>,
-    medication: <PagePanel eyebrow="Treatment support" title={<>Medication<br /><i>availability.</i></>}><p className="medication-note">Choose from the medication list below. Stock status is provided for guidance; confirm your prescription and availability with a health worker before visiting.</p>{!isMedicationRequestsEnabled && <p className="form-error" style={{ margin: '12px 0' }}>Online medication requests are currently unavailable. Contact your clinic directly.</p>}<div className="medication-catalog">{medicationCatalog.map((medication) => <article className="medication-option" key={medication.id}><div><strong>{medication.name}</strong><span>{medication.detail}</span></div><em className={medication.stock === 'In stock' ? 'status-available' : 'status-unavailable'}>{medication.stock}</em>{medication.stock === 'In stock' && isMedicationRequestsEnabled ? <button className="card-link" onClick={() => setEditing({ type: 'medication', medicationId: medication.medicationId, name: medication.name, dosage: '', schedule: '', quantity: 30, isRefill: false, notes: '', availability: medication.stock })}>Request medication <span>↗</span></button> : <span className="unavailable-label">{!isMedicationRequestsEnabled ? 'Service unavailable' : 'Currently unavailable'}</span>}</article>)}</div><h2 className="medication-record-heading">Your medication records</h2><div className="medication-list"><RecordList items={medications} empty="No medication records yet." render={(item) => <><div><strong>{item.medication_name || item.name}</strong><span>{item.dosage} · {item.schedule} · Quantity: {item.quantity_requested ?? 30}{item.is_refill ? ' · Refill' : ''}</span>{item.patient_notes && <span>Note: {item.patient_notes}</span>}</div><div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}><StatusBadge status={item.status || 'Pending'} /><em className={(item.availability || 'In stock') === 'In stock' ? 'status-available' : 'status-unavailable'}>{item.availability || 'In stock'}</em></div><RecordActions onEdit={() => setEditing({ type: 'medication', id: item.request_id || item.id, medicationId: item.medication_id, name: item.medication_name || item.name, dosage: item.dosage, schedule: item.schedule, quantity: item.quantity_requested ?? 30, isRefill: item.is_refill ?? false, notes: item.patient_notes || '', availability: item.availability })} onDelete={() => db.delete('MedicationRequests', item.request_id || item.id)} /></>} /></div></PagePanel>,
+    medication: <PagePanel eyebrow="Treatment support" title={<>Medication<br /><i>availability.</i></>}><p className="medication-note">Choose from the medication list below. Stock status is provided for guidance; confirm your prescription and availability with a health worker before visiting.</p>{!isMedicationRequestsEnabled && <p className="form-error" style={{ margin: '12px 0' }}>Online medication requests are currently unavailable. Contact your clinic directly.</p>}{isMedicationRequestsEnabled && !canRequestMedication && <p className="medication-eligibility-note" role="status">Medication requests are available after your health worker confirms that a doctor’s prescription is on file and marks you eligible. Please contact your care team for help.</p>}<div className="medication-catalog">{medicationCatalog.map((medication) => <article className="medication-option" key={medication.id}><div><strong>{medication.name}</strong><span>{medication.detail}</span></div><em className={medication.stock === 'In stock' ? 'status-available' : 'status-unavailable'}>{medication.stock}</em>{medication.stock === 'In stock' && isMedicationRequestsEnabled && canRequestMedication ? <button className="card-link" onClick={() => setEditing({ type: 'medication', medicationId: medication.medicationId, name: medication.name, dosage: '', schedule: '', quantity: 30, isRefill: false, notes: '', availability: medication.stock })}>Request medication <span>↗</span></button> : <span className="unavailable-label">{!isMedicationRequestsEnabled ? 'Service unavailable' : medication.stock !== 'In stock' ? 'Currently unavailable' : 'Not eligible yet'}</span>}</article>)}</div><h2 className="medication-record-heading">Your medication records</h2><div className="medication-list"><RecordList items={medications} empty="No medication records yet." render={(item) => <><div><strong>{item.medication_name || item.name}</strong><span>{item.dosage} · {item.schedule} · Quantity: {item.quantity_requested ?? 30}{item.is_refill ? ' · Refill' : ''}</span>{item.patient_notes && <span>Note: {item.patient_notes}</span>}</div><div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}><StatusBadge status={item.status || 'Pending'} /><em className={(item.availability || 'In stock') === 'In stock' ? 'status-available' : 'status-unavailable'}>{item.availability || 'In stock'}</em></div><RecordActions onEdit={() => setEditing({ type: 'medication', id: item.request_id || item.id, medicationId: item.medication_id, name: item.medication_name || item.name, dosage: item.dosage, schedule: item.schedule, quantity: item.quantity_requested ?? 30, isRefill: item.is_refill ?? false, notes: item.patient_notes || '', availability: item.availability })} onDelete={() => db.delete('MedicationRequests', item.request_id || item.id)} /></>} /></div></PagePanel>,
     chat: <PagePanel eyebrow="Confidential support" title={<>Private<br /><i>conversation.</i></>}><ChatMessenger patientId={activePatientId} userId={activeUser.user_id} ticket={chats[0] || null} onUpdate={(preview) => { if (chats[0]?.chat_session_id) { db.update('ChatSessions', chats[0].chat_session_id, { preview, last_updated: new Date().toISOString() }); } }} /></PagePanel>,
     support: <PagePanel eyebrow="Private community care" title={<>You belong<br /><i>here.</i></>}><PatientSupportGroupPanel group={activeSupportGroup} membership={supportGroupMembership} messages={supportGroupMessages} localMode={!db.useApi} onJoin={(alias) => db.joinSupportGroup({ patientId: activePatientId, alias })} onLeave={() => db.leaveSupportGroup({ patientId: activePatientId })} onSend={(messageText) => db.sendSupportGroupMessage({ patientId: activePatientId, messageText })} onRefresh={() => db.refreshSupportGroupState().catch(() => false)} /></PagePanel>,
     account: <PagePanel eyebrow="Your account" title={<>Your care<br /><i>dashboard.</i></>}><div style={{ display: 'flex', gap: '10px', alignItems: 'center', marginBottom: '20px', flexWrap: 'wrap' }}><StatusBadge status={activeUser.is_active !== false ? 'Active' : 'Inactive'} label={`Account: ${activeUser.is_active !== false ? 'Active' : 'Inactive'}`} /><StatusBadge status={patientRecord.care_status || 'Active care plan'} label={`Care status: ${patientRecord.care_status || 'Active care plan'}`} /></div><div className="dashboard-tiles"><DashboardTile label="Services availed" value={`${servicesAvailed.totalCount} total`} detail="Review all care history" /><DashboardTile label="Upcoming appointment" value={upcomingAppointment ? `${upcomingAppointment.appointment_date} · ${formatAppointmentTime(upcomingAppointment.appointment_time)}` : 'Nothing scheduled'} detail={upcomingAppointment?.appointment_type || 'Book your first visit'} /><DashboardTile label="Private chat notifications" value={`${chats.length || 1} open ${chats.length === 1 ? 'conversation' : 'conversations'}`} detail="View your support messages" /><DashboardTile label="Support groups joined" value={`${joinedGroups.length} groups`} detail="Find a community to join" /><DashboardTile label="Medications ordered" value={`${medications.length} ${medications.length === 1 ? 'record' : 'records'}`} detail="Review your treatment records" /></div><h2 className="quick-heading">Quick actions</h2><div className="care-grid"><PatientAction title="View availed services" text="Check statuses of appointments and medication requests." action={() => navigate('services')} /><PatientAction title="Book appointment" text="Schedule time with a health worker." action={() => navigate('appointments')} /></div></PagePanel>,
@@ -770,7 +788,7 @@ function PatientDashboard({ currentUser, currentPatient, onPublicHub, onSignOut 
   return (
     <div className="patient-shell">
       <div className="topline"><span>WORLD AIDS DAY IS EVERY DAY</span><span className="topline-detail">Information. Care. Community.</span></div>
-      <PrivatePatientHeader page={page} profileName={profileName} onNavigate={navigate} onSignOut={onSignOut} />
+      <UserNavbar page={page} profileName={profileName} onNavigate={navigate} onSignOut={onSignOut} />
       <main key={page} className="patient-main route-transition">{content[page]}</main>
       <footer>
         <span className="footer-brand">HIVeLink</span>
@@ -999,7 +1017,7 @@ function PatientForm({ data, onClose, onSave }) {
     : record.type === 'medication'
       ? [['name', 'Medication name', 'text', 'e.g. Antiretroviral therapy'], ['dosage', 'Current prescribed dosage', 'text', 'e.g. 1 tablet'], ['schedule', 'How you take it', 'text', 'e.g. Twice daily'], ['quantity', 'Quantity requested (units)', 'number', 'e.g. 30'], ['isRefill', 'Is this a refill?', 'checkbox'], ['notes', 'Note for the care team (optional)', 'textarea', 'Share any timing or pickup details']]
       : record.type === 'worker-patient'
-        ? (db.useApi ? [['detail', 'Care details', 'text', 'Care plan details']] : [['name', 'Patient name', 'text', 'Patient full name'], ['detail', 'Care details', 'text', 'Care plan details']])
+        ? (db.useApi ? [['detail', 'Care details', 'text', 'Care plan details'], ['hasDoctorsPrescription', 'Doctor’s prescription is on file', 'checkbox'], ['medicationRequestEligible', 'Eligible for medication requests', 'checkbox']] : [['name', 'Patient name', 'text', 'Patient full name'], ['detail', 'Care details', 'text', 'Care plan details'], ['hasDoctorsPrescription', 'Doctor’s prescription is on file', 'checkbox'], ['medicationRequestEligible', 'Eligible for medication requests', 'checkbox']])
         : [['subject', 'Subject', 'text', 'Subject'], ['preview', 'Message', 'text', 'Write a message...']];
 
   return (
@@ -1014,16 +1032,28 @@ function PatientForm({ data, onClose, onSave }) {
             <label key={key}>
               {label}
               {type === 'textarea' ? <textarea rows="3" maxLength={500} value={record[key] || ''} placeholder={placeholder} onChange={(event) => setRecord({ ...record, [key]: event.target.value })} /> : <input
-                required={!['phone', 'notes', 'isRefill'].includes(key)}
+                required={type !== 'checkbox' && !['phone', 'notes', 'isRefill'].includes(key)}
                 type={type}
                 min={key === 'quantity' ? 1 : undefined}
                 max={key === 'quantity' ? 1000 : undefined}
                 step={key === 'quantity' ? 1 : undefined}
                 maxLength={type === 'text' ? 150 : undefined}
                 checked={type === 'checkbox' ? Boolean(record[key]) : undefined}
+                disabled={key === 'medicationRequestEligible' && !record.hasDoctorsPrescription}
                 value={type === 'checkbox' ? undefined : (record[key] ?? '')}
                 placeholder={placeholder}
-                onChange={(event) => setRecord({ ...record, [key]: type === 'checkbox' ? event.target.checked : event.target.value })}
+                onChange={(event) => {
+                  if (type !== 'checkbox') {
+                    setRecord({ ...record, [key]: event.target.value });
+                    return;
+                  }
+                  const checked = event.target.checked;
+                  setRecord({
+                    ...record,
+                    [key]: checked,
+                    ...(key === 'hasDoctorsPrescription' && !checked ? { medicationRequestEligible: false } : {}),
+                  });
+                }}
               />}
             </label>
           ))}
@@ -1685,10 +1715,17 @@ function HealthWorkerDashboard({ currentUser, currentWorker, onPublicHub, onSign
     return result;
   };
   const updateAppointment = (id, status) => db.update('Appointments', id, { status });
-  const savePatient = (patient) => {
+  const savePatient = async (patient) => {
     if (patient.id || patient.patient_id || patient.userId) {
       const pid = patient.patient_id || patient.id;
-      db.update('Patients', pid, { care_status: patient.status || patient.careStatus || 'Stable', medical_notes: patient.detail || patient.medicalNotes });
+      const hasDoctorsPrescription = Boolean(patient.hasDoctorsPrescription);
+      const result = await db.update('Patients', pid, {
+        care_status: patient.status || patient.careStatus || 'Stable',
+        medical_notes: patient.detail || patient.medicalNotes,
+        has_doctors_prescription: hasDoctorsPrescription,
+        medication_request_eligible: hasDoctorsPrescription && Boolean(patient.medicationRequestEligible),
+      });
+      if (result?.error) return result;
       if (!db.useApi && (patient.user_id || patient.userId)) db.update('Users', patient.user_id || patient.userId, { full_name: patient.name || patient.fullName });
     } else if (!db.useApi) {
       db.adminCreateUser({ fullName: patient.name || 'New Patient', email: `patient.${Date.now()}@example.com`, careStatus: patient.status || 'Active care plan' });
@@ -1720,7 +1757,7 @@ function HealthWorkerDashboard({ currentUser, currentWorker, onPublicHub, onSign
     patientsChats: <PagePanel eyebrow="Patient care and private support" title={<>Patients and<br /><i>chats.</i></>}>
       {assignmentNotice && <p className="form-status" role="status">{assignmentNotice}</p>}
       {claimablePatients.length > 0 && <section className="claimable-patients" aria-labelledby="claimable-heading"><div className="claimable-heading"><div><p className="eyebrow">Matching facility</p><h2 id="claimable-heading">Available patients</h2></div><span>{claimablePatients.length} unassigned</span></div><div className="worker-list">{claimablePatients.map((patient) => <article key={patient.patient_id}><div><strong>{patient.full_name}</strong><span>{patient.care_status || 'Active care plan'} · Patient #{patient.patient_id}</span></div><button className="admin-btn admin-btn-primary" type="button" onClick={() => claimPatient(patient)}>Assign to me</button></article>)}</div></section>}
-      <h2 className="quick-heading">Assigned patients</h2><div className="worker-list">{workerPatients.map((patient) => <article key={patient.userId || patient.id}><div><strong>{patient.fullName || patient.name}</strong><span>{patient.email} · {patient.medicalNotes || patient.detail}{patient.userId === 1 && latestMessage ? ` · “${latestMessage}”` : ''} · <strong style={{ color: 'var(--coral)', fontWeight: 400 }}>{patient.servicesAvailedCount || 0} services availed</strong></span></div><div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}><StatusBadge status={patient.careStatus || patient.status} /><StatusBadge status={patient.accountStatus || 'Active'} /></div><div className="worker-actions"><button type="button" className="card-link" onClick={() => setInspectingUser(patient)}>View Services ↗</button><button className="card-link" onClick={() => setPatientEditor({ type: 'worker-patient', ...patient, id: patient.patientId, user_id: patient.userId, name: patient.fullName })}>Edit Care Plan</button></div></article>)}</div>{!workerPatients.length && <p className="empty-records">No patients are currently assigned to you.</p>}</PagePanel>,
+      <h2 className="quick-heading">Assigned patients</h2><div className="worker-list">{workerPatients.map((patient) => <article key={patient.userId || patient.id}><div><strong>{patient.fullName || patient.name}</strong><span>{patient.email} · {patient.medicalNotes || patient.detail}{patient.userId === 1 && latestMessage ? ` · “${latestMessage}”` : ''} · <strong style={{ color: 'var(--coral)', fontWeight: 400 }}>{patient.servicesAvailedCount || 0} services availed</strong></span><span>Doctor’s prescription: {patient.hasDoctorsPrescription ? 'On file' : 'Not recorded'} · Medication request eligibility: {patient.medicationRequestEligible ? 'Eligible' : 'Not eligible'}</span></div><div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}><StatusBadge status={patient.careStatus || patient.status} /><StatusBadge status={patient.accountStatus || 'Active'} /></div><div className="worker-actions"><button type="button" className="card-link" onClick={() => setInspectingUser(patient)}>View Services ↗</button><button className="card-link" onClick={() => setPatientEditor({ type: 'worker-patient', ...patient, id: patient.patientId, user_id: patient.userId, name: patient.fullName })}>Edit Care Plan</button></div></article>)}</div>{!workerPatients.length && <p className="empty-records">No patients are currently assigned to you.</p>}</PagePanel>,
     medications: <PagePanel eyebrow="Treatment support" title={<>Medication<br /><i>requests.</i></>}><div className="worker-list">{requests.map((request) => <article key={request.id}><div><strong>{request.medication}</strong><span>Requested by {request.patient} · {request.dosage} · {request.schedule} · Quantity: {request.quantity ?? 30}{request.isRefill ? ' · Refill' : ''}</span>{request.notes && <span>Patient note: {request.notes}</span>}</div><StatusBadge status={request.status} /><div className="worker-actions"><button className="card-link" onClick={() => updateRequest(request.id, 'Approved')}>Approve</button><button className="card-link" onClick={() => updateRequest(request.id, 'Needs information')}>Request info</button></div></article>)}</div>{!requests.length && <p className="empty-records">Medication requests from your assigned patients will appear here. Assign the patient to your care team to review their request.</p>}</PagePanel>,
     appointments: <PagePanel eyebrow="Care schedule" title={<>Manage<br /><i>appointments.</i></>}><div className="worker-list">{appointments.map((appointment) => {
           const status = String(appointment.status || 'Requested');
@@ -1735,7 +1772,7 @@ function HealthWorkerDashboard({ currentUser, currentWorker, onPublicHub, onSign
   return (
     <div className="patient-shell">
       <div className="topline"><span>WORLD AIDS DAY IS EVERY DAY</span><span className="topline-detail">Information. Care. Community.</span></div>
-      <header className="site-header guest-header patient-header">
+      <header className="site-header user-header patient-header">
         <button className="brand brand-button" onClick={() => navigate('overview')} aria-label="HIVeLink home"><span>HIVeLink</span></button>
         <nav className="nav-links worker-nav" aria-label="Health worker navigation">{[['patientsChats', 'Patients'], ['chat', 'Chats'], ['appointments', 'Appointments'], ['medications', 'Medications'], ['groups', 'Groups']].map(([key, label]) => <button className={`guest-nav-link ${page === key ? 'active' : ''}`} key={key} onClick={() => navigate(key)}>{label}</button>)}</nav>
         <div className="patient-header-actions">
@@ -2043,7 +2080,7 @@ function AdminDashboard({ onPublicHub, onSignOut }) {
   return (
     <div className="patient-shell">
       <div className="topline"><span>WORLD AIDS DAY IS EVERY DAY</span><span className="topline-detail">Information. Care. Community.</span></div>
-      <header className="site-header guest-header patient-header">
+      <header className="site-header user-header patient-header">
         <button className="brand brand-button" onClick={() => navigate('overview')} aria-label="HIVeLink home"><span>HIVeLink</span></button>
         <nav className="nav-links worker-nav" aria-label="Admin navigation">{[['overview', 'Overview'], ['users', 'Users'], ['workers', 'Health workers'], ['supportGroup', 'Support group'], ['services', 'Services'], ['logs', 'Activity logs'], ['reports', 'Reports'], ['settings', 'Settings']].map(([key, label]) => <button className={`guest-nav-link ${page === key ? 'active' : ''}`} key={key} onClick={() => navigate(key)}>{label}</button>)}</nav>
         <div className="patient-header-actions"><button className="sign-out-button" onClick={onSignOut}>Sign out</button></div>

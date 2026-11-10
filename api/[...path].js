@@ -34,7 +34,7 @@ function supabaseClients() {
 const sessionCookie = 'hivelink_session';
 const tableConfig = {
   Users: { sql: 'users', id: 'user_id', updated: true, columns: ['full_name', 'email', 'contact_number', 'age', 'date_of_birth', 'gender', 'is_active'] },
-  Patients: { sql: 'patients', id: 'patient_id', updated: true, columns: ['care_status', 'medical_notes', 'emergency_contact', 'emergency_phone', 'preferred_facility_id', 'assigned_worker_id'] },
+  Patients: { sql: 'patients', id: 'patient_id', updated: true, columns: ['care_status', 'medical_notes', 'has_doctors_prescription', 'medication_request_eligible', 'emergency_contact', 'emergency_phone', 'preferred_facility_id', 'assigned_worker_id'] },
   HealthWorkers: { sql: 'health_workers', id: 'worker_id', updated: true, columns: ['specialty', 'license_number', 'primary_facility_id', 'is_verified', 'is_available', 'bio_summary'] },
   Appointments: { sql: 'appointments', id: 'appointment_id', updated: true, columns: ['patient_id', 'worker_id', 'facility_id', 'appointment_date', 'appointment_time', 'appointment_type', 'status', 'notes'] },
   MedicationRequests: { sql: 'medication_requests', id: 'request_id', updated: true, columns: ['patient_id', 'medication_id', 'medication_name', 'dosage', 'schedule', 'quantity_requested', 'is_refill', 'patient_notes', 'availability', 'status', 'reviewed_by_worker_id', 'review_notes'] },
@@ -436,7 +436,7 @@ async function mutate(req, user, table, id) {
     if (table === 'HealthWorkers') {
       for (const key of Object.keys(values)) if (key !== 'is_available') delete values[key];
     } else if (table === 'Patients') {
-      for (const key of Object.keys(values)) if (!['care_status', 'medical_notes'].includes(key)) delete values[key];
+      for (const key of Object.keys(values)) if (!['care_status', 'medical_notes', 'has_doctors_prescription', 'medication_request_eligible'].includes(key)) delete values[key];
     } else if (table === 'Appointments' || table === 'MedicationRequests') {
       for (const key of Object.keys(values)) if (!['status', 'reviewed_by_worker_id', 'review_notes'].includes(key)) delete values[key];
     } else if (table === 'ChatSessions') {
@@ -444,6 +444,32 @@ async function mutate(req, user, table, id) {
     } else if (table === 'SupportGroups') {
       for (const key of Object.keys(values)) if (!['name', 'detail', 'schedule', 'target_audience'].includes(key)) delete values[key];
       values.facilitator_worker_id = (await pool.query('SELECT worker_id FROM health_workers WHERE user_id = $1', [user.user_id])).rows[0]?.worker_id;
+    }
+  }
+  if (table === 'Patients' && operation === 'update') {
+    for (const key of ['has_doctors_prescription', 'medication_request_eligible']) {
+      if (Object.prototype.hasOwnProperty.call(values, key) && typeof values[key] !== 'boolean') {
+        return { status: 400, body: { error: 'Prescription and medication eligibility must be true or false.' } };
+      }
+    }
+    if (values.has_doctors_prescription === false) values.medication_request_eligible = false;
+    if (values.medication_request_eligible === true && values.has_doctors_prescription !== true) {
+      const current = values.has_doctors_prescription === undefined
+        ? await pool.query('SELECT has_doctors_prescription FROM patients WHERE patient_id = $1', [id])
+        : null;
+      if (values.has_doctors_prescription !== true && current?.rows[0]?.has_doctors_prescription !== true) {
+        return { status: 400, body: { error: 'A doctor’s prescription must be on file before marking a patient eligible.' } };
+      }
+    }
+  }
+  if (user.role === 'patient' && table === 'MedicationRequests' && operation === 'update'
+      && values.status !== 'Cancelled') {
+    const eligibility = await pool.query(
+      'SELECT p.has_doctors_prescription, p.medication_request_eligible FROM patients p JOIN medication_requests m USING (patient_id) WHERE p.patient_id = $1 AND m.request_id = $2',
+      [await patientIdForUser(user.user_id), id],
+    );
+    if (eligibility.rows[0]?.has_doctors_prescription !== true || eligibility.rows[0]?.medication_request_eligible !== true) {
+      return { status: 403, body: { error: 'A health worker must confirm your doctor’s prescription and medication request eligibility before you can update a request.' } };
     }
   }
   if (user.role === 'patient') {
@@ -549,6 +575,10 @@ async function mutate(req, user, table, id) {
     if (typeof values.is_refill !== 'boolean') return { status: 400, body: { error: 'Refill must be true or false.' } };
     values.patient_notes = String(values.patient_notes || '').trim();
     if (!values.patient_id) return { status: 403, body: { error: 'Your patient record is unavailable. Please sign in again.' } };
+    const eligibility = await pool.query('SELECT has_doctors_prescription, medication_request_eligible FROM patients WHERE patient_id = $1', [values.patient_id]);
+    if (eligibility.rows[0]?.has_doctors_prescription !== true || eligibility.rows[0]?.medication_request_eligible !== true) {
+      return { status: 403, body: { error: 'A health worker must confirm your doctor’s prescription and medication request eligibility before you can submit a request.' } };
+    }
     if (!values.medication_name || values.medication_name.length > 150 || !values.dosage || values.dosage.length > 100 || !values.schedule || values.schedule.length > 150) return { status: 400, body: { error: 'Medication, prescribed dosage, and schedule are required and must fit their field limits.' } };
     if (!Number.isSafeInteger(values.quantity_requested) || values.quantity_requested < 1 || values.quantity_requested > 1000) return { status: 400, body: { error: 'Quantity must be a whole number from 1 to 1000.' } };
     if (values.medication_id !== undefined && values.medication_id !== null) {

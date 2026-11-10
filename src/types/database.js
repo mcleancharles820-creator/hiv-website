@@ -58,6 +58,8 @@ export const PatientModel = {
     preferred_facility_id: { type: 'number', required: false, references: 'TestingFacilities.facility_id' },
     care_status: { type: 'enum', options: ['Active care plan', 'New referral', 'Stable', 'Needs follow-up', 'Inactive'], default: 'Active care plan' },
     medical_notes: { type: 'string', required: false },
+    has_doctors_prescription: { type: 'boolean', required: true, default: false },
+    medication_request_eligible: { type: 'boolean', required: true, default: false },
     emergency_contact: { type: 'string', required: false },
     emergency_phone: { type: 'string', required: false },
     created_at: { type: 'datetime', default: () => new Date().toISOString() },

@@ -83,6 +83,8 @@ CREATE TABLE patients (
     preferred_facility_id INT REFERENCES testing_facilities(facility_id) ON DELETE SET NULL,
     care_status VARCHAR(50) NOT NULL DEFAULT 'Active care plan' CHECK (care_status IN ('Active care plan', 'New referral', 'Stable', 'Needs follow-up', 'Inactive')),
     medical_notes TEXT,
+    has_doctors_prescription BOOLEAN NOT NULL DEFAULT FALSE,
+    medication_request_eligible BOOLEAN NOT NULL DEFAULT FALSE,
     emergency_contact VARCHAR(150),
     emergency_phone VARCHAR(50),
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
@@ -250,7 +252,7 @@ CREATE INDEX idx_chat_messages_session ON chat_messages(chat_session_id, sent_at
 -- Initial Seed Data (Infrastructure & Public Catalogs)
 INSERT INTO testing_facilities (facility_id, name, facility_type, address, city, province, country, latitude, longitude, contact_phone, services_offered, operating_hours, maps_url)
 VALUES
-(1, 'Rural Health Unit Odiongan', 'Rural Health Unit', 'Barangay Dap-dap, Odiongan', 'Odiongan', 'Romblon', 'Philippines', 12.401000, 121.990000, '+63 917 123 4567', 'Confidential HIV Testing, PrEP counseling, Primary Healthcare', 'Mon-Fri 8:00 AM - 5:00 PM', 'https://www.google.com/maps/search/Rural+Health+Unit+Odiongan+Romblon'),
+(1, 'Rural Health Unit Odiongan', 'Rural Health Unit', '9XXJ+WXX, JP Laurel St, Odiongan, Romblon', 'Odiongan', 'Romblon', 'Philippines', 12.399980, 121.981360, '+63 917 123 4567', 'Confidential HIV Testing, PrEP counseling, Primary Healthcare', 'Mon-Fri 8:00 AM - 5:00 PM', 'https://www.google.com/maps/search/?api=1&query=9XXJ%2BWXX%2C+JP+Laurel+St%2C+Odiongan%2C+Romblon'),
 (2, 'Romblon Provincial Hospital', 'Provincial Hospital', 'Liwanag, Odiongan', 'Odiongan', 'Romblon', 'Philippines', 12.405500, 121.986200, '+63 920 987 6543', 'HIV Treatment Hub, ART Dispensing, Confirmatory Testing', '24/7 Care', 'https://www.google.com/maps/search/Romblon+Provincial+Hospital+Odiongan');
 
 INSERT INTO medications (medication_id, medication_code, name, category, detail, default_dosage, stock_status)
@@ -269,7 +271,7 @@ VALUES
 (1, 'testing_referrals', 'HIV testing referrals', 'Local testing and facility guidance', TRUE, 1),
 (2, 'treatment_referrals', 'Treatment referrals', 'Connect patients to treatment hubs', TRUE, 2),
 (3, 'chat_support', 'Private chat support', 'Patient to health worker messaging', TRUE, 3),
-(4, 'medication_requests', 'Medication requests', 'Treatment availability requests', FALSE, 4);
+(4, 'medication_requests', 'Medication requests', 'Treatment availability requests', TRUE, 4);
 
 INSERT INTO system_settings (setting_key, setting_value, data_type, description)
 VALUES
