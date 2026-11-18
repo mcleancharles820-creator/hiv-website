@@ -19,7 +19,7 @@ CREATE TABLE users (
     email VARCHAR(255) NOT NULL UNIQUE,
     password_hash VARCHAR(255),
     password_changed_at TIMESTAMPTZ,
-    uic VARCHAR(32) NOT NULL UNIQUE,
+    uic VARCHAR(32) UNIQUE,
     full_name VARCHAR(150) NOT NULL,
     role VARCHAR(20) NOT NULL CHECK (role IN ('patient', 'health-worker', 'admin')),
     contact_number VARCHAR(30),
@@ -31,7 +31,11 @@ CREATE TABLE users (
     is_active BOOLEAN NOT NULL DEFAULT TRUE,
     email_verified BOOLEAN NOT NULL DEFAULT FALSE,
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    CONSTRAINT users_uic_role_check CHECK (
+        (role = 'patient' AND uic IS NOT NULL)
+        OR (role IN ('health-worker', 'admin') AND uic IS NULL)
+    )
 );
 
 CREATE TABLE email_verification_tokens (

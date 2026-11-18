@@ -24,7 +24,7 @@ export const UserModel = {
   primaryKey: 'user_id',
   fields: {
     user_id: { type: 'number', isPrimary: true, autoIncrement: true },
-    uic: { type: 'string', required: true, unique: true, maxLength: 32 },
+    uic: { type: 'string', required: false, unique: true, maxLength: 32, assignedTo: 'patient accounts only' },
     birth_order: { type: 'number', required: true, min: 1, max: 50, default: 1 },
     email: { type: 'string', required: true, unique: true },
     password_hash: { type: 'string', required: true },

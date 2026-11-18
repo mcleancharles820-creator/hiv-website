@@ -2072,7 +2072,7 @@ function AdminDashboard({ onPublicHub, onSignOut }) {
                 <div>
                   <strong>UIC {appointment.uic}</strong>
                   <span>{appointment.appointment_date} · {formatAppointmentTime(appointment.appointment_time)} · {appointment.appointment_type} ({appointment.facilityName})</span>
-                  {appointment.worker_id && <small className="appointment-worker-note">Assigned health worker UIC {db.findById('Users', db.findById('HealthWorkers', appointment.worker_id)?.user_id)?.uic || 'Unavailable'}</small>}
+                  {appointment.worker_id && <small className="appointment-worker-note">Assigned health worker: {db.findById('Users', db.findById('HealthWorkers', appointment.worker_id)?.user_id)?.full_name || 'Unavailable'}</small>}
                   {appointment.notes && <small className="appointment-worker-note">Patient note: {appointment.notes}</small>}
                 </div>
                 <StatusBadge status={status} />
@@ -2087,7 +2087,7 @@ function AdminDashboard({ onPublicHub, onSignOut }) {
                           onChange={(event) => setAppointmentWorkerSelection((selections) => ({ ...selections, [appointmentId]: event.target.value }))}
                         >
                           <option value="">Select available health worker</option>
-                          {availableWorkers.map((worker) => <option key={worker.workerId} value={worker.workerId}>UIC {db.findById('Users', worker.userId)?.uic || 'Unavailable'}</option>)}
+                          {availableWorkers.map((worker) => <option key={worker.workerId} value={worker.workerId}>{worker.fullName}</option>)}
                         </select>
                         <button type="button" className="card-link" disabled={!availableWorkers.length} onClick={() => assignAndApproveAppointment(appointmentId)}>Approve &amp; assign</button>
                         {!availableWorkers.length && <small>No verified, available health worker has an open slot at this clinic and time.</small>}

@@ -389,7 +389,33 @@ class DatabaseService {
     try {
       const stored = localStorage.getItem(DB_STORAGE_KEY);
       if (stored) {
-        return JSON.parse(stored);
+        const database = JSON.parse(stored);
+        const staffUics = new Map();
+        let changed = false;
+        database.Users = (database.Users || []).map((user) => {
+          if (user.role === 'patient' || !user.uic) return user;
+          staffUics.set(user.user_id, { uic: user.uic, role: user.role });
+          changed = true;
+          return { ...user, uic: null };
+        });
+        if (staffUics.size) {
+          database.ActivityLogs = (database.ActivityLogs || []).map((log) => {
+            const actor = staffUics.get(log.actor_user_id);
+            let details = log.details || '';
+            staffUics.forEach(({ uic, role }) => {
+              details = details.split(uic).join(role === 'admin' ? 'Administrator' : 'health worker');
+            });
+            if (!actor && details === (log.details || '')) return log;
+            changed = true;
+            return {
+              ...log,
+              actor_name: actor ? (actor.role === 'admin' ? 'Administrator' : 'Health worker') : log.actor_name,
+              details,
+            };
+          });
+        }
+        if (changed) localStorage.setItem(DB_STORAGE_KEY, JSON.stringify(database));
+        return database;
       }
     } catch (e) {
       console.warn('Could not read relational DB from storage:', e);
@@ -455,7 +481,7 @@ class DatabaseService {
         const safePatch = { ...patch };
         if (tableName === 'Users') {
           delete safePatch.birth_order;
-          if (item.uic) delete safePatch.uic;
+          if (item.role !== 'patient' || item.uic) delete safePatch.uic;
         }
         return {
           ...item,
@@ -518,6 +544,7 @@ class DatabaseService {
 
     // Insert new User
     const newUser = this.insert('Users', {
+      uic: null,
       email: formattedEmail,
       password_hash: `hash_${password || 'secret'}`,
       birth_order: parsedBirthOrder,
@@ -530,12 +557,14 @@ class DatabaseService {
       terms_accepted: Boolean(termsAccepted),
       is_active: true,
     });
-    const normalizeInitial = (value) => String(value || '').trim().normalize('NFD').replace(/[\u0300-\u036f]/g, '').match(/[A-Za-z]/)?.[0]?.toUpperCase() || 'X';
-    const firstInitial = normalizeInitial(firstName || formattedName);
-    const lastInitial = normalizeInitial(lastName || formattedName.split(/\s+/).filter(Boolean).pop());
-    const uicDate = String(formattedDob || new Date().toISOString().slice(0, 10)).replace(/-/g, '');
-    newUser.uic = `${firstInitial}${lastInitial}-${String(parsedBirthOrder).padStart(2, '0')}-${uicDate}-${newUser.user_id}`;
-    this.update('Users', newUser.user_id, { uic: newUser.uic });
+    if (role === 'patient') {
+      const normalizeInitial = (value) => String(value || '').trim().normalize('NFD').replace(/[\u0300-\u036f]/g, '').match(/[A-Za-z]/)?.[0]?.toUpperCase() || 'X';
+      const firstInitial = normalizeInitial(firstName || formattedName);
+      const lastInitial = normalizeInitial(lastName || formattedName.split(/\s+/).filter(Boolean).pop());
+      const uicDate = String(formattedDob || new Date().toISOString().slice(0, 10)).replace(/-/g, '');
+      newUser.uic = `${firstInitial}${lastInitial}-${String(parsedBirthOrder).padStart(2, '0')}-${uicDate}-${newUser.user_id}`;
+      this.update('Users', newUser.user_id, { uic: newUser.uic });
+    }
 
     // Create role-specific relational record
     let patient = null;
@@ -583,18 +612,18 @@ class DatabaseService {
 
       this.insert('ActivityLogs', {
         actor_user_id: newUser.user_id,
-        actor_name: newUser.uic,
+        actor_name: 'Health worker',
         action: 'New health worker registered',
         category: 'Authentication',
-        details: `Health worker profile created for UIC ${newUser.uic}`,
+        details: 'Health worker profile created.',
       });
     } else if (role === 'admin') {
       this.insert('ActivityLogs', {
         actor_user_id: newUser.user_id,
-        actor_name: newUser.uic,
+        actor_name: 'Administrator',
         action: 'New administrator registered',
         category: 'Authentication',
-        details: `Admin profile created for UIC ${newUser.uic}`,
+        details: 'Administrator account created.',
       });
     }
 
@@ -690,13 +719,12 @@ class DatabaseService {
     if (!updated) return { error: 'The appointment could not be approved and assigned.' };
     const patient = this.getTable('Patients').find((entry) => Number(entry.patient_id) === Number(appointment.patient_id));
     const patientUic = patient ? this.findById('Users', patient.user_id)?.uic || 'Unavailable' : 'Unavailable';
-    const workerUic = this.findById('Users', worker.userId)?.uic || 'Unavailable';
     this.insert('ActivityLogs', {
       actor_user_id: 1,
       actor_name: 'Administrator',
       action: 'Approved and assigned appointment',
       category: 'Appointments',
-      details: `Assigned appointment for UIC ${patientUic} to health worker UIC ${workerUic}.`,
+      details: `Approved appointment for patient UIC ${patientUic} and assigned it to a health worker.`,
     });
     return updated;
   }

@@ -74,9 +74,13 @@ test('only patient accounts can authenticate with UIC; staff must use email', ()
   const worker = db.registerUser({ fullName: 'Worker Account', email: 'login.worker@example.com', password: 'securePassword123', role: 'health-worker' });
   const admin = db.registerUser({ fullName: 'Admin Account', email: 'login.admin@example.com', password: 'securePassword123', role: 'admin' });
 
+  expect(worker.user.uic).toBeNull();
+  expect(admin.user.uic).toBeNull();
+  expect(db.getTable('ActivityLogs').filter((log) => [worker.user.user_id, admin.user.user_id].includes(log.actor_user_id))
+    .every((log) => !/UIC/i.test(`${log.actor_name} ${log.details}`))).toBe(true);
   expect(db.login({ uic: patient.user.uic, password: 'securePassword123', role: 'patient' }).user.user_id).toBe(patient.user.user_id);
-  expect(db.login({ uic: worker.user.uic, password: 'securePassword123', role: 'patient' }).error).toMatch(/uic or password/i);
-  expect(db.login({ uic: admin.user.uic, password: 'securePassword123', role: 'admin' }).error).toMatch(/email address/i);
+  expect(db.login({ uic: 'HW-01-20000101-123', password: 'securePassword123', role: 'patient' }).error).toMatch(/uic or password/i);
+  expect(db.login({ uic: 'AD-01-20000101-456', password: 'securePassword123', role: 'admin' }).error).toMatch(/email address/i);
   expect(db.login({ email: worker.user.email, password: 'securePassword123', role: 'health-worker' }).user.user_id).toBe(worker.user.user_id);
   expect(db.login({ email: admin.user.email, password: 'securePassword123', role: 'admin' }).user.user_id).toBe(admin.user.user_id);
   expect(db.login({ email: patient.user.email, password: 'securePassword123', role: 'patient' }).error).toMatch(/uic/i);
@@ -609,7 +613,7 @@ test('administrator must assign an available clinic health worker before complet
     worker_id: worker.worker.worker_id,
     status: 'Confirmed',
   }));
-  expect(db.getTable('ActivityLogs').some((log) => log.action === 'Approved and assigned appointment')).toBe(true);
+  expect(db.getTable('ActivityLogs').some((log) => log.action === 'Approved and assigned appointment' && !/worker UIC/i.test(log.details))).toBe(true);
   userEvent.click(screen.getByRole('button', { name: /mark completed/i }));
   expect(db.findById('Appointments', appointment.appointment_id).status).toBe('Completed');
 });

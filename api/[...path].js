@@ -32,6 +32,11 @@ function supabaseClients() {
 }
 
 const sessionCookie = 'hivelink_session';
+function activityActorName(user) {
+  if (user.role === 'patient') return user.uic || 'Patient';
+  return user.role === 'admin' ? 'Administrator' : 'Health worker';
+}
+
 function makeUic(firstName, lastName, birthOrder, dateOfBirth, userId) {
   const normalizeInitial = (value) => String(value || '').trim().normalize('NFD').replace(/[\u0300-\u036f]/g, '').match(/[A-Za-z]/)?.[0]?.toUpperCase() || 'X';
   const initials = `${normalizeInitial(firstName)}${normalizeInitial(lastName)}`;
@@ -210,7 +215,7 @@ async function logActivity(user, action, category, details) {
   try {
     await pool.query(
       'INSERT INTO activity_logs (actor_user_id, actor_name, action, category, details) VALUES ($1,$2,$3,$4,$5)',
-      [user.user_id, user.uic || 'Unknown account', action, category, details],
+      [user.user_id, activityActorName(user), action, category, details],
     );
   } catch (error) {
     console.error('Could not write activity log:', error.message);
@@ -896,7 +901,7 @@ module.exports = async function handler(req, res) {
         [user.user_id, patientId],
       );
       if (!claimed.rowCount) return send(res, 409, { error: 'This patient is no longer available to claim, or is outside your assigned facility.' });
-      await pool.query('INSERT INTO activity_logs (actor_user_id, actor_name, action, category, details) VALUES ($1,$2,$3,$4,$5)', [user.user_id, user.uic || 'Unknown account', 'Claimed patient assignment', 'Care Team Management', `Claimed patient UIC ${claimed.rows[0].uic || 'unavailable'}`]);
+      await pool.query('INSERT INTO activity_logs (actor_user_id, actor_name, action, category, details) VALUES ($1,$2,$3,$4,$5)', [user.user_id, activityActorName(user), 'Claimed patient assignment', 'Care Team Management', `Claimed patient UIC ${claimed.rows[0].uic || 'unavailable'}`]);
       return send(res, 200, { patient: claimed.rows[0] });
     }
     if (pathname === '/api/chat/session' && req.method === 'POST') {
@@ -1196,7 +1201,7 @@ module.exports = async function handler(req, res) {
         }
         await client.query(
           'INSERT INTO activity_logs (actor_user_id, actor_name, action, category, details) VALUES ($1,$2,$3,$4,$5)',
-          [user.user_id, user.uic || 'Unknown account', 'Redacted a support-group message', 'Community Safety', `Removed support-group message #${messageId}`],
+          [user.user_id, activityActorName(user), 'Redacted a support-group message', 'Community Safety', `Removed support-group message #${messageId}`],
         );
         await client.query('COMMIT');
         return send(res, 200, { ok: true });
@@ -1253,7 +1258,7 @@ module.exports = async function handler(req, res) {
         await client.query('UPDATE support_groups SET facilitator_worker_id = $1 WHERE group_id = $2', [workerId, group.rows[0].group_id]);
         await client.query(
           'INSERT INTO activity_logs (actor_user_id, actor_name, action, category, details) VALUES ($1,$2,$3,$4,$5)',
-          [user.user_id, user.uic || 'Unknown account', workerId ? 'Assigned support-group supervisor' : 'Removed support-group supervisor', 'Community Safety', workerId ? `Assigned verified worker ${workerId} to the single support group` : 'Paused access to the single support group until a supervisor is assigned'],
+          [user.user_id, activityActorName(user), workerId ? 'Assigned support-group supervisor' : 'Removed support-group supervisor', 'Community Safety', workerId ? `Assigned verified worker ${workerId} to the single support group` : 'Paused access to the single support group until a supervisor is assigned'],
         );
         await client.query('COMMIT');
         return send(res, 200, { group: { group_id: group.rows[0].group_id, facilitator_worker_id: workerId, supervisor_name: supervisorName, has_supervisor: Boolean(workerId) } });
@@ -1296,7 +1301,7 @@ module.exports = async function handler(req, res) {
           return send(res, 409, { error: 'Only requested or rescheduled appointments can be approved.' });
         }
         const worker = await client.query(
-          'SELECT h.worker_id, u.uic FROM health_workers h JOIN users u USING (user_id) WHERE h.worker_id = $1 AND h.is_verified = TRUE AND h.is_available = TRUE AND u.is_active = TRUE AND u.email_verified = TRUE AND h.primary_facility_id = $2 FOR UPDATE OF h',
+          'SELECT h.worker_id FROM health_workers h JOIN users u USING (user_id) WHERE h.worker_id = $1 AND h.is_verified = TRUE AND h.is_available = TRUE AND u.is_active = TRUE AND u.email_verified = TRUE AND h.primary_facility_id = $2 FOR UPDATE OF h',
           [workerId, requested.facility_id],
         );
         if (!worker.rowCount) {
@@ -1319,7 +1324,7 @@ module.exports = async function handler(req, res) {
         const patientUic = patient.rows[0]?.uic || 'Unavailable';
         await client.query(
           'INSERT INTO activity_logs (actor_user_id, actor_name, action, category, details) VALUES ($1,$2,$3,$4,$5)',
-          [user.user_id, user.uic || 'Administrator', 'Approved and assigned appointment', 'Appointments', `Assigned appointment for UIC ${patientUic} to health worker UIC ${worker.rows[0].uic || 'Unavailable'}.`],
+          [user.user_id, activityActorName(user), 'Approved and assigned appointment', 'Appointments', `Approved appointment for patient UIC ${patientUic} and assigned it to a health worker.`],
         );
         await client.query('COMMIT');
         if (patient.rows[0]) await bestEffort(() => sendRegisteredEmail(patient.rows[0].user_id, {
@@ -1376,7 +1381,7 @@ module.exports = async function handler(req, res) {
           const created = await client.query('INSERT INTO users (user_id, uic, birth_order, supabase_user_id, email, password_hash, full_name, role, contact_number, date_of_birth, age, gender, is_active, terms_accepted, email_verified) VALUES ($1,$2,$3,$4,$5,NULL,$6,\'patient\',$7,$8,$9,$10,$11,$12,FALSE) RETURNING user_id, uic, birth_order, supabase_user_id, email, full_name, role, contact_number, date_of_birth, age, gender, is_active, email_verified', [allocatedId, uic, birthOrder, supabaseAuthUserId, email, fullName, body.contactNumber || null, dateOfBirth, body.age || null, body.gender || null, body.isActive !== false, true]);
           const patient = await client.query('INSERT INTO patients (user_id, care_status, medical_notes, preferred_facility_id, assigned_worker_id, emergency_contact, emergency_phone) VALUES ($1,$2,$3,$4,$5,$6,$7) RETURNING *', [created.rows[0].user_id, body.careStatus || 'Active care plan', body.medicalNotes || 'Managed patient account', body.preferredFacilityId || 1, assignedWorkerId, body.emergencyContact || null, body.emergencyPhone || null]);
           await client.query("INSERT INTO chat_sessions (patient_id, subject, status, preview) VALUES ($1, 'Welcome to private support', 'Open', 'A health worker will be ready to answer your questions.')", [patient.rows[0].patient_id]);
-          await client.query('INSERT INTO activity_logs (actor_user_id, actor_name, action, category, details) VALUES ($1,$2,$3,$4,$5)', [user.user_id, user.uic || 'Unknown account', 'Created patient account', 'User Management', `Created patient UIC ${created.rows[0].uic}`]);
+          await client.query('INSERT INTO activity_logs (actor_user_id, actor_name, action, category, details) VALUES ($1,$2,$3,$4,$5)', [user.user_id, activityActorName(user), 'Created patient account', 'User Management', `Created patient UIC ${created.rows[0].uic}`]);
           await client.query('COMMIT');
           const verification = await sendVerificationEmail(created.rows[0].user_id);
           return send(res, 201, { user: created.rows[0], patient: patient.rows[0], verificationRequired: true, verificationEmailSent: verification.sent });
@@ -1393,11 +1398,9 @@ module.exports = async function handler(req, res) {
           if (authError || !authData.user) { await client.query('ROLLBACK'); return send(res, 400, { error: authError?.message || 'Could not create the Supabase Auth account.' }); }
           supabaseAuthUserId = authData.user.id;
           const allocatedId = (await client.query("SELECT nextval(pg_get_serial_sequence('users', 'user_id')) AS user_id")).rows[0].user_id;
-          const birthOrder = 1;
-          const uic = makeUic(body.firstName, body.lastName, birthOrder, body.dateOfBirth, allocatedId);
-          const created = await client.query('INSERT INTO users (user_id, uic, birth_order, supabase_user_id, email, password_hash, full_name, role, contact_number, date_of_birth, gender, is_active, terms_accepted, email_verified) VALUES ($1,$2,$3,$4,$5,NULL,$6,\'health-worker\',$7,$8,$9,$10,TRUE,FALSE) RETURNING user_id, uic, birth_order, supabase_user_id, email, full_name, role, contact_number, date_of_birth, gender, is_active, email_verified', [allocatedId, uic, birthOrder, supabaseAuthUserId, email, fullName, body.contactNumber || null, body.dateOfBirth || null, body.gender, body.isActive !== false]);
+          const created = await client.query('INSERT INTO users (user_id, uic, supabase_user_id, email, password_hash, full_name, role, contact_number, date_of_birth, gender, is_active, terms_accepted, email_verified) VALUES ($1,NULL,$2,$3,NULL,$4,\'health-worker\',$5,$6,$7,$8,TRUE,FALSE) RETURNING user_id, uic, supabase_user_id, email, full_name, role, contact_number, date_of_birth, gender, is_active, email_verified', [allocatedId, supabaseAuthUserId, email, fullName, body.contactNumber || null, body.dateOfBirth || null, body.gender, body.isActive !== false]);
           const worker = await client.query('INSERT INTO health_workers (user_id, specialty, license_number, primary_facility_id, is_verified, is_available, bio_summary) VALUES ($1,$2,$3,$4,$5,$6,$7) RETURNING *', [created.rows[0].user_id, body.specialty || 'HIV care support', body.licenseNumber || null, body.primaryFacilityId || 1, body.isVerified !== false, body.isAvailable !== false, body.bioSummary || 'Licensed Health Worker']);
-          await client.query('INSERT INTO activity_logs (actor_user_id, actor_name, action, category, details) VALUES ($1,$2,$3,$4,$5)', [user.user_id, user.uic || 'Unknown account', 'Created health worker', 'Care Team Management', `Created health worker UIC ${created.rows[0].uic}`]);
+          await client.query('INSERT INTO activity_logs (actor_user_id, actor_name, action, category, details) VALUES ($1,$2,$3,$4,$5)', [user.user_id, activityActorName(user), 'Created health worker', 'Care Team Management', 'Created a health worker account.']);
           await client.query('COMMIT');
           const verification = await sendVerificationEmail(created.rows[0].user_id);
           return send(res, 201, { user: created.rows[0], worker: worker.rows[0], verificationRequired: true, verificationEmailSent: verification.sent });
@@ -1453,12 +1456,13 @@ module.exports = async function handler(req, res) {
         if (req.method === 'DELETE' && id) {
           let removed;
           if (kind === 'workers') {
-            removed = await client.query('DELETE FROM users u USING health_workers h WHERE u.user_id = h.user_id AND h.worker_id = $1 RETURNING u.uic, u.supabase_user_id', [id]);
+            removed = await client.query('DELETE FROM users u USING health_workers h WHERE u.user_id = h.user_id AND h.worker_id = $1 RETURNING u.supabase_user_id', [id]);
           } else {
             removed = await client.query('DELETE FROM users WHERE user_id = $1 AND role = \'patient\' RETURNING uic, supabase_user_id', [id]);
           }
           if (!removed.rowCount) { await client.query('ROLLBACK'); return send(res, 404, { error: 'Record not found.' }); }
-          await client.query('INSERT INTO activity_logs (actor_user_id, actor_name, action, category, details) VALUES ($1,$2,$3,$4,$5)', [user.user_id, user.uic || 'Unknown account', `Deleted ${kind === 'workers' ? 'health worker' : 'patient'} account`, 'Account Management', `Deleted UIC ${removed.rows[0].uic || 'unavailable'}`]);
+          const removedDetail = kind === 'workers' ? 'Deleted a health worker account.' : `Deleted patient UIC ${removed.rows[0].uic || 'unavailable'}.`;
+          await client.query('INSERT INTO activity_logs (actor_user_id, actor_name, action, category, details) VALUES ($1,$2,$3,$4,$5)', [user.user_id, activityActorName(user), `Deleted ${kind === 'workers' ? 'health worker' : 'patient'} account`, 'Account Management', removedDetail]);
           await client.query('COMMIT');
           if (removed.rows[0].supabase_user_id) {
             const { adminClient } = supabaseClients();

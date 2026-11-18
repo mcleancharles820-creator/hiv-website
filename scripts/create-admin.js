@@ -70,14 +70,11 @@ async function main() {
     if (authError || !authData.user) throw new Error(authError?.message || 'Could not create the Supabase Auth account.');
     authUserId = authData.user.id;
     const userId = (await pool.query("SELECT nextval(pg_get_serial_sequence('users', 'user_id')) AS user_id")).rows[0].user_id;
-    const initial = firstName.normalize('NFD').replace(/[\u0300-\u036f]/g, '').match(/[A-Za-z]/)?.[0] || 'X';
-    const dateOfBirth = new Date().toISOString().slice(0, 10);
-    const uic = `${initial.toUpperCase()}-01-${dateOfBirth.replace(/-/g, '')}-${String(userId).padStart(6, '0')}`;
     const result = await pool.query(
-      "INSERT INTO users (user_id, uic, birth_order, supabase_user_id, email, password_hash, full_name, role, is_active, terms_accepted, email_verified) VALUES ($1, $2, 1, $3, $4, NULL, $5, 'admin', TRUE, TRUE, TRUE) RETURNING user_id, uic, email, full_name, role",
-      [userId, uic, authUserId, email, fullName],
+      "INSERT INTO users (user_id, supabase_user_id, email, password_hash, full_name, role, is_active, terms_accepted, email_verified) VALUES ($1, $2, $3, NULL, $4, 'admin', TRUE, TRUE, TRUE) RETURNING user_id, email, full_name, role",
+      [userId, authUserId, email, fullName],
     );
-    process.stdout.write(`Created administrator ${result.rows[0].email} (user ${result.rows[0].user_id}). Sign-in UIC: ${result.rows[0].uic}\n`);
+    process.stdout.write(`Created administrator ${result.rows[0].email} (user ${result.rows[0].user_id}). Sign in with email and password.\n`);
   } catch (error) {
     if (authUserId) await supabase.auth.admin.deleteUser(authUserId);
     throw error;
