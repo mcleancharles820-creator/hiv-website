@@ -599,9 +599,9 @@ class DatabaseService {
     return { user: newUser, patient, worker };
   }
 
-  login({ uic, password, role = 'patient' }) {
+  login({ uic, email, password, role = 'patient' }) {
     if (this.useApi) {
-      return this.apiRequest('/api/auth/login', { method: 'POST', body: JSON.stringify({ uic, password }) })
+      return this.apiRequest('/api/auth/login', { method: 'POST', body: JSON.stringify({ uic, email, password, role }) })
         .then(async (result) => {
           await this.refresh();
           return result;
@@ -609,24 +609,23 @@ class DatabaseService {
         .catch((error) => ({ error: error.message }));
     }
     const formattedUic = String(uic || '').trim().toUpperCase();
+    const formattedEmail = String(email || '').trim().toLowerCase();
     const formattedPassword = String(password || '');
 
-    if (!formattedUic) {
-      return { error: 'Please enter your UIC.' };
+    if (!['patient', 'health-worker', 'admin'].includes(role)) {
+      return { error: 'Choose a valid account type.' };
     }
+    if (role === 'patient' && !formattedUic) return { error: 'Please enter your UIC.' };
+    if (role !== 'patient' && !formattedEmail) return { error: 'Please enter your email address.' };
 
-    const user = this.getTable('Users').find((u) => String(u.uic || '').toUpperCase() === formattedUic);
+    const user = role === 'patient'
+      ? this.getTable('Users').find((u) => u.role === 'patient' && String(u.uic || '').toUpperCase() === formattedUic)
+      : this.getTable('Users').find((u) => u.role === role && String(u.email || '').trim().toLowerCase() === formattedEmail);
 
-    if (!user) {
-      return { error: 'UIC not found. Please check the code or register an account first.' };
-    }
-
+    const identifier = role === 'patient' ? 'UIC' : 'Email';
+    if (!user) return { error: `${identifier} or password is incorrect.` };
     if (user.password_hash && user.password_hash !== `hash_${formattedPassword}` && user.password_hash !== formattedPassword) {
-      return { error: 'Incorrect password. Please verify your password and try again.' };
-    }
-
-    if (user.role !== role) {
-      return { error: `This account is registered as a ${user.role}, not a ${role}.` };
+      return { error: `${identifier} or password is incorrect.` };
     }
 
     const patient = this.getTable('Patients').find((p) => p.user_id === user.user_id) || null;

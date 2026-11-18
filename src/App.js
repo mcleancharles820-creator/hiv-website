@@ -357,8 +357,10 @@ function AuthScreen({ onEnter, onPasswordRecoveryComplete }) {
       }
 
       const password = form.elements.password?.value || '';
-      const email = mode === 'login' ? '' : form.elements.email.value.trim();
-      const uic = mode === 'login' ? form.elements.uic.value.trim().toUpperCase() : '';
+      const email = mode === 'login'
+        ? (role === 'patient' ? '' : form.elements.email.value.trim())
+        : form.elements.email.value.trim();
+      const uic = mode === 'login' && role === 'patient' ? form.elements.uic.value.trim().toUpperCase() : '';
       if (mode === 'register') {
         if (password.toLowerCase() === email.trim().toLowerCase()) {
           setError('Password cannot be the same as your email address.');
@@ -404,7 +406,7 @@ function AuthScreen({ onEnter, onPasswordRecoveryComplete }) {
         return;
       }
 
-      const authentication = db.login({ uic, password, role });
+      const authentication = db.login({ uic, email, password, role });
       const auth = db.useApi ? await authentication : authentication;
       if (auth.error) {
         if (db.useApi && /verify your email/i.test(auth.error)) {
@@ -450,7 +452,7 @@ function AuthScreen({ onEnter, onPasswordRecoveryComplete }) {
         <div key={mode} className="auth-form-wrap route-transition">
           <div className="auth-page-label"><span>{verificationEmail ? 'VERIFY EMAIL' : mode === 'login' ? 'LOG IN' : mode === 'register' ? 'SIGN UP' : 'PASSWORD RECOVERY'}</span><span>01 / 01</span></div>
           <h2>{verificationEmail || mode === 'forgot-sent' ? <>Check your<br /><i>email.</i></> : mode === 'reset' ? <>Choose a new<br /><i>password.</i></> : mode === 'reset-complete' ? <>Password<br /><i>updated.</i></> : mode === 'forgot' ? <>Reset your<br /><i>password.</i></> : mode === 'login' ? <>Good to<br /><i>see you.</i></> : <>Make space<br /><i>for care.</i></>}</h2>
-          <p className="auth-intro">{verificationEmail ? `We sent a verification link to ${verificationEmail}. Verify your address, then sign in with your UIC.` : mode === 'forgot' ? 'Enter the email address associated with your account. We will send a secure password reset link if it matches an active account.' : mode === 'forgot-sent' ? `If an active account exists for ${resetEmail}, a password reset link has been sent.` : mode === 'reset' ? 'Create a new password to secure your account. Use at least 12 characters.' : mode === 'reset-complete' ? 'Your password has been changed. You can now log in with your new password.' : mode === 'login' ? 'Sign in with your Unique Identifier Code (UIC) and password.' : 'Create an account to save resources and connect with support. Your UIC will be generated from your name initial, birth order, and date of birth.'}</p>
+          <p className="auth-intro">{verificationEmail ? `We sent a verification link to ${verificationEmail}. Verify your address, then sign in with your ${role === 'patient' ? 'UIC' : 'email address'}.` : mode === 'forgot' ? 'Enter the email address associated with your account. We will send a secure password reset link if it matches an active account.' : mode === 'forgot-sent' ? `If an active account exists for ${resetEmail}, a password reset link has been sent.` : mode === 'reset' ? 'Create a new password to secure your account. Use at least 12 characters.' : mode === 'reset-complete' ? 'Your password has been changed. You can now log in with your new password.' : mode === 'login' ? (role === 'patient' ? 'Patients sign in with their Unique Identifier Code (UIC) and password. Administrators and health workers sign in with their email address and password.' : 'Administrators and health workers sign in with their registered email address and password.') : 'Create an account to save resources and connect with support. Your UIC will be generated from your name initial, birth order, and date of birth.'}</p>
           {verificationEmail ? <div className="verification-prompt">
             <p className="verification-address">{verificationEmail}</p>
             {registeredUic && <p className="verification-feedback" role="status">Your UIC (save this for sign-in): <strong>{registeredUic}</strong></p>}
@@ -466,9 +468,10 @@ function AuthScreen({ onEnter, onPasswordRecoveryComplete }) {
           </div> : <>
           <form key={mode} className={`auth-form ${mode === 'register' ? 'registration-form' : ''}`} onSubmit={handleSubmit} autoComplete="off">
             {mode === 'register' && <div className="field-row registration-name-row"><label>First Name<input name="firstName" required type="text" autoComplete="given-name" placeholder="First name" /></label><label>Middle Name<input name="middleName" required type="text" autoComplete="additional-name" placeholder="Middle name" /></label><label>Last Name<input name="lastName" required type="text" autoComplete="family-name" placeholder="Last name" /></label></div>}
-            {mode === 'login' && <label>UIC (Unique Identifier Code)<input name="uic" required type="text" autoComplete="username" placeholder="e.g. A-01-20000101-000001" /></label>}
+            {mode === 'login' && <label>Account type<select name="role" value={role} onChange={(event) => setRole(event.target.value)} required><option value="patient">Patient / User</option><option value="health-worker">Health Worker</option><option value="admin">Admin</option></select></label>}
+            {mode === 'login' && role === 'patient' && <label>UIC (Unique Identifier Code)<input name="uic" required type="text" autoComplete="username" placeholder="e.g. A-01-20000101-000001" /></label>}
+            {mode === 'login' && role !== 'patient' && <label>Email Address<input name="email" required type="email" autoComplete="username" placeholder="you@example.com" /></label>}
             {mode !== 'reset' && mode !== 'login' && <label>Email Address<input name="email" required type="email" autoComplete="email" defaultValue={mode === 'forgot' ? resetEmail : ''} placeholder="you@example.com" /></label>}
-            {mode === 'login' && !db.useApi && <label>Account type<select name="role" value={role} onChange={(event) => setRole(event.target.value)} required><option value="patient">Patient / User</option><option value="health-worker">Health Worker</option><option value="admin">Admin</option></select></label>}
             {mode === 'register' && <div className="field-row"><label>Age<input name="age" required type="number" min="13" max="120" placeholder="Age" /></label><label>Date of Birth<input name="dateOfBirth" required type="date" /></label></div>}
             {mode === 'register' && <label>Birth order in family<input name="birthOrder" required type="number" min="1" max="50" placeholder="e.g. 1" /></label>}
             {mode === 'register' && <label>Gender<select name="gender" defaultValue="" required><option value="" disabled>Select an option</option><option>Male</option><option>Female</option><option>Non-binary</option><option>Self-described</option><option>Prefer not to say</option></select></label>}

@@ -23,7 +23,10 @@ afterEach(() => {
 
 function signInAs(email, password) {
   const account = db.getTable('Users').find((user) => user.email === email);
-  userEvent.type(screen.getByLabelText(/uic/i), account?.uic || 'UNKNOWN-UIC');
+  const role = account?.role || 'patient';
+  const accountType = screen.queryByLabelText(/account type/i);
+  if (accountType) userEvent.selectOptions(accountType, role);
+  userEvent.type(role === 'patient' ? screen.getByLabelText(/uic/i) : screen.getByLabelText(/email address/i), role === 'patient' ? (account?.uic || 'UNKNOWN-UIC') : email);
   userEvent.type(screen.getByLabelText(/^password$/i), password);
   userEvent.click(screen.getByRole('button', { name: /^log in/i }));
 }
@@ -46,6 +49,15 @@ test('renders the log in entry screen', () => {
   expect(screen.getByRole('option', { name: /patient \/ user/i })).toBeInTheDocument();
   expect(screen.getByRole('option', { name: /health worker/i })).toBeInTheDocument();
   expect(screen.getByRole('option', { name: /admin/i })).toBeInTheDocument();
+  userEvent.selectOptions(screen.getByLabelText(/account type/i), 'health-worker');
+  expect(screen.queryByLabelText(/uic/i)).not.toBeInTheDocument();
+  expect(screen.getByLabelText(/email address/i)).toBeRequired();
+  userEvent.selectOptions(screen.getByLabelText(/account type/i), 'admin');
+  expect(screen.queryByLabelText(/uic/i)).not.toBeInTheDocument();
+  expect(screen.getByLabelText(/email address/i)).toBeRequired();
+  userEvent.selectOptions(screen.getByLabelText(/account type/i), 'patient');
+  expect(screen.getByLabelText(/uic/i)).toBeRequired();
+  expect(screen.queryByLabelText(/email address/i)).not.toBeInTheDocument();
 });
 
 test('blocks un-registered accounts from logging in with an error message', () => {
@@ -54,7 +66,20 @@ test('blocks un-registered accounts from logging in with an error message', () =
   userEvent.type(screen.getByLabelText(/^password$/i), 'password123');
   userEvent.click(screen.getByRole('button', { name: /^log in/i }));
 
-  expect(screen.getByRole('alert')).toHaveTextContent(/uic not found/i);
+  expect(screen.getByRole('alert')).toHaveTextContent(/uic or password is incorrect/i);
+});
+
+test('only patient accounts can authenticate with UIC; staff must use email', () => {
+  const patient = db.registerUser({ fullName: 'Patient Account', email: 'login.patient@example.com', password: 'securePassword123', role: 'patient' });
+  const worker = db.registerUser({ fullName: 'Worker Account', email: 'login.worker@example.com', password: 'securePassword123', role: 'health-worker' });
+  const admin = db.registerUser({ fullName: 'Admin Account', email: 'login.admin@example.com', password: 'securePassword123', role: 'admin' });
+
+  expect(db.login({ uic: patient.user.uic, password: 'securePassword123', role: 'patient' }).user.user_id).toBe(patient.user.user_id);
+  expect(db.login({ uic: worker.user.uic, password: 'securePassword123', role: 'patient' }).error).toMatch(/uic or password/i);
+  expect(db.login({ uic: admin.user.uic, password: 'securePassword123', role: 'admin' }).error).toMatch(/email address/i);
+  expect(db.login({ email: worker.user.email, password: 'securePassword123', role: 'health-worker' }).user.user_id).toBe(worker.user.user_id);
+  expect(db.login({ email: admin.user.email, password: 'securePassword123', role: 'admin' }).user.user_id).toBe(admin.user.user_id);
+  expect(db.login({ email: patient.user.email, password: 'securePassword123', role: 'patient' }).error).toMatch(/uic/i);
 });
 
 test('guest view shows only public awareness resources', () => {
@@ -181,6 +206,34 @@ test('registration services send all three name parts and never send password co
       expect(requestBody(path)).not.toHaveProperty('confirmPassword');
       expect(requestBody(path)).not.toHaveProperty('fullName');
     });
+  } finally {
+    db.useApi = previousApiMode;
+  }
+});
+
+test('API login sends UIC only for patients and email for staff accounts', async () => {
+  const previousApiMode = db.useApi;
+  db.useApi = true;
+  const fetchMock = jest.spyOn(global, 'fetch').mockImplementation(async (url) => ({
+    ok: true,
+    json: async () => (url === '/api/auth/login'
+      ? { user: { user_id: 1, role: JSON.parse(fetchMock.mock.calls.at(-1)[1].body).role } }
+      : {}),
+  }));
+
+  try {
+    await db.login({ uic: 'P-01-20000101-000001', password: 'patientPassword', role: 'patient' });
+    await db.login({ email: 'worker@example.com', password: 'workerPassword', role: 'health-worker' });
+    await db.login({ email: 'admin@example.com', password: 'adminPassword', role: 'admin' });
+
+    const loginBodies = fetchMock.mock.calls
+      .filter(([url]) => url === '/api/auth/login')
+      .map(([, options]) => JSON.parse(options.body));
+    expect(loginBodies).toEqual([
+      { uic: 'P-01-20000101-000001', password: 'patientPassword', role: 'patient' },
+      { email: 'worker@example.com', password: 'workerPassword', role: 'health-worker' },
+      { email: 'admin@example.com', password: 'adminPassword', role: 'admin' },
+    ]);
   } finally {
     db.useApi = previousApiMode;
   }

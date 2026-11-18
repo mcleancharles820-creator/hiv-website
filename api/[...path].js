@@ -700,22 +700,30 @@ module.exports = async function handler(req, res) {
     }
     if (pathname === '/api/auth/login' && req.method === 'POST') {
       const body = getBody(req);
+      const role = String(body.role || 'patient');
+      if (!['patient', 'health-worker', 'admin'].includes(role)) return send(res, 400, { error: 'Choose a valid account type.' });
       const uic = String(body.uic || '').trim().toUpperCase();
+      const emailInput = String(body.email || '').trim().toLowerCase();
+      const identifier = role === 'patient' ? 'UIC' : 'Email';
+      if (role === 'patient' && !uic) return send(res, 400, { error: 'Please enter your UIC.' });
+      if (role !== 'patient' && !emailInput) return send(res, 400, { error: 'Please enter your email address.' });
       const { publicClient, adminClient } = supabaseClients();
-      let profile = (await pool.query('SELECT * FROM users WHERE uic = $1 AND is_active = TRUE', [uic])).rows[0];
-      if (!profile) return send(res, 401, { error: 'UIC or password is incorrect.' });
+      let profile = role === 'patient'
+        ? (await pool.query("SELECT * FROM users WHERE uic = $1 AND role = 'patient' AND is_active = TRUE", [uic])).rows[0]
+        : (await pool.query('SELECT * FROM users WHERE email = $1 AND role = $2 AND is_active = TRUE', [emailInput, role])).rows[0];
+      if (!profile) return send(res, 401, { error: `${identifier} or password is incorrect.` });
       const email = profile.email;
       let supabaseUserId = profile.supabase_user_id;
       let realtimeSession = null;
       if (!supabaseUserId) {
-        if (!profile.password_hash || !(await bcrypt.compare(String(body.password || ''), profile.password_hash))) return send(res, 401, { error: 'UIC or password is incorrect.' });
+        if (!profile.password_hash || !(await bcrypt.compare(String(body.password || ''), profile.password_hash))) return send(res, 401, { error: `${identifier} or password is incorrect.` });
         const { data: legacyAuth, error: legacyError } = await adminClient.auth.admin.createUser({
           email,
           password: String(body.password || ''),
           email_confirm: true,
           user_metadata: { full_name: profile.full_name },
         });
-        if (legacyError || !legacyAuth.user) return send(res, 401, { error: 'UIC or password is incorrect.' });
+        if (legacyError || !legacyAuth.user) return send(res, 401, { error: `${identifier} or password is incorrect.` });
         supabaseUserId = legacyAuth.user.id;
         profile = (await pool.query('UPDATE users SET supabase_user_id = $1, password_hash = NULL, email_verified = TRUE, updated_at = NOW() WHERE user_id = $2 RETURNING *', [supabaseUserId, profile.user_id])).rows[0];
         const { data: legacySession, error: legacySessionError } = await publicClient.auth.signInWithPassword({ email, password: String(body.password || '') });
@@ -725,7 +733,7 @@ module.exports = async function handler(req, res) {
         const { data: authData, error: authError } = await publicClient.auth.signInWithPassword({ email, password: String(body.password || '') });
         if (authError || !authData.user) {
           if (/email not confirmed/i.test(authError?.message || '')) return send(res, 403, { error: 'Please verify your email before signing in.' });
-          return send(res, 401, { error: 'UIC or password is incorrect.' });
+          return send(res, 401, { error: `${identifier} or password is incorrect.` });
         }
         if (!authData.user.email_confirmed_at) return send(res, 403, { error: 'Please verify your email before signing in.' });
         realtimeSession = authData.session;
