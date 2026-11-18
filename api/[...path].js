@@ -45,10 +45,9 @@ function makeUic(firstName, lastName, birthOrder, dateOfBirth, userId) {
 }
 const tableConfig = {
   Users: { sql: 'users', id: 'user_id', updated: true, columns: ['full_name', 'email', 'contact_number', 'age', 'date_of_birth', 'gender', 'is_active'] },
-  Patients: { sql: 'patients', id: 'patient_id', updated: true, columns: ['care_status', 'medical_notes', 'has_doctors_prescription', 'medication_request_eligible', 'emergency_contact', 'emergency_phone', 'preferred_facility_id', 'assigned_worker_id'] },
+  Patients: { sql: 'patients', id: 'patient_id', updated: true, columns: ['care_status', 'medical_notes', 'emergency_contact', 'emergency_phone', 'preferred_facility_id', 'assigned_worker_id'] },
   HealthWorkers: { sql: 'health_workers', id: 'worker_id', updated: true, columns: ['specialty', 'license_number', 'primary_facility_id', 'is_verified', 'is_available', 'bio_summary'] },
   Appointments: { sql: 'appointments', id: 'appointment_id', updated: true, columns: ['patient_id', 'worker_id', 'facility_id', 'appointment_date', 'appointment_time', 'appointment_type', 'status', 'notes'] },
-  MedicationRequests: { sql: 'medication_requests', id: 'request_id', updated: true, columns: ['patient_id', 'medication_id', 'medication_name', 'dosage', 'schedule', 'quantity_requested', 'is_refill', 'patient_notes', 'status', 'reviewed_by_worker_id', 'review_notes'] },
   ChatSessions: { sql: 'chat_sessions', id: 'chat_session_id', columns: ['patient_id', 'worker_id', 'subject', 'status', 'preview', 'last_updated'] },
   ChatMessages: { sql: 'chat_messages', id: 'message_id', columns: ['chat_session_id', 'sender_user_id', 'sender_role', 'message_text', 'is_read'] },
   SupportGroupMembers: { sql: 'support_group_members', id: 'membership_id', columns: ['group_id', 'patient_id', 'role_in_group'] },
@@ -57,7 +56,7 @@ const tableConfig = {
   PublicInquiries: { sql: 'public_inquiries', id: 'inquiry_id', columns: ['first_name', 'email', 'message', 'status', 'assigned_worker_id', 'response_notes'] },
 };
 const catalogTables = {
-  Medications: 'medications', TestingFacilities: 'testing_facilities', EducationalResources: 'educational_resources',
+  TestingFacilities: 'testing_facilities', EducationalResources: 'educational_resources',
 };
 
 function send(res, status, body) {
@@ -181,9 +180,8 @@ async function sendVerificationEmail(userId, type = 'signup') {
 }
 
 async function notifyPatientRecord(table, id, subject, text) {
-  const relation = table === 'Appointments'
-    ? 'SELECT p.user_id FROM appointments r JOIN patients p USING (patient_id) WHERE r.appointment_id = $1'
-    : 'SELECT p.user_id FROM medication_requests r JOIN patients p USING (patient_id) WHERE r.request_id = $1';
+  if (table !== 'Appointments') return;
+  const relation = 'SELECT p.user_id FROM appointments r JOIN patients p USING (patient_id) WHERE r.appointment_id = $1';
   const result = await pool.query(relation, [id]);
   if (result.rowCount) await sendRegisteredEmail(result.rows[0].user_id, { subject, text });
 }
@@ -313,7 +311,6 @@ async function loadSnapshot(user) {
     queries.push((async () => { snapshot.Users = [user]; })());
     queries.push((async () => { snapshot.Patients = (await pool.query('SELECT * FROM patients WHERE user_id = $1', [user.user_id])).rows; })());
     queries.push((async () => { snapshot.Appointments = (await pool.query('SELECT a.* FROM appointments a JOIN patients p USING (patient_id) WHERE p.user_id = $1', [user.user_id])).rows; })());
-    queries.push((async () => { snapshot.MedicationRequests = (await pool.query('SELECT m.* FROM medication_requests m JOIN patients p USING (patient_id) WHERE p.user_id = $1', [user.user_id])).rows; })());
     queries.push((async () => { snapshot.ChatSessions = (await pool.query('SELECT c.* FROM chat_sessions c JOIN patients p USING (patient_id) WHERE p.user_id = $1', [user.user_id])).rows; })());
     queries.push((async () => { snapshot.ChatMessages = (await pool.query('SELECT m.* FROM chat_messages m JOIN chat_sessions c USING (chat_session_id) JOIN patients p USING (patient_id) WHERE p.user_id = $1 ORDER BY sent_at', [user.user_id])).rows; })());
   } else if (user.role === 'health-worker') {
@@ -338,7 +335,6 @@ async function loadSnapshot(user) {
     queries.push((async () => { snapshot.HealthWorkers = (await pool.query('SELECT * FROM health_workers WHERE user_id = $1', [user.user_id])).rows; })());
     queries.push((async () => { snapshot.Patients = (await pool.query('SELECT p.* FROM patients p JOIN health_workers h ON h.worker_id = p.assigned_worker_id WHERE h.user_id = $1', [user.user_id])).rows; })());
     queries.push((async () => { snapshot.Appointments = (await pool.query('SELECT a.* FROM appointments a JOIN patients p USING (patient_id) JOIN health_workers h ON h.worker_id = p.assigned_worker_id WHERE h.user_id = $1', [user.user_id])).rows; })());
-    queries.push((async () => { snapshot.MedicationRequests = (await pool.query('SELECT m.* FROM medication_requests m JOIN patients p USING (patient_id) JOIN health_workers h ON h.worker_id = p.assigned_worker_id WHERE h.user_id = $1', [user.user_id])).rows; })());
     queries.push((async () => { snapshot.ChatSessions = (await pool.query('SELECT c.* FROM chat_sessions c JOIN patients p USING (patient_id) JOIN health_workers h ON h.worker_id = p.assigned_worker_id WHERE h.user_id = $1', [user.user_id])).rows; })());
     queries.push((async () => { snapshot.ChatMessages = (await pool.query('SELECT m.* FROM chat_messages m JOIN chat_sessions c USING (chat_session_id) JOIN patients p USING (patient_id) JOIN health_workers h ON h.worker_id = p.assigned_worker_id WHERE h.user_id = $1 ORDER BY sent_at', [user.user_id])).rows; })());
     queries.push((async () => {
@@ -370,7 +366,7 @@ function allowed(role, table, operation) {
     if (table === 'HealthWorkers') return operation === 'update';
     if (table === 'SupportGroups') return ['insert', 'update', 'delete'].includes(operation);
     if (table === 'ChatMessages') return ['insert', 'update'].includes(operation);
-    if (['Patients', 'MedicationRequests', 'ChatSessions'].includes(table)) return operation === 'update';
+    if (['Patients', 'ChatSessions'].includes(table)) return operation === 'update';
     return false;
   }
   if (role === 'patient') {
@@ -393,7 +389,7 @@ async function verifyRecordAccess(user, table, id, body) {
   if (table === 'Users') return String(id) === String(user.user_id);
    const patientId = await patientIdForUser(user.user_id);
   if (user.role === 'patient') {
-    if (table === 'Appointments' || table === 'MedicationRequests' || table === 'ChatSessions') {
+    if (table === 'Appointments' || table === 'ChatSessions') {
       const config = tableConfig[table];
       const result = await pool.query(`SELECT patient_id FROM ${config.sql} WHERE ${config.id} = $1`, [id]);
       return result.rows[0]?.patient_id === patientId;
@@ -412,7 +408,6 @@ async function verifyRecordAccess(user, table, id, body) {
     if (table === 'HealthWorkers') return String(id) === String(workerId);
     if (table === 'Patients') return (await pool.query('SELECT 1 FROM patients WHERE patient_id = $1 AND assigned_worker_id = $2', [id, workerId])).rowCount > 0;
     if (table === 'Appointments') return (await pool.query('SELECT 1 FROM appointments a JOIN patients p USING (patient_id) WHERE a.appointment_id = $1 AND p.assigned_worker_id = $2', [id, workerId])).rowCount > 0;
-    if (table === 'MedicationRequests') return (await pool.query('SELECT 1 FROM medication_requests m JOIN patients p USING (patient_id) WHERE m.request_id = $1 AND p.assigned_worker_id = $2', [id, workerId])).rowCount > 0;
     if (table === 'ChatSessions') return (await pool.query('SELECT 1 FROM chat_sessions c JOIN patients p USING (patient_id) WHERE c.chat_session_id = $1 AND p.assigned_worker_id = $2', [id, workerId])).rowCount > 0;
     if (table === 'ChatMessages') return (await pool.query("SELECT 1 FROM chat_messages m JOIN chat_sessions c USING (chat_session_id) JOIN patients p USING (patient_id) WHERE m.message_id = $1 AND m.sender_role = 'patient' AND p.assigned_worker_id = $2", [id, workerId])).rowCount > 0;
     if (table === 'SupportGroups') return (await pool.query('SELECT 1 FROM support_groups WHERE group_id = $1 AND facilitator_worker_id = $2', [id, workerId])).rowCount > 0;
@@ -447,8 +442,8 @@ async function mutate(req, user, table, id) {
     if (table === 'HealthWorkers') {
       for (const key of Object.keys(values)) if (key !== 'is_available') delete values[key];
     } else if (table === 'Patients') {
-      for (const key of Object.keys(values)) if (!['care_status', 'medical_notes', 'has_doctors_prescription', 'medication_request_eligible'].includes(key)) delete values[key];
-    } else if (table === 'Appointments' || table === 'MedicationRequests') {
+      for (const key of Object.keys(values)) if (!['care_status', 'medical_notes'].includes(key)) delete values[key];
+    } else if (table === 'Appointments') {
       for (const key of Object.keys(values)) if (!['status', 'reviewed_by_worker_id', 'review_notes'].includes(key)) delete values[key];
     } else if (table === 'ChatSessions') {
       for (const key of Object.keys(values)) if (!['status', 'preview', 'last_updated'].includes(key)) delete values[key];
@@ -457,58 +452,12 @@ async function mutate(req, user, table, id) {
       values.facilitator_worker_id = (await pool.query('SELECT worker_id FROM health_workers WHERE user_id = $1', [user.user_id])).rows[0]?.worker_id;
     }
   }
-  if (table === 'Patients' && operation === 'update') {
-    for (const key of ['has_doctors_prescription', 'medication_request_eligible']) {
-      if (Object.prototype.hasOwnProperty.call(values, key) && typeof values[key] !== 'boolean') {
-        return { status: 400, body: { error: 'Prescription and medication eligibility must be true or false.' } };
-      }
-    }
-    if (values.has_doctors_prescription === false) values.medication_request_eligible = false;
-    if (values.medication_request_eligible === true && values.has_doctors_prescription !== true) {
-      const current = values.has_doctors_prescription === undefined
-        ? await pool.query('SELECT has_doctors_prescription FROM patients WHERE patient_id = $1', [id])
-        : null;
-      if (values.has_doctors_prescription !== true && current?.rows[0]?.has_doctors_prescription !== true) {
-        return { status: 400, body: { error: 'A doctor’s prescription must be on file before marking a patient eligible.' } };
-      }
-    }
-  }
-  if (user.role === 'patient' && table === 'MedicationRequests' && operation === 'update'
-      && values.status !== 'Cancelled') {
-    const eligibility = await pool.query(
-      'SELECT p.has_doctors_prescription, p.medication_request_eligible FROM patients p JOIN medication_requests m USING (patient_id) WHERE p.patient_id = $1 AND m.request_id = $2',
-      [await patientIdForUser(user.user_id), id],
-    );
-    if (eligibility.rows[0]?.has_doctors_prescription !== true || eligibility.rows[0]?.medication_request_eligible !== true) {
-      return { status: 403, body: { error: 'A health worker must confirm your doctor’s prescription and medication request eligibility before you can update a request.' } };
-    }
-  }
   if (user.role === 'patient') {
     if (table === 'Users') {
       for (const key of Object.keys(values)) if (!['full_name', 'email', 'contact_number', 'gender'].includes(key)) delete values[key];
     } else if (table === 'Appointments') {
        for (const key of Object.keys(values)) if (!['appointment_date', 'appointment_time', 'appointment_type', 'facility_id', 'notes', 'status'].includes(key)) delete values[key];
        if (values.status && !['Requested', 'Cancelled'].includes(values.status)) return { status: 403, body: { error: 'Patients may only cancel or request appointments.' } };
-    } else if (table === 'MedicationRequests') {
-      for (const key of Object.keys(values)) if (!['medication_id', 'medication_name', 'dosage', 'schedule', 'quantity_requested', 'is_refill', 'patient_notes', 'status'].includes(key)) delete values[key];
-      if (values.status && values.status !== 'Cancelled') return { status: 403, body: { error: 'Patients may only cancel medication requests.' } };
-      if (operation === 'update') {
-        for (const [key, maxLength] of [['medication_name', 150], ['dosage', 100], ['schedule', 150]]) {
-          if (Object.prototype.hasOwnProperty.call(values, key)) {
-            values[key] = String(values[key] || '').trim();
-            if (!values[key] || values[key].length > maxLength) return { status: 400, body: { error: 'Medication details are required and must fit their field limits.' } };
-          }
-        }
-        if (Object.prototype.hasOwnProperty.call(values, 'quantity_requested')) {
-          values.quantity_requested = Number(values.quantity_requested);
-          if (!Number.isSafeInteger(values.quantity_requested) || values.quantity_requested < 1 || values.quantity_requested > 1000) return { status: 400, body: { error: 'Quantity must be a whole number from 1 to 1000.' } };
-        }
-        if (Object.prototype.hasOwnProperty.call(values, 'is_refill') && typeof values.is_refill !== 'boolean') return { status: 400, body: { error: 'Refill must be true or false.' } };
-        if (Object.prototype.hasOwnProperty.call(values, 'patient_notes')) {
-          values.patient_notes = String(values.patient_notes || '').trim();
-          if (values.patient_notes.length > 500) return { status: 400, body: { error: 'Care team notes must be 500 characters or fewer.' } };
-        }
-      }
     } else if (table === 'ChatSessions') {
       for (const key of Object.keys(values)) if (!['preview', 'last_updated'].includes(key)) delete values[key];
     }
@@ -589,28 +538,6 @@ async function mutate(req, user, table, id) {
     } else {
       return { status: 403, body: { error: 'Appointment requests must be submitted by patients.' } };
     }
-  }
-  if (table === 'MedicationRequests' && operation === 'insert' && user.role === 'patient') {
-    values.patient_id = await patientIdForUser(user.user_id);
-    values.status = 'Pending';
-    values.medication_name = String(values.medication_name || '').trim();
-    values.dosage = String(values.dosage || '').trim();
-    values.schedule = String(values.schedule || '').trim();
-    values.quantity_requested = Number(values.quantity_requested);
-    if (typeof values.is_refill !== 'boolean') return { status: 400, body: { error: 'Refill must be true or false.' } };
-    values.patient_notes = String(values.patient_notes || '').trim();
-    if (!values.patient_id) return { status: 403, body: { error: 'Your patient record is unavailable. Please sign in again.' } };
-    const eligibility = await pool.query('SELECT has_doctors_prescription, medication_request_eligible FROM patients WHERE patient_id = $1', [values.patient_id]);
-    if (eligibility.rows[0]?.has_doctors_prescription !== true || eligibility.rows[0]?.medication_request_eligible !== true) {
-      return { status: 403, body: { error: 'A health worker must confirm your doctor’s prescription and medication request eligibility before you can submit a request.' } };
-    }
-    if (!values.medication_name || values.medication_name.length > 150 || !values.dosage || values.dosage.length > 100 || !values.schedule || values.schedule.length > 150) return { status: 400, body: { error: 'Medication, prescribed dosage, and schedule are required and must fit their field limits.' } };
-    if (!Number.isSafeInteger(values.quantity_requested) || values.quantity_requested < 1 || values.quantity_requested > 1000) return { status: 400, body: { error: 'Quantity must be a whole number from 1 to 1000.' } };
-    if (values.medication_id !== undefined && values.medication_id !== null) {
-      values.medication_id = Number(values.medication_id);
-      if (!Number.isSafeInteger(values.medication_id) || values.medication_id < 1) return { status: 400, body: { error: 'Choose a valid medication.' } };
-    }
-    if (values.patient_notes.length > 500) return { status: 400, body: { error: 'Care team notes must be 500 characters or fewer.' } };
   }
   if (table === 'ChatMessages' && operation === 'insert') {
     values.sender_user_id = user.user_id;
@@ -1568,15 +1495,6 @@ module.exports = async function handler(req, res) {
           }
         }
         if (table === 'Appointments' && req.method === 'PATCH' && record.status) await bestEffort(() => notifyPatientRecord(table, id, 'Appointment status updated', `Your appointment status is now ${record.status}. Sign in to HIVeLink for details.`));
-        if (table === 'MedicationRequests' && req.method === 'POST') {
-          await logActivity(user, 'Submitted medication request', 'Medication Requests', `Medication request #${result.body.record.request_id} submitted for patient ID #${result.body.record.patient_id}.`);
-          const patient = await pool.query('SELECT user_id FROM patients WHERE patient_id = $1', [result.body.record.patient_id]);
-          if (patient.rows[0]) await bestEffort(() => sendRegisteredEmail(patient.rows[0].user_id, { subject: 'Medication request received', text: 'Your medication request was received. Sign in to HIVeLink to review its current status.' }));
-        }
-        if (table === 'MedicationRequests' && req.method === 'PATCH' && record.status) {
-          await logActivity(user, `Updated medication request: ${record.status}`, 'Medication Requests', `Medication request #${id} status changed to ${record.status}.`);
-          await bestEffort(() => notifyPatientRecord(table, id, 'Medication request updated', `Your medication request status is now ${record.status}. Sign in to HIVeLink for details.`));
-        }
         if (table === 'ChatMessages' && req.method === 'POST') await bestEffort(() => notifyChatCounterparty(result.body.record.chat_session_id, user.role));
       }
       return send(res, result.status, result.body);

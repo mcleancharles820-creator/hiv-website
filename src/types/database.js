@@ -10,7 +10,6 @@
  * @typedef {GenderType | 'Other' | 'LGBT' | 'Woman' | 'Man' | 'Non-binary' | 'Self-describe' | 'Self-described'} StoredGenderType
  * @typedef {'Active care plan' | 'New referral' | 'Stable' | 'Needs follow-up' | 'Inactive'} CareStatus
  * @typedef {'Requested' | 'Confirmed' | 'Completed' | 'Cancelled' | 'Rescheduled'} AppointmentStatus
- * @typedef {'Pending' | 'Ready for review' | 'Approved' | 'Needs information' | 'Dispensed' | 'Cancelled'} MedicationRequestStatus
 
  * @typedef {'Open' | 'Pending' | 'Closed' | 'Resolved'} ChatStatus
  * @typedef {'patient' | 'worker' | 'admin' | 'system'} MessageSenderRole
@@ -60,8 +59,6 @@ export const PatientModel = {
     preferred_facility_id: { type: 'number', required: false, references: 'TestingFacilities.facility_id' },
     care_status: { type: 'enum', options: ['Active care plan', 'New referral', 'Stable', 'Needs follow-up', 'Inactive'], default: 'Active care plan' },
     medical_notes: { type: 'string', required: false },
-    has_doctors_prescription: { type: 'boolean', required: true, default: false },
-    medication_request_eligible: { type: 'boolean', required: true, default: false },
     emergency_contact: { type: 'string', required: false },
     emergency_phone: { type: 'string', required: false },
     created_at: { type: 'datetime', default: () => new Date().toISOString() },
@@ -72,7 +69,6 @@ export const PatientModel = {
     assignedWorker: { type: 'belongsTo', model: 'HealthWorkers', foreignKey: 'assigned_worker_id' },
     preferredFacility: { type: 'belongsTo', model: 'TestingFacilities', foreignKey: 'preferred_facility_id' },
     appointments: { type: 'hasMany', model: 'Appointments', foreignKey: 'patient_id' },
-    medicationRequests: { type: 'hasMany', model: 'MedicationRequests', foreignKey: 'patient_id' },
     chatSessions: { type: 'hasMany', model: 'ChatSessions', foreignKey: 'patient_id' },
     supportGroups: { type: 'belongsToMany', model: 'SupportGroups', through: 'SupportGroupMembers', foreignKey: 'patient_id', otherKey: 'group_id' },
   },
@@ -101,7 +97,6 @@ export const HealthWorkerModel = {
     assignedPatients: { type: 'hasMany', model: 'Patients', foreignKey: 'assigned_worker_id' },
     appointments: { type: 'hasMany', model: 'Appointments', foreignKey: 'worker_id' },
     assignedChats: { type: 'hasMany', model: 'ChatSessions', foreignKey: 'worker_id' },
-    reviewedMedications: { type: 'hasMany', model: 'MedicationRequests', foreignKey: 'reviewed_by_worker_id' },
     facilitatedGroups: { type: 'hasMany', model: 'SupportGroups', foreignKey: 'facilitator_worker_id' },
   },
 };
@@ -132,57 +127,6 @@ export const TestingFacilityModel = {
   relationships: {
     staffWorkers: { type: 'hasMany', model: 'HealthWorkers', foreignKey: 'primary_facility_id' },
     appointments: { type: 'hasMany', model: 'Appointments', foreignKey: 'facility_id' },
-  },
-};
-
-/**
- * 5. Medication Entity Model
- */
-export const MedicationModel = {
-  tableName: 'Medications',
-  primaryKey: 'medication_id',
-  fields: {
-    medication_id: { type: 'number', isPrimary: true, autoIncrement: true },
-    medication_code: { type: 'string', required: true, unique: true },
-    name: { type: 'string', required: true, maxLength: 150 },
-    category: { type: 'string', required: true, maxLength: 100 },
-    detail: { type: 'string', required: true, maxLength: 500 },
-    default_dosage: { type: 'string', required: false },
-    prescription_needed: { type: 'boolean', default: true },
-    is_active: { type: 'boolean', default: true },
-    created_at: { type: 'datetime', default: () => new Date().toISOString() },
-    updated_at: { type: 'datetime', default: () => new Date().toISOString() },
-  },
-  relationships: {
-    requests: { type: 'hasMany', model: 'MedicationRequests', foreignKey: 'medication_id' },
-  },
-};
-/**
- * 6. Medication Request Entity Model
- */
-export const MedicationRequestModel = {
-  tableName: 'MedicationRequests',
-  primaryKey: 'request_id',
-  fields: {
-    request_id: { type: 'number', isPrimary: true, autoIncrement: true },
-    patient_id: { type: 'number', required: true, references: 'Patients.patient_id' },
-    medication_id: { type: 'number', required: false, references: 'Medications.medication_id' },
-    medication_name: { type: 'string', required: true, maxLength: 150 },
-    dosage: { type: 'string', default: 'As prescribed' },
-    schedule: { type: 'string', default: 'Ask your health worker' },
-    quantity_requested: { type: 'number', required: true, min: 1, max: 1000, default: 30 },
-    is_refill: { type: 'boolean', required: true, default: false },
-    patient_notes: { type: 'string', required: false, maxLength: 500 },
-    status: { type: 'enum', options: ['Pending', 'Ready for review', 'Approved', 'Needs information', 'Dispensed', 'Cancelled'], default: 'Pending' },
-    reviewed_by_worker_id: { type: 'number', required: false, references: 'HealthWorkers.worker_id' },
-    review_notes: { type: 'string', required: false },
-    requested_at: { type: 'datetime', default: () => new Date().toISOString() },
-    updated_at: { type: 'datetime', default: () => new Date().toISOString() },
-  },
-  relationships: {
-    patient: { type: 'belongsTo', model: 'Patients', foreignKey: 'patient_id' },
-    medication: { type: 'belongsTo', model: 'Medications', foreignKey: 'medication_id' },
-    reviewedBy: { type: 'belongsTo', model: 'HealthWorkers', foreignKey: 'reviewed_by_worker_id' },
   },
 };
 
@@ -430,8 +374,6 @@ export const DatabaseSchema = {
   Patients: PatientModel,
   HealthWorkers: HealthWorkerModel,
   TestingFacilities: TestingFacilityModel,
-  Medications: MedicationModel,
-  MedicationRequests: MedicationRequestModel,
   Appointments: AppointmentModel,
   ChatSessions: ChatSessionModel,
   ChatMessages: ChatMessageModel,

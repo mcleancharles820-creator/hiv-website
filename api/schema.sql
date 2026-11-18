@@ -90,45 +90,11 @@ CREATE TABLE patients (
     preferred_facility_id INT REFERENCES testing_facilities(facility_id) ON DELETE SET NULL,
     care_status VARCHAR(50) NOT NULL DEFAULT 'Active care plan' CHECK (care_status IN ('Active care plan', 'New referral', 'Stable', 'Needs follow-up', 'Inactive')),
     medical_notes TEXT,
-    has_doctors_prescription BOOLEAN NOT NULL DEFAULT FALSE,
-    medication_request_eligible BOOLEAN NOT NULL DEFAULT FALSE,
     emergency_contact VARCHAR(150),
     emergency_phone VARCHAR(50),
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
--- 5. Medications
-CREATE TABLE medications (
-    medication_id SERIAL PRIMARY KEY,
-    medication_code VARCHAR(50) NOT NULL UNIQUE,
-    name VARCHAR(150) NOT NULL,
-    category VARCHAR(100) NOT NULL,
-    detail TEXT NOT NULL,
-    default_dosage VARCHAR(100),
-    prescription_needed BOOLEAN NOT NULL DEFAULT TRUE,
-    is_active BOOLEAN NOT NULL DEFAULT TRUE,
-    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
-);
-
--- 6. Medication Requests
-CREATE TABLE medication_requests (
-    request_id SERIAL PRIMARY KEY,
-    patient_id INT NOT NULL REFERENCES patients(patient_id) ON DELETE CASCADE,
-    medication_id INT REFERENCES medications(medication_id) ON DELETE SET NULL,
-    medication_name VARCHAR(150) NOT NULL,
-    dosage VARCHAR(100) NOT NULL DEFAULT 'As prescribed',
-    schedule VARCHAR(150) NOT NULL DEFAULT 'Ask your health worker',
-    quantity_requested INT NOT NULL DEFAULT 30 CHECK (quantity_requested BETWEEN 1 AND 1000),
-    is_refill BOOLEAN NOT NULL DEFAULT FALSE,
-    patient_notes VARCHAR(500),
-    status VARCHAR(50) NOT NULL DEFAULT 'Pending' CHECK (status IN ('Pending', 'Ready for review', 'Approved', 'Needs information', 'Dispensed', 'Cancelled')),
-    reviewed_by_worker_id INT REFERENCES health_workers(worker_id) ON DELETE SET NULL,
-    review_notes TEXT,
-    requested_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
-);
-
 -- 7. Appointments
 CREATE TABLE appointments (
     appointment_id SERIAL PRIMARY KEY,
@@ -259,13 +225,6 @@ VALUES
 (1, 'Rural Health Unit Odiongan', 'Rural Health Unit', '9XXJ+WXX, JP Laurel St, Odiongan, Romblon', 'Odiongan', 'Romblon', 'Philippines', 12.399980, 121.981360, '+63 917 123 4567', 'Confidential HIV Testing, PrEP counseling, Primary Healthcare', 'Mon-Fri 8:00 AM - 5:00 PM', 'https://www.google.com/maps/search/?api=1&query=9XXJ%2BWXX%2C+JP+Laurel+St%2C+Odiongan%2C+Romblon'),
 (2, 'Romblon Provincial Hospital', 'Provincial Hospital', 'Liwanag, Odiongan', 'Odiongan', 'Romblon', 'Philippines', 12.405500, 121.986200, '+63 920 987 6543', 'HIV Treatment Hub, ART Dispensing, Confirmatory Testing', '24/7 Care', 'https://www.google.com/maps/search/Romblon+Provincial+Hospital+Odiongan');
 
-INSERT INTO medications (medication_id, medication_code, name, category, detail, default_dosage)
-VALUES
-(1, 'art', 'Antiretroviral therapy (ART)', 'HIV Treatment', 'HIV treatment · Take only as prescribed', '1 tablet daily'),
-(2, 'prep', 'Pre-Exposure Prophylaxis (PrEP)', 'HIV Prevention', 'HIV prevention medication · Ask a health worker', '1 tablet daily'),
-(3, 'pep', 'Post-Exposure Prophylaxis (PEP)', 'Emergency Prevention', 'Post-exposure medication · Urgent care required', '28-day course'),
-(4, 'opportunistic', 'Preventive Care Medication (OI Prophylaxis)', 'Preventive Care', 'For infection prevention · Prescription required', 'As directed');
-
 INSERT INTO support_groups (group_id, name, detail, schedule, target_audience, facilitator_worker_id, member_count)
 VALUES
 (1, 'Living Positive', 'A private, peer-support space for conversation.', 'Live moderated group chat', 'Patients', NULL, 0);
@@ -274,8 +233,7 @@ INSERT INTO platform_services (service_id, service_key, name, detail, is_enabled
 VALUES
 (1, 'testing_referrals', 'HIV testing referrals', 'Local testing and facility guidance', TRUE, 1),
 (2, 'treatment_referrals', 'Treatment referrals', 'Connect patients to treatment hubs', TRUE, 2),
-(3, 'chat_support', 'Private chat support', 'Patient to health worker messaging', TRUE, 3),
-(4, 'medication_requests', 'Medication requests', 'Treatment availability requests', TRUE, 4);
+(3, 'chat_support', 'Private chat support', 'Patient to health worker messaging', TRUE, 3);
 
 INSERT INTO system_settings (setting_key, setting_value, data_type, description)
 VALUES
@@ -289,7 +247,6 @@ VALUES
 (3, '03', 'Guest Essentials', 'Prevention is personal', 'Condoms, PrEP, PEP, and regular testing can all help.', 'Explore prevention', 3);
 
 SELECT setval('testing_facilities_facility_id_seq', (SELECT MAX(facility_id) FROM testing_facilities));
-SELECT setval('medications_medication_id_seq', (SELECT MAX(medication_id) FROM medications));
 SELECT setval('support_groups_group_id_seq', (SELECT MAX(group_id) FROM support_groups));
 SELECT setval('platform_services_service_id_seq', (SELECT MAX(service_id) FROM platform_services));
 SELECT setval('educational_resources_resource_id_seq', (SELECT MAX(resource_id) FROM educational_resources));

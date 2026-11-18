@@ -983,64 +983,6 @@ test('API chat session recovery refreshes the signed-in patient snapshot', async
   }
 });
 
-test('patient menu no longer includes a medication page or inventory details', () => {
-  db.registerUser({
-    fullName: 'Morgan Lee',
-    email: 'morgan@example.com',
-    password: 'password',
-    role: 'patient',
-  });
-
-  render(<App />);
-  signInAs('morgan@example.com', 'password');
-  expect(screen.queryByRole('button', { name: 'Medication' })).not.toBeInTheDocument();
-  expect(screen.queryByText('In stock')).not.toBeInTheDocument();
-  expect(screen.queryByText('Out of stock')).not.toBeInTheDocument();
-  expect(db.getTable('Medications').every((medication) => !('stock_status' in medication) && !('stock_quantity' in medication))).toBe(true);
-});
-
-test('patient medication requests are disabled and cannot be submitted locally', async () => {
-  const worker = db.registerUser({ fullName: 'Dr. Care Worker', email: 'eligibility.worker@example.com', password: 'password', role: 'health-worker' });
-  const patient = db.registerUser({ fullName: 'Care Patient', email: 'eligibility.patient@example.com', password: 'password', role: 'patient' });
-  db.update('Patients', patient.patient.patient_id, { assigned_worker_id: worker.worker.worker_id });
-  const medicationService = db.getTable('PlatformServices').find((service) => service.service_key === 'medication_requests');
-  db.update('PlatformServices', medicationService.service_id, { is_enabled: true });
-
-  render(<App />);
-  signInAs('eligibility.patient@example.com', 'password');
-  expect(screen.queryByRole('button', { name: 'Medication' })).not.toBeInTheDocument();
-  expect(db.requestMedication({
-    patient_id: patient.patient.patient_id,
-    medication_name: 'Antiretroviral therapy',
-  })).toMatchObject({ error: expect.stringMatching(/no longer available/i) });
-  expect(db.getTable('MedicationRequests')).toHaveLength(0);
-});
-
-test('health worker can update patient prescription and medication eligibility', async () => {
-  const worker = db.registerUser({ fullName: 'Dr. Eligibility Worker', email: 'worker.flags@example.com', password: 'password', role: 'health-worker' });
-  const patient = db.registerUser({ fullName: 'Eligibility Patient', email: 'patient.flags@example.com', password: 'password', role: 'patient' });
-  db.update('Patients', patient.patient.patient_id, { assigned_worker_id: worker.worker.worker_id });
-
-  render(<App />);
-  userEvent.selectOptions(screen.getByLabelText(/account type/i), 'health-worker');
-  signInAs('worker.flags@example.com', 'password');
-  userEvent.click(screen.getByRole('button', { name: 'Patients' }));
-  userEvent.click(await screen.findByRole('button', { name: 'Edit Care Plan' }));
-
-  const prescriptionCheckbox = screen.getByLabelText(/doctor’s prescription is on file/i);
-  const eligibilityCheckbox = screen.getByLabelText(/eligible for medication requests/i);
-  expect(eligibilityCheckbox).toBeDisabled();
-  userEvent.click(prescriptionCheckbox);
-  expect(eligibilityCheckbox).toBeEnabled();
-  userEvent.click(eligibilityCheckbox);
-  userEvent.click(screen.getByRole('button', { name: /save record/i }));
-
-  await waitFor(() => expect(db.findById('Patients', patient.patient.patient_id)).toMatchObject({
-    has_doctors_prescription: true,
-    medication_request_eligible: true,
-  }));
-});
-
 test('patient medication feature is absent from the patient navigation', () => {
   db.registerUser({ fullName: 'Medication Patient', email: 'med.patient@example.com', password: 'password', role: 'patient' });
   render(<App />);
@@ -1068,7 +1010,6 @@ test('health worker gets a care management workspace', () => {
   expect(workerProfileButton).toHaveAttribute('aria-current', 'page');
   expect(screen.getByRole('button', { name: 'Patients' })).toBeInTheDocument();
   expect(screen.getByRole('button', { name: 'Appointments' })).toBeInTheDocument();
-  expect(screen.getByRole('button', { name: 'Medications' })).toBeInTheDocument();
   userEvent.click(screen.getByRole('button', { name: 'Patients' }));
   expect(screen.getByRole('heading', { name: /patients and chats/i })).toBeInTheDocument();
   expect(screen.getByRole('button', { name: /open Dr\. Evelyn Garcia's overview/i })).not.toHaveAttribute('aria-current');
@@ -1568,8 +1509,6 @@ test('patient can view all services they have availed with their respective stat
   });
 
   const patientId = registered.patient.patient_id;
-  db.update('Patients', patientId, { has_doctors_prescription: true, medication_request_eligible: true });
-
   // Patient avails multiple services:
   db.bookAppointment({
     patient_id: patientId,
@@ -1578,14 +1517,6 @@ test('patient can view all services they have availed with their respective stat
     appointment_type: 'Comprehensive Care Consult',
     status: 'Confirmed',
   });
-
-  expect(db.requestMedication({
-    patient_id: patientId,
-    medication_name: 'Antiretroviral therapy (ART)',
-    dosage: '1 tablet daily',
-    schedule: 'Nightly at bedtime',
-    status: 'Approved',
-  })).toMatchObject({ error: expect.stringMatching(/no longer available/i) });
 
   render(<App />);
   signInAs('jordan.services@example.com', 'password123');

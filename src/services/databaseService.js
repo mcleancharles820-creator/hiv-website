@@ -14,19 +14,12 @@ const initialDatabase = {
   HealthWorkers: [],
   Patients: [],
   Appointments: [],
-  MedicationRequests: [],
   ChatSessions: [],
   ChatMessages: [],
   SupportGroupMessages: [],
   SupportGroupMembers: [],
   ActivityLogs: [],
   PublicInquiries: [],
-  Medications: [
-    { medication_id: 1, medication_code: 'art', name: 'Antiretroviral therapy', category: 'HIV Treatment', detail: 'HIV treatment · Take only as prescribed', default_dosage: 'As prescribed', prescription_needed: true, is_active: true, created_at: '2026-01-01T00:00:00Z', updated_at: '2026-01-01T00:00:00Z' },
-    { medication_id: 2, medication_code: 'prep', name: 'PrEP', category: 'HIV Prevention', detail: 'HIV prevention medication · Ask a health worker', default_dosage: '1 tablet daily', prescription_needed: true, is_active: true, created_at: '2026-01-01T00:00:00Z', updated_at: '2026-01-01T00:00:00Z' },
-    { medication_id: 3, medication_code: 'pep', name: 'PEP', category: 'Emergency Prevention', detail: 'Post-exposure medication · Urgent care required', default_dosage: '28-day course', prescription_needed: true, is_active: true, created_at: '2026-01-01T00:00:00Z', updated_at: '2026-01-01T00:00:00Z' },
-    { medication_id: 4, medication_code: 'opportunistic', name: 'Preventive care medication', category: 'Preventive Care', detail: 'For infection prevention · Prescription required', default_dosage: 'As directed', prescription_needed: true, is_active: true, created_at: '2026-01-01T00:00:00Z', updated_at: '2026-01-01T00:00:00Z' }
-  ],
   TestingFacilities: [
     { facility_id: 1, name: 'Rural Health Unit', facility_type: 'Rural Health Unit', address: '9XXJ+WXX, JP Laurel St, Odiongan, Romblon', city: 'Odiongan', province: 'Romblon', country: 'Philippines', latitude: 12.399980, longitude: 121.981360, contact_phone: '+63 917 123 4567', services_offered: 'Confidential HIV Testing, PrEP counseling', operating_hours: 'Mon-Fri 8:00 AM - 5:00 PM', maps_url: 'https://www.google.com/maps/search/?api=1&query=9XXJ%2BWXX%2C+JP+Laurel+St%2C+Odiongan%2C+Romblon', is_active: true, created_at: '2026-01-01T00:00:00Z' },
     { facility_id: 2, name: 'Romblon Provincial Hospital', facility_type: 'Provincial Hospital', address: 'Liwanag, Odiongan', city: 'Odiongan', province: 'Romblon', country: 'Philippines', latitude: 12.405500, longitude: 121.986200, contact_phone: '+63 920 987 6543', services_offered: 'HIV Treatment Hub, ART Dispensing, Confirmatory Testing', operating_hours: '24/7 Care', maps_url: 'https://www.google.com/maps/search/Romblon+Provincial+Hospital+Odiongan', is_active: true, created_at: '2026-01-01T00:00:00Z' }
@@ -38,7 +31,6 @@ const initialDatabase = {
     { service_id: 1, service_key: 'testing_referrals', name: 'HIV testing referrals', detail: 'Local testing and facility guidance', is_enabled: true, display_order: 1, updated_at: '2026-01-01T00:00:00Z' },
     { service_id: 2, service_key: 'treatment_referrals', name: 'Treatment referrals', detail: 'Connect patients to treatment hubs', is_enabled: true, display_order: 2, updated_at: '2026-01-01T00:00:00Z' },
     { service_id: 3, service_key: 'chat_support', name: 'Private chat support', detail: 'Patient to health worker messaging', is_enabled: true, display_order: 3, updated_at: '2026-01-01T00:00:00Z' },
-    { service_id: 4, service_key: 'medication_requests', name: 'Medication requests', detail: 'Treatment availability requests', is_enabled: true, display_order: 4, updated_at: '2026-01-01T00:00:00Z' }
   ],
   SystemSettings: [
     { setting_key: 'platform_name', setting_value: 'HIVeLink', data_type: 'string', description: 'Platform brand name', updated_at: '2026-01-01T00:00:00Z' },
@@ -742,13 +734,6 @@ class DatabaseService {
   }
 
   /**
-   * Medication Request Operations
-   */
-  requestMedication() {
-    return { error: 'Patient medication requests are no longer available.' };
-  }
-
-  /**
    * Chat Operations
    */
   async ensurePatientChatSession(patientId, preferredSessionId) {
@@ -824,7 +809,6 @@ class DatabaseService {
     const workerUser = worker ? this.findById('Users', worker.user_id) : null;
     const facility = patient.preferred_facility_id ? this.findById('TestingFacilities', patient.preferred_facility_id) : null;
     const appointments = this.getTable('Appointments').filter((a) => a.patient_id === patient.patient_id);
-    const medicationRequests = this.getTable('MedicationRequests').filter((m) => m.patient_id === patient.patient_id);
     const chatSessions = this.getTable('ChatSessions').filter((c) => c.patient_id === patient.patient_id);
     const memberships = this.getTable('SupportGroupMembers').filter((sgm) => sgm.patient_id === patient.patient_id);
     const supportGroups = memberships.map((m) => this.findById('SupportGroups', m.group_id)).filter(Boolean);
@@ -835,7 +819,6 @@ class DatabaseService {
       assignedWorker: worker ? { ...worker, user: workerUser } : null,
       preferredFacility: facility,
       appointments,
-      medicationRequests,
       chatSessions,
       supportGroups,
     };
@@ -854,7 +837,6 @@ class DatabaseService {
         patientId: null,
         totalCount: 0,
         appointments: [],
-        medicationRequests: [],
         chatSessions: [],
         supportGroups: [],
         servicesList: [],
@@ -872,17 +854,6 @@ class DatabaseService {
           ...a,
           facilityName: facility?.name || 'Local Health Facility',
           workerName: workerUser?.full_name || 'Assigned Health Worker',
-        };
-      });
-
-    const medicationRequests = this.getTable('MedicationRequests')
-      .filter((m) => m.patient_id === patientId)
-      .map((m) => {
-        const worker = m.reviewed_by_worker_id ? this.findById('HealthWorkers', m.reviewed_by_worker_id) : null;
-        const workerUser = worker ? this.findById('Users', worker.user_id) : null;
-        return {
-          ...m,
-          reviewedByWorkerName: workerUser?.full_name || null,
         };
       });
 
@@ -925,18 +896,6 @@ class DatabaseService {
         details: `Assigned: ${a.workerName} · Facility: ${a.facilityName}`,
         raw: a,
       })),
-      ...medicationRequests.map((m) => ({
-        id: `med-${m.request_id}`,
-        category: 'Medication & Treatment',
-        type: 'Medication Request',
-        name: m.medication_name,
-        date: m.requested_at ? m.requested_at.slice(0, 10) : 'Recent',
-        time: m.dosage || 'Prescribed dose',
-        status: m.status || 'Pending',
-        statusType: (m.status === 'Approved' || m.status === 'Dispensed') ? 'success' : m.status === 'Needs information' ? 'info' : 'warning',
-        details: `Dosage: ${m.dosage || 'As prescribed'} · Schedule: ${m.schedule || 'Regular'}`,
-        raw: m,
-      })),
       ...chatSessions.map((c) => ({
         id: `chat-${c.chat_session_id}`,
         category: 'Confidential Support Chat',
@@ -967,7 +926,6 @@ class DatabaseService {
       patientId,
       totalCount: servicesList.length,
       appointments,
-      medicationRequests,
       chatSessions,
       supportGroups,
       servicesList,
@@ -1003,8 +961,6 @@ class DatabaseService {
           gender: u.gender || 'Not specified',
           accountStatus: u.is_active !== false ? 'Active' : 'Inactive',
           careStatus: patient?.care_status || 'Active care plan',
-          hasDoctorsPrescription: patient?.has_doctors_prescription === true,
-          medicationRequestEligible: patient?.medication_request_eligible === true,
           medicalNotes: patient?.medical_notes || 'No medical notes provided.',
           emergencyContact: patient?.emergency_contact || 'None',
           emergencyPhone: patient?.emergency_phone || 'None',
@@ -1182,7 +1138,6 @@ class DatabaseService {
     if (patient) {
       const pid = patient.patient_id;
       this.data.Appointments = (this.data.Appointments || []).filter((a) => a.patient_id !== pid);
-      this.data.MedicationRequests = (this.data.MedicationRequests || []).filter((m) => m.patient_id !== pid);
 
       const sessionIds = (this.data.ChatSessions || []).filter((c) => c.patient_id === pid).map((c) => c.chat_session_id);
       this.data.ChatMessages = (this.data.ChatMessages || []).filter((m) => !sessionIds.includes(m.chat_session_id));
@@ -1394,13 +1349,6 @@ class DatabaseService {
     const assignedPatients = this.getTable('Patients')
       .filter((p) => p.assigned_worker_id === workerId)
       .map((p) => ({ ...p, user: this.findById('Users', p.user_id) }));
-    const medicationRequests = this.getTable('MedicationRequests')
-      .filter((mr) => mr.reviewed_by_worker_id === workerId || mr.status === 'Pending')
-      .map((mr) => {
-        const patient = this.findById('Patients', mr.patient_id);
-        const patientUser = patient ? this.findById('Users', patient.user_id) : null;
-        return { ...mr, patientName: patientUser?.uic || 'Patient UIC unavailable' };
-      });
     const appointments = this.getTable('Appointments')
       .filter((a) => a.worker_id === workerId)
       .map((a) => {
@@ -1413,7 +1361,6 @@ class DatabaseService {
     return {
       worker: { ...worker, user },
       assignedPatients,
-      medicationRequests,
       appointments,
       groups,
     };

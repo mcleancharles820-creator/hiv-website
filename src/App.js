@@ -892,9 +892,9 @@ function AuthScreen({ onEnter, onPasswordRecoveryComplete }) {
             <p><strong>Availability and changes.</strong> Features may change or be unavailable. Information on the site may not always reflect current clinic schedules or local guidance; confirm these directly with a health professional or facility.</p>
             <p><strong>Questions.</strong> For account or service questions, contact the organization operating HIVeLink. These terms are a plain-language service notice and are not a substitute for legal advice or a complete legal agreement.</p>
           </div> : <div className="legal-copy">
-            <p><strong>Information we collect.</strong> Depending on how you use HIVeLink, this can include your name, email, contact details, date of birth, account credentials, appointment and medication requests, messages, and information you choose to share with a health worker.</p>
+            <p><strong>Information we collect.</strong> Depending on how you use HIVeLink, this can include your name, email, contact details, date of birth, account credentials, appointment requests, messages, and information you choose to share with a health worker.</p>
             <p><strong>How it is used.</strong> Information is used to create and secure your account, provide requested platform features, coordinate support, and maintain service operations. Do not enter information you are not comfortable sharing.</p>
-            <p><strong>Email notifications.</strong> HIVeLink may email your registered address about account setup, appointment or medication request status, or a new private-chat message. Chat message text and clinical notes are not included in those automatic notifications. Administrators may also send account-related messages to the email address on file.</p>
+            <p><strong>Email notifications.</strong> HIVeLink may email your registered address about account setup, appointment status, or a new private-chat message. Chat message text and clinical notes are not included in those automatic notifications. Administrators may also send account-related messages to the email address on file.</p>
             <p><strong>Storage and access.</strong> When the production API is configured, account and service records are stored in the operator’s database and can be accessed by authorized staff according to their role. Administrators and assigned health workers may see information needed for their responsibilities.</p>
             <p><strong>Security and limits.</strong> Reasonable technical safeguards are used, but no internet service can guarantee absolute security. Do not use this site for emergency communication. Contact the operator promptly if you suspect unauthorized access.</p>
             <p><strong>Your choices.</strong> You may choose what information to provide, except fields required for an account or feature. To request access, correction, or deletion, contact the organization operating HIVeLink.</p>
@@ -935,10 +935,10 @@ function StatusBadge({ status, type, label }) {
   );
 }
 
-function ServicesAvailedView({ servicesAvailed, emptyMessage = 'No services availed yet.', includeMedications = false }) {
+function ServicesAvailedView({ servicesAvailed, emptyMessage = 'No services availed yet.' }) {
   const [filterCategory, setFilterCategory] = useState('all');
 
-  const allServices = (servicesAvailed?.servicesList || []).filter((service) => includeMedications || !service.category.includes('Medication'));
+  const allServices = servicesAvailed?.servicesList || [];
   const appointmentsCount = servicesAvailed?.appointments?.length || 0;
   const chatsCount = servicesAvailed?.chatSessions?.length || 0;
   const groupsCount = servicesAvailed?.supportGroups?.length || 0;
@@ -1109,7 +1109,7 @@ function PatientDashboard({ currentUser, currentPatient, onPublicHub, onSignOut 
   };
 
   const servicesAvailed = db.getUserServicesAvailed(activeUserId || activePatientId);
-  const patientServicesCount = (servicesAvailed.servicesList || []).filter((service) => !service.category.includes('Medication')).length;
+  const patientServicesCount = servicesAvailed.servicesList?.length || 0;
 
   const isTestingEnabled = db.getTable('PlatformServices').find((s) => s.service_key === 'testing_referrals')?.is_enabled ?? true;
   const isTreatmentEnabled = db.getTable('PlatformServices').find((s) => s.service_key === 'treatment_referrals')?.is_enabled ?? true;
@@ -1382,7 +1382,7 @@ function PatientForm({ data, onClose, onSave }) {
   const fields = record.type === 'profile'
     ? [['name', 'Full name', 'text', 'Your full name'], ['email', 'Email address', 'email', 'you@example.com'], ['phone', 'Contact number', 'tel', 'Your contact number'], ['gender', 'Gender', 'select']]
     : record.type === 'worker-patient'
-      ? (db.useApi ? [['detail', 'Care details', 'text', 'Care plan details'], ['hasDoctorsPrescription', 'Doctor’s prescription is on file', 'checkbox'], ['medicationRequestEligible', 'Eligible for medication requests', 'checkbox']] : [['name', 'Patient name', 'text', 'Patient full name'], ['detail', 'Care details', 'text', 'Care plan details'], ['hasDoctorsPrescription', 'Doctor’s prescription is on file', 'checkbox'], ['medicationRequestEligible', 'Eligible for medication requests', 'checkbox']])
+      ? (db.useApi ? [['detail', 'Care details', 'text', 'Care plan details']] : [['name', 'Patient name', 'text', 'Patient full name'], ['detail', 'Care details', 'text', 'Care plan details']])
       : [['subject', 'Subject', 'text', 'Subject'], ['preview', 'Message', 'text', 'Write a message...']];
 
   return (
@@ -1410,7 +1410,6 @@ function PatientForm({ data, onClose, onSave }) {
                 step={key === 'quantity' ? 1 : undefined}
                 maxLength={type === 'text' ? 150 : undefined}
                 checked={type === 'checkbox' ? Boolean(record[key]) : undefined}
-                disabled={key === 'medicationRequestEligible' && !record.hasDoctorsPrescription}
                 value={type === 'checkbox' ? undefined : (record[key] ?? '')}
                 placeholder={placeholder}
                 onChange={(event) => {
@@ -1422,13 +1421,12 @@ function PatientForm({ data, onClose, onSave }) {
                   setRecord({
                     ...record,
                     [key]: checked,
-                    ...(key === 'hasDoctorsPrescription' && !checked ? { medicationRequestEligible: false } : {}),
                   });
                 }}
               />}
             </label>
           ))}
-          <button className="primary-button" type="submit" disabled={saving}>{saving ? 'Saving…' : (record.type === 'medication' ? 'Submit' : 'Save record')} <span>↗</span></button>
+          <button className="primary-button" type="submit" disabled={saving}>{saving ? 'Saving…' : 'Save record'} <span>↗</span></button>
         </form>
       </div>
     </div>
@@ -1482,7 +1480,7 @@ function AdminUserDetailModal({ user, onClose, onEdit, onDelete, canDelete = tru
         </div>
 
         {activeTab === 'services' && (
-          <ServicesAvailedView servicesAvailed={servicesAvailed} emptyMessage="This user has not availed any platform services yet." includeMedications />
+          <ServicesAvailedView servicesAvailed={servicesAvailed} emptyMessage="This user has not availed any platform services yet." />
         )}
 
         {activeTab === 'overview' && (
@@ -2036,24 +2034,6 @@ function HealthWorkerDashboard({ currentUser, currentWorker, onPublicHub, onSign
     };
   }, [page, workerRecord.worker_id]);
 
-  const requests = db.getTable('MedicationRequests')
-    .filter((request) => assignedPatientIds.has(Number(request.patient_id)))
-    .map((r) => {
-      const p = db.findById('Patients', r.patient_id);
-      const u = p ? db.findById('Users', p.user_id) : null;
-      return {
-        id: r.request_id,
-        patient: u?.uic || 'Patient UIC unavailable',
-        medication: r.medication_name,
-        status: r.status,
-        dosage: r.dosage,
-        schedule: r.schedule,
-        quantity: r.quantity_requested,
-        isRefill: r.is_refill,
-        notes: r.patient_notes,
-      };
-    });
-
   const appointments = db.getTable('Appointments')
     .filter((appointment) => assignedPatientIds.has(Number(appointment.patient_id)))
     .map((a) => {
@@ -2078,27 +2058,12 @@ function HealthWorkerDashboard({ currentUser, currentWorker, onPublicHub, onSign
     : [];
 
   const navigate = (nextPage) => { setPage(nextPage); scrollPageToTop(); };
-  const updateRequest = async (id, status) => {
-    const result = await db.update('MedicationRequests', id, { status });
-    if (result?.error || db.useApi) return result;
-    db.insert('ActivityLogs', {
-      actor_user_id: workerUser.user_id || null,
-      actor_name: workerUser.uic || 'Health Worker',
-      action: `Updated medication request: ${status}`,
-      category: 'Medication Requests',
-      details: `Medication request #${id} status changed to ${status}.`,
-    });
-    return result;
-  };
   const savePatient = async (patient) => {
     if (patient.id || patient.patient_id || patient.userId) {
       const pid = patient.patient_id || patient.id;
-      const hasDoctorsPrescription = Boolean(patient.hasDoctorsPrescription);
       const result = await db.update('Patients', pid, {
         care_status: patient.status || patient.careStatus || 'Stable',
         medical_notes: patient.detail || patient.medicalNotes,
-        has_doctors_prescription: hasDoctorsPrescription,
-        medication_request_eligible: hasDoctorsPrescription && Boolean(patient.medicationRequestEligible),
       });
       if (result?.error) return result;
       if (!db.useApi && (patient.user_id || patient.userId)) db.update('Users', patient.user_id || patient.userId, { full_name: patient.name || patient.fullName });
@@ -2127,13 +2092,12 @@ function HealthWorkerDashboard({ currentUser, currentWorker, onPublicHub, onSign
   const latestMessage = db.getTable('ChatMessages').filter((m) => m.sender_role === 'patient').at(-1)?.message_text || '';
 
   const content = {
-    overview: <><p className="eyebrow"><span className="pulse-dot" /> Health worker overview</p><h1>Care that<br /><i>connects.</i></h1><p className="dashboard-intro">Support patients with trusted information, treatment follow-up, and compassionate care.</p><div className="dashboard-tiles worker-tiles"><DashboardTile label="Patients needing care" value={`${workerPatients.length} active`} detail="View patient support" /><DashboardTile label="Medication requests" value={`${requests.filter((r) => r.status === 'Pending').length} pending`} detail="Review requests" /><DashboardTile label="Today’s appointments" value={`${appointments.length} scheduled`} detail="Open schedule" /><DashboardTile label="Support group" value={supportGroup ? '1 configured' : 'Unavailable'} detail="Supervise the group chat" /></div><h2 className="quick-heading">Quick actions</h2><div className="care-grid"><PatientAction title="Open patient chats" text="Respond to confidential patient questions." action={() => navigate('chat')} /><PatientAction title="Review medication" text="Process medication requests and updates." action={() => navigate('medications')} /><PatientAction title="Manage appointments" text="Confirm and organize patient visits." action={() => navigate('appointments')} /></div></>,
+    overview: <><p className="eyebrow"><span className="pulse-dot" /> Health worker overview</p><h1>Care that<br /><i>connects.</i></h1><p className="dashboard-intro">Support patients with trusted information, treatment follow-up, and compassionate care.</p><div className="dashboard-tiles worker-tiles"><DashboardTile label="Patients needing care" value={`${workerPatients.length} active`} detail="View patient support" /><DashboardTile label="Today’s appointments" value={`${appointments.length} scheduled`} detail="Open schedule" /><DashboardTile label="Support group" value={supportGroup ? '1 configured' : 'Unavailable'} detail="Supervise the group chat" /></div><h2 className="quick-heading">Quick actions</h2><div className="care-grid"><PatientAction title="Open patient chats" text="Respond to confidential patient questions." action={() => navigate('chat')} /><PatientAction title="Manage appointments" text="Confirm and organize patient visits." action={() => navigate('appointments')} /></div></>,
     chat: <PagePanel eyebrow="Private patient support" title={<>Conversation<br /><i>inbox.</i></>}><HealthWorkerChatInbox userId={workerUser.user_id} /></PagePanel>,
     patientsChats: <PagePanel eyebrow="Patient care and private support" title={<>Patients and<br /><i>chats.</i></>}>
       {assignmentNotice && <p className="form-status" role="status">{assignmentNotice}</p>}
       {claimablePatients.length > 0 && <section className="claimable-patients" aria-labelledby="claimable-heading"><div className="claimable-heading"><div><p className="eyebrow">Matching facility</p><h2 id="claimable-heading">Available patients</h2></div><span>{claimablePatients.length} unassigned</span></div><div className="worker-list">{claimablePatients.map((patient) => <article key={patient.patient_id}><div><strong>UIC {patient.uic || 'Unavailable'}</strong><span>{patient.care_status || 'Active care plan'}</span></div><button className="admin-btn admin-btn-primary" type="button" onClick={() => claimPatient(patient)}>Assign to me</button></article>)}</div></section>}
-      <h2 className="quick-heading">Assigned patients</h2><div className="worker-list">{workerPatients.map((patient) => <article key={patient.userId || patient.id}><div><strong>UIC {patient.uic || 'Unavailable'}</strong><span>{patient.medicalNotes || patient.detail}{patient.userId === 1 && latestMessage ? ` · “${latestMessage}”` : ''} · <strong style={{ color: 'var(--coral)', fontWeight: 400 }}>{patient.servicesAvailedCount || 0} services availed</strong></span><span>Doctor’s prescription: {patient.hasDoctorsPrescription ? 'On file' : 'Not recorded'} · Medication request eligibility: {patient.medicationRequestEligible ? 'Eligible' : 'Not eligible'}</span></div><div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}><StatusBadge status={patient.careStatus || patient.status} /><StatusBadge status={patient.accountStatus || 'Active'} /></div><div className="worker-actions"><button type="button" className="card-link" onClick={() => setInspectingUser(patient)}>View Services ↗</button><button className="card-link" onClick={() => setPatientEditor({ type: 'worker-patient', ...patient, id: patient.patientId, user_id: patient.userId, name: patient.uic })}>Edit Care Plan</button></div></article>)}</div>{!workerPatients.length && <p className="empty-records">No patients are currently assigned to you.</p>}</PagePanel>,
-    medications: <PagePanel eyebrow="Treatment support" title={<>Medication<br /><i>requests.</i></>}><div className="worker-list">{requests.map((request) => <article key={request.id}><div><strong>{request.medication}</strong><span>Requested by {request.patient} · {request.dosage} · {request.schedule} · Quantity: {request.quantity ?? 30}{request.isRefill ? ' · Refill' : ''}</span>{request.notes && <span>Patient note: {request.notes}</span>}</div><StatusBadge status={request.status} /><div className="worker-actions"><button className="card-link" onClick={() => updateRequest(request.id, 'Approved')}>Approve</button><button className="card-link" onClick={() => updateRequest(request.id, 'Needs information')}>Request info</button></div></article>)}</div>{!requests.length && <p className="empty-records">Medication requests from your assigned patients will appear here. Assign the patient to your care team to review their request.</p>}</PagePanel>,
+      <h2 className="quick-heading">Assigned patients</h2><div className="worker-list">{workerPatients.map((patient) => <article key={patient.userId || patient.id}><div><strong>UIC {patient.uic || 'Unavailable'}</strong><span>{patient.medicalNotes || patient.detail}{patient.userId === 1 && latestMessage ? ` · “${latestMessage}”` : ''} · <strong style={{ color: 'var(--coral)', fontWeight: 400 }}>{patient.servicesAvailedCount || 0} services availed</strong></span></div><div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}><StatusBadge status={patient.careStatus || patient.status} /><StatusBadge status={patient.accountStatus || 'Active'} /></div><div className="worker-actions"><button type="button" className="card-link" onClick={() => setInspectingUser(patient)}>View Services ↗</button><button className="card-link" onClick={() => setPatientEditor({ type: 'worker-patient', ...patient, id: patient.patientId, user_id: patient.userId, name: patient.uic })}>Edit Care Plan</button></div></article>)}</div>{!workerPatients.length && <p className="empty-records">No patients are currently assigned to you.</p>}</PagePanel>,
     appointments: <PagePanel eyebrow="Care schedule" title={<>Manage<br /><i>appointments.</i></>}><div className="worker-list">{appointments.map((appointment) => {
           const status = String(appointment.status || 'Requested');
           return <article key={appointment.id}><div><strong>UIC {appointment.patient}</strong><span>{appointment.date} · {formatAppointmentTime(appointment.time)} · {appointment.type} ({appointment.facilityName})</span>{appointment.notes && <small className="appointment-worker-note">Patient note: {appointment.notes}</small>}</div><StatusBadge status={status} /><span className="appointment-locked-note">Appointment requests are processed by an administrator.</span></article>;
@@ -2146,7 +2110,7 @@ function HealthWorkerDashboard({ currentUser, currentWorker, onPublicHub, onSign
       <div className="topline"><span>WORLD AIDS DAY IS EVERY DAY</span><span className="topline-detail">Information. Care. Community.</span></div>
       <header className="site-header user-header patient-header">
         <button className="brand brand-button" onClick={() => navigate('overview')} aria-label="HIVeLink home"><span>HIVeLink</span></button>
-        <nav className="nav-links worker-nav" aria-label="Health worker navigation">{[['patientsChats', 'Patients'], ['chat', 'Chats'], ['appointments', 'Appointments'], ['medications', 'Medications'], ['groups', 'Groups']].map(([key, label]) => <button className={`guest-nav-link ${page === key ? 'active' : ''}`} key={key} onClick={() => navigate(key)}>{label}</button>)}</nav>
+        <nav className="nav-links worker-nav" aria-label="Health worker navigation">{[['patientsChats', 'Patients'], ['chat', 'Chats'], ['appointments', 'Appointments'], ['groups', 'Groups']].map(([key, label]) => <button className={`guest-nav-link ${page === key ? 'active' : ''}`} key={key} onClick={() => navigate(key)}>{label}</button>)}</nav>
         <div className="patient-header-actions">
           <StatusBadge status={workerRecord.is_available ? 'Available' : 'On Leave'} />
           <button type="button" className="text-button" style={{ fontSize: '10px' }} onClick={toggleAvailability}>Toggle {workerRecord.is_available ? 'On Leave' : 'Available'}</button>
@@ -2422,7 +2386,7 @@ function AdminDashboard({ onPublicHub, onSignOut }) {
 
                 <div className="admin-entity-footer">
                   <span className="admin-services-summary-pill">
-                    <strong>{user.servicesAvailedCount}</strong> services availed ({user.servicesAvailed?.appointments?.length || 0} apts · {user.servicesAvailed?.medicationRequests?.length || 0} meds · {user.servicesAvailed?.chatSessions?.length || 0} chats · {user.servicesAvailed?.supportGroups?.length || 0} groups)
+                    <strong>{user.servicesAvailedCount}</strong> services availed ({user.servicesAvailed?.appointments?.length || 0} appointments · {user.servicesAvailed?.chatSessions?.length || 0} chats · {user.servicesAvailed?.supportGroups?.length || 0} groups)
                   </span>
                   <div className="admin-card-actions">
                     <button type="button" className="admin-btn" onClick={() => setActiveModal({ type: 'view-user', user })}>View Details & Services ↗</button>
