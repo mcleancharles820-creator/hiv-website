@@ -1342,7 +1342,7 @@ module.exports = async function handler(req, res) {
           const userFields = { fullName: 'full_name', email: 'email', contactNumber: 'contact_number', isActive: 'is_active', age: 'age', dateOfBirth: 'date_of_birth', gender: 'gender' };
           if (body.gender !== undefined && !isAllowedGender(body.gender, isWorker ? 'health-worker' : 'patient')) {
             await client.query('ROLLBACK');
-            return send(res, 400, { error: isWorker ? 'Choose Male or Female for health worker gender.' : 'Choose Male, Female, or Other for gender.' });
+            return send(res, 400, { error: isWorker ? 'Choose Male or Female for health worker gender.' : 'Choose a valid gender option.' });
           }
           if (body.email !== undefined && String(body.email).trim().toLowerCase() !== profile.rows[0].email) {
             await client.query('ROLLBACK');

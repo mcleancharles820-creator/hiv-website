@@ -83,11 +83,12 @@ Production builds use the Vercel functions in `api/` instead of browser `localSt
 10. Run `api/migrations/008_update_odiongan_rhu_location.sql` to update the Odiongan Rural Health Unit address and coordinates in an existing database.
 11. Run `api/migrations/010_patient_uic.sql` to assign unique UICs and birth-order values to existing accounts. Existing accounts without a date of birth use their account creation date when migrated.
 12. Run `api/migrations/011_remove_medication_inventory.sql` to remove medication stock and request-availability columns.
-13. Run `api/migrations/012_self_described_gender.sql` to allow the self-described gender option and replace activity-log actor names with UICs where the account still exists.
-14. Copy the PostgreSQL connection string from Supabase. Use a connection pooler URL supported by Vercel and include `sslmode=require`.
-15. Create a long random session secret (at least 32 characters). Do not commit it or put it in React source.
-16. In Supabase Dashboard > Authentication > Providers > Email, enable email confirmations. Under URL Configuration, set the Site URL to the deployed app and allow that URL under Redirect URLs; password recovery redirects to the app root with `?password-reset=1`.
-17. Supabase's built-in email service needs no custom domain and is suitable for capstone testing, but it is rate-limited and may only deliver to authorized/verified addresses in the Supabase organization. To verify arbitrary recipients, configure a custom SMTP provider.
+13. Run `api/migrations/012_self_described_gender.sql` to retain existing gender values and replace activity-log actor names with UICs where the account still exists.
+14. Run `api/migrations/013_lgbt_gender_option.sql` to allow the LGBT patient gender option while retaining existing stored gender values.
+15. Copy the PostgreSQL connection string from Supabase. Use a connection pooler URL supported by Vercel and include `sslmode=require`.
+16. Create a long random session secret (at least 32 characters). Do not commit it or put it in React source.
+17. In Supabase Dashboard > Authentication > Providers > Email, enable email confirmations. Under URL Configuration, set the Site URL to the deployed app and allow that URL under Redirect URLs; password recovery redirects to the app root with `?password-reset=1`.
+18. Supabase's built-in email service needs no custom domain and is suitable for capstone testing, but it is rate-limited and may only deliver to authorized/verified addresses in the Supabase organization. To verify arbitrary recipients, configure a custom SMTP provider.
 
 ### Vercel setup
 
@@ -107,9 +108,11 @@ Deploy, then check `/api/health`; it should return `{"status":"ok"}`. New public
 
 ### Medication inventory removal and appointment requests
 
-For an existing database, apply migrations `010_patient_uic.sql`, `011_remove_medication_inventory.sql`, and `012_self_described_gender.sql` in order before deploying code that requires the new schema. New databases already include these changes in `api/schema.sql`. Patient medication-request screens and writes are disabled; historical records and staff workflows remain available, but stock and availability details are removed.
+For an existing database, apply migrations `010_patient_uic.sql`, `011_remove_medication_inventory.sql`, `012_self_described_gender.sql`, and `013_lgbt_gender_option.sql` in order before deploying code that requires the new schema. New databases already include these changes in `api/schema.sql`. Patient medication-request screens and writes are disabled; historical records and staff workflows remain available, but stock and availability details are removed.
 
 After the migrations succeed, deploy the updated repository to Vercel (push the change to the connected Git branch or use the Vercel dashboard's redeploy action). Check `/api/health`, register a test patient with a date of birth and birth order, save the displayed UIC, and verify sign-in with that UIC and password. Submit a patient appointment request and confirm that it appears in the Admin appointment queue for confirmation, cancellation, or rescheduling. Configure `RESEND_API_KEY` and `EMAIL_FROM` if administrator email alerts are required; appointment requests are stored in the shared database regardless.
+
+The public information page includes linked educational video and image cards. Images open an in-page preview with a link to the source organization; video cards open the educational video search in a new tab.
 
 Chat Realtime uses authenticated Postgres Changes with row-level security. Patients receive changes only for their own private chat; workers only for assigned chats. The support-group conversation uses a separate alias-only message table: active members and the currently designated verified supervisor can read it, writes go through the API, and administrators do not receive group-message content. Patients can join with a chosen alias and leave at any time; after leaving, the API and RLS no longer return the conversation. Messages are retained for remaining members and supervisor moderation, so this is access control—not end-to-end encryption or a promise of anonymity. Do not share identifying or urgent medical details in the group; use private care channels for those.
 

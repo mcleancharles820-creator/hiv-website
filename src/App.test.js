@@ -127,7 +127,7 @@ test('shows all requested registration fields', () => {
   expect(screen.getByLabelText(/birth order in family/i)).toBeRequired();
   const signupGender = screen.getByLabelText(/^gender/i);
   expect(signupGender).toBeRequired();
-  expect(Array.from(signupGender.options).map((option) => option.text)).toEqual(['Select an option', 'Male', 'Female', 'Non-binary', 'Self-described', 'Prefer not to say']);
+  expect(Array.from(signupGender.options).map((option) => option.text)).toEqual(['Select an option', 'Male', 'Female', 'Other', 'LGBT', 'Prefer not to say']);
   expect(screen.getByLabelText(/^password$/i)).toBeInTheDocument();
   expect(screen.getByLabelText(/confirm password/i)).toBeInTheDocument();
   expect(screen.getByLabelText(/contact number/i)).toBeInTheDocument();
@@ -174,8 +174,9 @@ test('gender validation matches patient and health-worker account choices', () =
   expect(isAllowedGender('Male', 'patient')).toBe(true);
   expect(isAllowedGender('Female', 'patient')).toBe(true);
   expect(isAllowedGender('Other', 'patient')).toBe(true);
-  expect(isAllowedGender('Non-binary', 'patient')).toBe(true);
-  expect(isAllowedGender('Self-described', 'patient')).toBe(true);
+  expect(isAllowedGender('LGBT', 'patient')).toBe(true);
+  expect(isAllowedGender('Non-binary', 'patient')).toBe(false);
+  expect(isAllowedGender('Self-described', 'patient')).toBe(false);
   expect(isAllowedGender('Prefer not to say', 'patient')).toBe(true);
   expect(isAllowedGender('Other', 'health-worker')).toBe(false);
   expect(isAllowedGender('Woman', 'patient')).toBe(false);
@@ -185,6 +186,19 @@ test('server name validation requires each name and respects the users.full_name
   expect(getFullNameFromParts({ firstName: ' Ada ', middleName: 'Marie', lastName: 'Lovelace ' })).toEqual({ fullName: 'Ada Marie Lovelace' });
   expect(getFullNameFromParts({ firstName: 'Ada', middleName: ' ', lastName: 'Lovelace' }).error).toMatch(/first, middle, and last names are required/i);
   expect(getFullNameFromParts({ firstName: 'Ada', middleName: 'Marie', lastName: 'L'.repeat(150) }).error).toMatch(/150 characters or fewer/i);
+});
+
+test('promotional image cards open an interactive image preview with a source link', () => {
+  render(<App />);
+  userEvent.click(screen.getByRole('button', { name: /continue as guest/i }));
+
+  userEvent.click(screen.getByRole('link', { name: /explore treatment information: treatment works/i }));
+
+  const preview = screen.getByRole('dialog', { name: /treatment works/i });
+  expect(within(preview).getByRole('img', { name: /treatment works/i })).toHaveAttribute('src', '/promotional-treatment.svg');
+  expect(within(preview).getByRole('link', { name: /explore treatment information/i })).toHaveAttribute('href', 'https://www.who.int/news-room/fact-sheets/detail/hiv-aids');
+  userEvent.click(within(preview).getByRole('button', { name: /close image preview/i }));
+  expect(screen.queryByRole('dialog', { name: /treatment works/i })).not.toBeInTheDocument();
 });
 
 test('registration services send all three name parts and never send password confirmation', async () => {
@@ -1203,11 +1217,11 @@ test('patient can update gender from their care dashboard profile form', async (
   signInAs('gender.profile@example.com', 'securePassword123');
   userEvent.click(screen.getByRole('button', { name: /open uic .* care dashboard/i }));
   userEvent.click(screen.getByRole('button', { name: 'Open Edit profile' }));
-  userEvent.selectOptions(screen.getByLabelText(/^gender$/i), 'Self-described');
+  userEvent.selectOptions(screen.getByLabelText(/^gender$/i), 'LGBT');
   userEvent.click(screen.getByRole('button', { name: /save record/i }));
 
   await waitFor(() => {
-    expect(db.findById('Users', registered.user.user_id).gender).toBe('Self-described');
+    expect(db.findById('Users', registered.user.user_id).gender).toBe('LGBT');
   });
 });
 
@@ -1291,7 +1305,7 @@ test('admin can perform full CRUD on users, see full user info, and inspect avai
   userEvent.click(screen.getByRole('button', { name: /^add user/i }));
   expect(screen.getByRole('heading', { name: /add new user/i })).toBeInTheDocument();
   const patientGender = screen.getByLabelText(/^gender$/i);
-  expect(Array.from(patientGender.options).map((option) => option.text)).toEqual(['Male', 'Female', 'Other', 'Non-binary', 'Self-described', 'Prefer not to say']);
+  expect(Array.from(patientGender.options).map((option) => option.text)).toEqual(['Male', 'Female', 'Other', 'LGBT', 'Prefer not to say']);
   userEvent.selectOptions(patientGender, 'Other');
 
   userEvent.type(screen.getByLabelText(/first name/i), 'Alex');

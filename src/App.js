@@ -27,7 +27,9 @@ function normalizeGender(value) {
   return ({
     Woman: 'Female',
     Man: 'Male',
-    'Self-describe': 'Self-described',
+    'Non-binary': 'Other',
+    'Self-describe': 'Other',
+    'Self-described': 'Other',
   })[value] || value || '';
 }
 
@@ -106,6 +108,66 @@ const promotionalContent = [
     action: 'Explore prevention options',
   },
 ];
+
+function PromotionalMediaGallery() {
+  const [activePromo, setActivePromo] = useState(null);
+
+  useEffect(() => {
+    if (!activePromo) return undefined;
+    const closeOnEscape = (event) => {
+      if (event.key === 'Escape') setActivePromo(null);
+    };
+    window.addEventListener('keydown', closeOnEscape);
+    return () => window.removeEventListener('keydown', closeOnEscape);
+  }, [activePromo]);
+
+  return (
+    <section className="promo-section" aria-labelledby="promo-heading">
+      <div className="section-heading">
+        <p className="eyebrow">Watch, learn, share</p>
+        <h2 id="promo-heading">Stories that<br /><i>move us forward.</i></h2>
+        <p>Explore shareable HIV awareness videos and visual stories from trusted health organizations.</p>
+      </div>
+      <div className="promo-media-grid">
+        {promotionalContent.map((item) => (
+          <a
+            className="promo-media-card"
+            href={item.href}
+            key={item.title}
+            target="_blank"
+            rel="noreferrer"
+            aria-label={`${item.action}: ${item.title}`}
+            onClick={item.kind === 'image' ? (event) => {
+              event.preventDefault();
+              setActivePromo(item);
+            } : undefined}
+          >
+            <span className="promo-media-kind">{item.kind === 'video' ? 'Video clip' : 'Image story'}</span>
+            <div className="promo-media-image">
+              <img src={item.image} alt="" loading="lazy" />
+              {item.kind === 'video' && <span className="promo-media-play" aria-hidden="true">▶</span>}
+            </div>
+            <div className="promo-media-copy">
+              <h3>{item.title}</h3>
+              <p>{item.description}</p>
+              <span className="promo-media-action">{item.action} ↗</span>
+            </div>
+          </a>
+        ))}
+      </div>
+      {activePromo && <div className="modal-backdrop promo-preview-backdrop" role="presentation" onClick={() => setActivePromo(null)}>
+        <section className="promo-preview-modal" role="dialog" aria-modal="true" aria-labelledby="promo-preview-title" onClick={(event) => event.stopPropagation()}>
+          <button className="close-button" type="button" onClick={() => setActivePromo(null)} aria-label="Close image preview">×</button>
+          <img src={activePromo.image} alt={activePromo.title} />
+          <p className="eyebrow">HIVeLink · Image story</p>
+          <h2 id="promo-preview-title">{activePromo.title}</h2>
+          <p>{activePromo.description}</p>
+          <a className="primary-button" href={activePromo.href} target="_blank" rel="noreferrer">{activePromo.action} <span aria-hidden="true">↗</span></a>
+        </section>
+      </div>}
+    </section>
+  );
+}
 
 const guestKnowledge = [
   ['What is HIV?', 'HIV is a virus that attacks the immune system. Treatment can control the virus and help people live long, healthy lives.'],
@@ -243,7 +305,7 @@ function GuestHub({ onExit, patientMode = false, appointmentsEnabled = true, onP
   };
 
   const pageContent = {
-    home: <section className="guest-hero guest-page"><div><p className="eyebrow"><span className="pulse-dot" /> Public information and support</p><h1>Start with<br /><span>what you know.</span></h1><p>Clear HIV and AIDS information, local testing guidance, and trusted ways to help in Odiongan and beyond.</p><button className="primary-button" onClick={() => navigate('knowledge')}>Explore the essentials <span>↓</span></button></div><figure className="guest-hero-image"><img src="https://images.unsplash.com/photo-1576091160399-112ba8d25d1d?auto=format&fit=crop&w=1100&q=85" alt="Healthcare professional speaking with a patient" /><figcaption>You deserve care, support, and a place to begin.</figcaption></figure></section>,
+    home: <><section className="guest-hero guest-page"><div><p className="eyebrow"><span className="pulse-dot" /> Public information and support</p><h1>Start with<br /><span>what you know.</span></h1><p>Clear HIV and AIDS information, local testing guidance, and trusted ways to help in Odiongan and beyond.</p><button className="primary-button" onClick={() => navigate('knowledge')}>Explore the essentials <span>↓</span></button></div><figure className="guest-hero-image"><img src="https://images.unsplash.com/photo-1576091160399-112ba8d25d1d?auto=format&fit=crop&w=1100&q=85" alt="Healthcare professional speaking with a patient" /><figcaption>You deserve care, support, and a place to begin.</figcaption></figure></section><PromotionalMediaGallery /></>,
     knowledge: <section className="guest-knowledge guest-page" id="guest-knowledge"><div className="guest-section-intro"><p className="eyebrow">HIV / AIDS 101</p><h1>Knowledge<br /><i>without stigma.</i></h1><p>Clear, evidence-based basics to help you learn at your own pace. Locally reviewed information can be added here over time.</p></div><div><div className="knowledge-grid">{guestKnowledge.map(([title, text], index) => <article key={title}><span>{String(index + 1).padStart(2, '0')}</span><h2>{title}</h2><p>{text}</p></article>)}</div><nav className="knowledge-sources" aria-label="Trusted HIV information sources"><strong>Trusted sources</strong><a href="https://www.who.int/news-room/fact-sheets/detail/hiv-aids" target="_blank" rel="noreferrer">World Health Organization: HIV and AIDS</a><a href="https://www.cdc.gov/hiv/testing/" target="_blank" rel="noreferrer">CDC: Getting tested for HIV</a><a href="https://www.cdc.gov/hiv/prevention/pep.html" target="_blank" rel="noreferrer">CDC: PEP for HIV prevention</a><a href="https://www.hiv.gov/hiv-basics/staying-in-hiv-care/hiv-treatment/hiv-treatment-overview" target="_blank" rel="noreferrer">HIV.gov: HIV treatment</a></nav></div></section>,
     testing: <section className="guest-testing guest-page" id="guest-testing"><div className="guest-section-intro"><p className="eyebrow">Find your next step</p><h1>Testing and<br /><i>treatment.</i></h1><p>Testing is confidential. Treatment is available, and early care makes a difference.</p><a className="text-button" href="https://www.google.com/maps/dir/?api=1&origin=12.39998%2C121.98136&destination=12.39459,121.98408" target="_blank" rel="noreferrer">Open in Google Maps ↗</a>{patientMode && (appointmentsEnabled ? <button className="primary-button patient-testing-button" onClick={() => onPrivatePage('appointments')}>Request an appointment <span>↗</span></button> : <p className="form-error patient-testing-button" role="status">Online appointment requests are currently unavailable. Contact your clinic directly.</p>)}</div><div className="map-wrap"><FacilityMap /><p className="map-caption"><strong>Odiongan, Romblon</strong><span>OpenStreetMap with both facilities marked. Select a pin for its name.</span></p></div><div className="testing-facilities"><div className="facility-heading"><p className="eyebrow">Local care contacts</p><h2>Care to<br /><i>contact first.</i></h2><p>Call ahead and ask about HIV testing, treatment referral, and current clinic schedules.</p></div><div className="facility-list"><a href="https://www.google.com/maps/search/?api=1&query=9XXJ%2BWXX%2C+JP+Laurel+St%2C+Odiongan%2C+Romblon" target="_blank" rel="noreferrer"><strong>Rural Health Unit</strong><span>9XXJ+WXX, JP Laurel St, Odiongan, Romblon · Find on map ↗</span></a><a href="https://www.google.com/maps/search/?api=1&query=Romblon+Provincial+Hospital+Liwanag+Odiongan" target="_blank" rel="noreferrer"><strong>Romblon Provincial Hospital</strong><span>Barangay Liwanag, Odiongan · Find on map ↗</span></a></div></div><div className="testing-notes"><div><span>01</span><h2>Where to begin</h2><p>Visit your local Rural Health Unit, municipal health office, or a hospital and ask about confidential HIV testing.</p></div><div><span>02</span><h2>Where to get treated</h2><p>Ask a health worker about referral to an HIV treatment hub. They can guide you to care, medicines, and follow-up.</p></div><div><span>03</span><h2>Need urgent help?</h2><p>PEP may prevent HIV after a recent exposure and works best as soon as possible. Visit a health facility or emergency department.</p></div></div></section>,
   };
@@ -474,7 +536,7 @@ function AuthScreen({ onEnter, onPasswordRecoveryComplete }) {
             {mode !== 'reset' && mode !== 'login' && <label>Email Address<input name="email" required type="email" autoComplete="email" defaultValue={mode === 'forgot' ? resetEmail : ''} placeholder="you@example.com" /></label>}
             {mode === 'register' && <div className="field-row"><label>Age<input name="age" required type="number" min="13" max="120" placeholder="Age" /></label><label>Date of Birth<input name="dateOfBirth" required type="date" /></label></div>}
             {mode === 'register' && <label>Birth order in family<input name="birthOrder" required type="number" min="1" max="50" placeholder="e.g. 1" /></label>}
-            {mode === 'register' && <label>Gender<select name="gender" defaultValue="" required><option value="" disabled>Select an option</option><option>Male</option><option>Female</option><option>Non-binary</option><option>Self-described</option><option>Prefer not to say</option></select></label>}
+            {mode === 'register' && <label>Gender<select name="gender" defaultValue="" required><option value="" disabled>Select an option</option><option>Male</option><option>Female</option><option>Other</option><option>LGBT</option><option>Prefer not to say</option></select></label>}
             {(mode === 'login' || mode === 'register') && <PasswordField id="auth-password" label="Password" name="password" required minLength={mode === 'register' ? 12 : undefined} autoComplete={mode === 'login' ? 'current-password' : 'new-password'} placeholder="Enter your password" />}
             {(mode === 'reset' || mode === 'register') && <PasswordField id="auth-confirm-password" label={mode === 'reset' ? 'New Password' : 'Confirm Password'} name={mode === 'reset' ? 'password' : 'confirmPassword'} required minLength={12} autoComplete="new-password" placeholder={mode === 'reset' ? 'Create a new password' : 'Re-enter your password'} />}
             {mode === 'reset' && <PasswordField id="auth-confirm-new-password" label="Confirm New Password" name="confirmPassword" required minLength={12} autoComplete="new-password" placeholder="Re-enter your new password" />}
@@ -1014,8 +1076,7 @@ function PatientForm({ data, onClose, onSave }) {
                 <option>Male</option>
                 <option>Female</option>
                 <option>Other</option>
-                <option>Non-binary</option>
-                <option>Self-described</option>
+                <option>LGBT</option>
                 <option>Prefer not to say</option>
               </select> : <input
                 required={type !== 'checkbox' && !['phone', 'notes', 'isRefill'].includes(key)}
@@ -1334,8 +1395,7 @@ function AdminUserFormModal({ user, onClose, onSave }) {
                 <option>Male</option>
                 <option>Female</option>
                 <option>Other</option>
-                <option>Non-binary</option>
-                <option>Self-described</option>
+                <option>LGBT</option>
                 <option>Prefer not to say</option>
               </select>
             </label>
@@ -2349,29 +2409,7 @@ function App() {
           </div>
         </section>
 
-        <section className="promo-section" aria-labelledby="promo-heading">
-          <div className="section-heading">
-            <p className="eyebrow">Watch, learn, share</p>
-            <h2 id="promo-heading">Stories that<br /><i>move us forward.</i></h2>
-            <p>Explore shareable HIV awareness videos and visual stories from trusted health organizations.</p>
-          </div>
-          <div className="promo-media-grid">
-            {promotionalContent.map((item) => (
-              <a className="promo-media-card" href={item.href} key={item.title} target="_blank" rel="noreferrer" aria-label={`${item.action}: ${item.title}`}>
-                <span className="promo-media-kind">{item.kind === 'video' ? 'Video clip' : 'Image story'}</span>
-                <div className="promo-media-image">
-                  <img src={item.image} alt="" loading="lazy" />
-                  {item.kind === 'video' && <span className="promo-media-play" aria-hidden="true">▶</span>}
-                </div>
-                <div className="promo-media-copy">
-                  <h3>{item.title}</h3>
-                  <p>{item.description}</p>
-                  <span className="promo-media-action">{item.action} ↗</span>
-                </div>
-              </a>
-            ))}
-          </div>
-        </section>
+        <PromotionalMediaGallery />
 
         <section className="community-section" id="community"><div className="community-quote"><span className="quote-mark">“</span><blockquote>You are more than<br />a diagnosis.</blockquote><p>Support starts with being seen, heard, and met with respect.</p></div><div className="community-panel"><p className="eyebrow">A private conversation</p><h2>Questions are<br /><i>welcome here.</i></h2><p>Our support team can help you sort through testing, treatment, prevention, or just a difficult day.</p><button className="primary-button light-button" onClick={openSupport}>Reach out <span>↗</span></button></div></section>
       </main>

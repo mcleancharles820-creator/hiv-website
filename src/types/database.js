@@ -6,8 +6,8 @@
 
 /**
  * @typedef {'patient' | 'health-worker' | 'admin'} UserRole
- * @typedef {'Male' | 'Female' | 'Other'} GenderType
- * @typedef {GenderType | 'Woman' | 'Man' | 'Non-binary' | 'Prefer not to say' | 'Self-describe' | 'Self-described'} StoredGenderType
+ * @typedef {'Male' | 'Female' | 'Other' | 'LGBT' | 'Prefer not to say'} GenderType
+ * @typedef {GenderType | 'Woman' | 'Man' | 'Non-binary' | 'Self-describe' | 'Self-described'} StoredGenderType
  * @typedef {'Active care plan' | 'New referral' | 'Stable' | 'Needs follow-up' | 'Inactive'} CareStatus
  * @typedef {'Requested' | 'Confirmed' | 'Completed' | 'Cancelled' | 'Rescheduled'} AppointmentStatus
  * @typedef {'Pending' | 'Ready for review' | 'Approved' | 'Needs information' | 'Dispensed' | 'Cancelled'} MedicationRequestStatus
@@ -33,7 +33,7 @@ export const UserModel = {
     contact_number: { type: 'string', required: false, maxLength: 30 },
     date_of_birth: { type: 'date', required: false },
     age: { type: 'number', required: false, min: 13, max: 120 },
-    gender: { type: 'enum', options: ['Male', 'Female', 'Other', 'Woman', 'Man', 'Non-binary', 'Prefer not to say', 'Self-describe', 'Self-described'], required: false },
+    gender: { type: 'enum', options: ['Male', 'Female', 'Other', 'LGBT', 'Prefer not to say', 'Woman', 'Man', 'Non-binary', 'Self-describe', 'Self-described'], required: false },
     terms_accepted: { type: 'boolean', default: true },
     is_active: { type: 'boolean', default: true },
     created_at: { type: 'datetime', default: () => new Date().toISOString() },

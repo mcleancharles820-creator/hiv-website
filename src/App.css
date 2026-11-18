@@ -2376,8 +2376,43 @@ html { scrollbar-gutter: stable; }
   font-weight: 700;
 }
 
+.promo-preview-modal {
+  background: var(--cream);
+  max-height: calc(100vh - 40px);
+  max-width: 720px;
+  overflow: auto;
+  padding: 28px;
+  position: relative;
+  width: 100%;
+}
+
+.promo-preview-modal > img {
+  display: block;
+  max-height: 55vh;
+  object-fit: contain;
+  width: 100%;
+}
+
+.promo-preview-modal h2 {
+  font: 400 32px/1.1 Georgia, serif;
+  margin: 0 0 12px;
+}
+
+.promo-preview-modal > p:not(.eyebrow) {
+  color: var(--muted);
+  font: 15px/1.6 'Arial Narrow', sans-serif;
+}
+
+.promo-preview-modal .eyebrow {
+  margin-top: 20px;
+}
+
 @media (max-width: 760px) {
   .promo-media-grid {
     grid-template-columns: 1fr;
+  }
+
+  .promo-preview-modal {
+    padding: 22px;
   }
 }
