@@ -22,10 +22,10 @@ const initialDatabase = {
   ActivityLogs: [],
   PublicInquiries: [],
   Medications: [
-    { medication_id: 1, medication_code: 'art', name: 'Antiretroviral therapy', category: 'HIV Treatment', detail: 'HIV treatment · Take only as prescribed', default_dosage: 'As prescribed', stock_status: 'In stock', stock_quantity: 250, prescription_needed: true, is_active: true, created_at: '2026-01-01T00:00:00Z', updated_at: '2026-01-01T00:00:00Z' },
-    { medication_id: 2, medication_code: 'prep', name: 'PrEP', category: 'HIV Prevention', detail: 'HIV prevention medication · Ask a health worker', default_dosage: '1 tablet daily', stock_status: 'In stock', stock_quantity: 180, prescription_needed: true, is_active: true, created_at: '2026-01-01T00:00:00Z', updated_at: '2026-01-01T00:00:00Z' },
-    { medication_id: 3, medication_code: 'pep', name: 'PEP', category: 'Emergency Prevention', detail: 'Post-exposure medication · Urgent care required', default_dosage: '28-day course', stock_status: 'Out of stock', stock_quantity: 0, prescription_needed: true, is_active: true, created_at: '2026-01-01T00:00:00Z', updated_at: '2026-01-01T00:00:00Z' },
-    { medication_id: 4, medication_code: 'opportunistic', name: 'Preventive care medication', category: 'Preventive Care', detail: 'For infection prevention · Prescription required', default_dosage: 'As directed', stock_status: 'Out of stock', stock_quantity: 0, prescription_needed: true, is_active: true, created_at: '2026-01-01T00:00:00Z', updated_at: '2026-01-01T00:00:00Z' }
+    { medication_id: 1, medication_code: 'art', name: 'Antiretroviral therapy', category: 'HIV Treatment', detail: 'HIV treatment · Take only as prescribed', default_dosage: 'As prescribed', prescription_needed: true, is_active: true, created_at: '2026-01-01T00:00:00Z', updated_at: '2026-01-01T00:00:00Z' },
+    { medication_id: 2, medication_code: 'prep', name: 'PrEP', category: 'HIV Prevention', detail: 'HIV prevention medication · Ask a health worker', default_dosage: '1 tablet daily', prescription_needed: true, is_active: true, created_at: '2026-01-01T00:00:00Z', updated_at: '2026-01-01T00:00:00Z' },
+    { medication_id: 3, medication_code: 'pep', name: 'PEP', category: 'Emergency Prevention', detail: 'Post-exposure medication · Urgent care required', default_dosage: '28-day course', prescription_needed: true, is_active: true, created_at: '2026-01-01T00:00:00Z', updated_at: '2026-01-01T00:00:00Z' },
+    { medication_id: 4, medication_code: 'opportunistic', name: 'Preventive care medication', category: 'Preventive Care', detail: 'For infection prevention · Prescription required', default_dosage: 'As directed', prescription_needed: true, is_active: true, created_at: '2026-01-01T00:00:00Z', updated_at: '2026-01-01T00:00:00Z' }
   ],
   TestingFacilities: [
     { facility_id: 1, name: 'Rural Health Unit', facility_type: 'Rural Health Unit', address: '9XXJ+WXX, JP Laurel St, Odiongan, Romblon', city: 'Odiongan', province: 'Romblon', country: 'Philippines', latitude: 12.399980, longitude: 121.981360, contact_phone: '+63 917 123 4567', services_offered: 'Confidential HIV Testing, PrEP counseling', operating_hours: 'Mon-Fri 8:00 AM - 5:00 PM', maps_url: 'https://www.google.com/maps/search/?api=1&query=9XXJ%2BWXX%2C+JP+Laurel+St%2C+Odiongan%2C+Romblon', is_active: true, created_at: '2026-01-01T00:00:00Z' },
@@ -325,7 +325,7 @@ class DatabaseService {
         && patient.accountStatus === 'Active'
         && patient.emailVerified
         && (!worker.primary_facility_id || !patient.preferredFacilityId || Number(patient.preferredFacilityId) === Number(worker.primary_facility_id)))
-      .map((patient) => ({ patient_id: patient.patientId, full_name: patient.fullName, care_status: patient.careStatus, preferred_facility_id: patient.preferredFacilityId }));
+      .map((patient) => ({ patient_id: patient.patientId, uic: patient.uic, care_status: patient.careStatus, preferred_facility_id: patient.preferredFacilityId }));
   }
 
   async claimPatient(patientId, workerId) {
@@ -452,9 +452,14 @@ class DatabaseService {
     const items = this.getTable(tableName);
     const updated = items.map((item) => {
       if (item[pk] === id) {
+        const safePatch = { ...patch };
+        if (tableName === 'Users') {
+          delete safePatch.birth_order;
+          if (item.uic) delete safePatch.uic;
+        }
         return {
           ...item,
-          ...patch,
+          ...safePatch,
           [pk]: id,
           updated_at: new Date().toISOString(),
         };
@@ -479,16 +484,17 @@ class DatabaseService {
   /**
    * Registration & Authentication Database Encoding
    */
-  registerUser({ fullName, firstName, middleName, lastName, email, password, role = 'patient', age, dateOfBirth, gender, contactNumber, termsAccepted = true }) {
+  registerUser({ fullName, firstName, middleName, lastName, email, password, role = 'patient', age, dateOfBirth, birthOrder = 1, gender, contactNumber, termsAccepted = true }) {
     if (this.useApi) {
       return this.apiRequest('/api/auth/register', {
         method: 'POST',
-        body: JSON.stringify({ firstName, middleName, lastName, email, password, age, dateOfBirth, gender, contactNumber, termsAccepted }),
+        body: JSON.stringify({ firstName, middleName, lastName, email, password, age, dateOfBirth, birthOrder, gender, contactNumber, termsAccepted }),
       }).catch((error) => ({ error: error.message, verificationPending: Boolean(error.details?.verificationPending) }));
     }
     // 1. Data Type normalization and parsing
     const parsedAge = age ? parseInt(age, 10) : null;
     const formattedDob = dateOfBirth ? String(dateOfBirth) : null;
+    const parsedBirthOrder = Number(birthOrder);
     const formattedEmail = String(email || '').trim().toLowerCase();
     const formattedName = String(fullName || [firstName, middleName, lastName].filter(Boolean).join(' ')).trim();
     const formattedPhone = contactNumber ? String(contactNumber).trim() : null;
@@ -496,6 +502,9 @@ class DatabaseService {
 
     if (!formattedEmail) {
       return { error: 'Email address is required.' };
+    }
+    if (!Number.isSafeInteger(parsedBirthOrder) || parsedBirthOrder < 1 || parsedBirthOrder > 50) {
+      return { error: 'Enter a birth order between 1 and 50.' };
     }
     if (cleanPassword && cleanPassword.toLowerCase() === formattedEmail) {
       return { error: 'Password cannot be the same as your email address.' };
@@ -511,6 +520,7 @@ class DatabaseService {
     const newUser = this.insert('Users', {
       email: formattedEmail,
       password_hash: `hash_${password || 'secret'}`,
+      birth_order: parsedBirthOrder,
       full_name: formattedName,
       role,
       contact_number: formattedPhone,
@@ -520,6 +530,10 @@ class DatabaseService {
       terms_accepted: Boolean(termsAccepted),
       is_active: true,
     });
+    const uicInitial = String(firstName || formattedName).trim().normalize('NFD').replace(/[\u0300-\u036f]/g, '').match(/[A-Za-z]/)?.[0] || 'X';
+    const uicDate = String(formattedDob || new Date().toISOString().slice(0, 10)).replace(/-/g, '');
+    newUser.uic = `${uicInitial.toUpperCase()}-${String(parsedBirthOrder).padStart(2, '0')}-${uicDate}-${String(newUser.user_id).padStart(6, '0')}`;
+    this.update('Users', newUser.user_id, { uic: newUser.uic });
 
     // Create role-specific relational record
     let patient = null;
@@ -549,10 +563,10 @@ class DatabaseService {
       // Log registration activity
       this.insert('ActivityLogs', {
         actor_user_id: newUser.user_id,
-        actor_name: newUser.full_name,
+        actor_name: newUser.uic,
         action: 'New patient registered',
         category: 'Authentication',
-        details: `Registered account for ${newUser.full_name} (${newUser.email})`,
+        details: `Registered patient UIC ${newUser.uic}`,
       });
     } else if (role === 'health-worker') {
       worker = this.insert('HealthWorkers', {
@@ -567,44 +581,44 @@ class DatabaseService {
 
       this.insert('ActivityLogs', {
         actor_user_id: newUser.user_id,
-        actor_name: newUser.full_name,
+        actor_name: newUser.uic,
         action: 'New health worker registered',
         category: 'Authentication',
-        details: `Health worker profile created for ${newUser.full_name}`,
+        details: `Health worker profile created for UIC ${newUser.uic}`,
       });
     } else if (role === 'admin') {
       this.insert('ActivityLogs', {
         actor_user_id: newUser.user_id,
-        actor_name: newUser.full_name,
+        actor_name: newUser.uic,
         action: 'New administrator registered',
         category: 'Authentication',
-        details: `Admin profile created for ${newUser.full_name}`,
+        details: `Admin profile created for UIC ${newUser.uic}`,
       });
     }
 
     return { user: newUser, patient, worker };
   }
 
-  login({ email, password, role = 'patient' }) {
+  login({ uic, password, role = 'patient' }) {
     if (this.useApi) {
-      return this.apiRequest('/api/auth/login', { method: 'POST', body: JSON.stringify({ email, password }) })
+      return this.apiRequest('/api/auth/login', { method: 'POST', body: JSON.stringify({ uic, password }) })
         .then(async (result) => {
           await this.refresh();
           return result;
         })
         .catch((error) => ({ error: error.message }));
     }
-    const formattedEmail = String(email || '').trim().toLowerCase();
+    const formattedUic = String(uic || '').trim().toUpperCase();
     const formattedPassword = String(password || '');
 
-    if (!formattedEmail) {
-      return { error: 'Please enter your email address.' };
+    if (!formattedUic) {
+      return { error: 'Please enter your UIC.' };
     }
 
-    const user = this.getTable('Users').find((u) => u.email.toLowerCase() === formattedEmail);
+    const user = this.getTable('Users').find((u) => String(u.uic || '').toUpperCase() === formattedUic);
 
     if (!user) {
-      return { error: 'Account not found. Please register an account first before logging in.' };
+      return { error: 'UIC not found. Please check the code or register an account first.' };
     }
 
     if (user.password_hash && user.password_hash !== `hash_${formattedPassword}` && user.password_hash !== formattedPassword) {
@@ -641,37 +655,8 @@ class DatabaseService {
   /**
    * Medication Request Operations
    */
-  requestMedication({ patient_id, medication_id = null, medication_name, dosage = 'As prescribed', schedule = 'Ask your health worker', quantity_requested = 30, is_refill = false, patient_notes = '', availability = 'In stock', status = 'Pending' }) {
-    const requestingPatient = this.getTable('Patients').find((record) => Number(record.patient_id) === Number(patient_id));
-    if (!requestingPatient?.has_doctors_prescription || !requestingPatient?.medication_request_eligible) {
-      return { error: 'A health worker must confirm your doctor’s prescription and medication request eligibility before you can submit a request.' };
-    }
-    if (this.useApi) return this.insert('MedicationRequests', { patient_id, medication_id, medication_name, dosage, schedule, quantity_requested, is_refill, patient_notes, availability, status });
-    const request = this.insert('MedicationRequests', {
-      patient_id: parseInt(patient_id, 10),
-      medication_id: medication_id ? Number(medication_id) : null,
-      medication_name: String(medication_name),
-      dosage: String(dosage),
-      schedule: String(schedule),
-      quantity_requested: Number(quantity_requested),
-      is_refill: Boolean(is_refill),
-      patient_notes: String(patient_notes || ''),
-      availability: String(availability),
-      status: String(status),
-      reviewed_by_worker_id: null,
-      review_notes: null,
-      requested_at: new Date().toISOString(),
-    });
-    const patient = this.findById('Patients', request.patient_id);
-    const user = patient ? this.findById('Users', patient.user_id) : null;
-    this.insert('ActivityLogs', {
-      actor_user_id: user?.user_id || null,
-      actor_name: user?.full_name || 'Patient',
-      action: 'Submitted medication request',
-      category: 'Medication Requests',
-      details: `Medication request #${request.request_id} submitted for patient ID #${request.patient_id}.`,
-    });
-    return request;
+  requestMedication() {
+    return { error: 'Patient medication requests are no longer available.' };
   }
 
   /**
@@ -860,7 +845,7 @@ class DatabaseService {
         time: m.dosage || 'Prescribed dose',
         status: m.status || 'Pending',
         statusType: (m.status === 'Approved' || m.status === 'Dispensed') ? 'success' : m.status === 'Needs information' ? 'info' : 'warning',
-        details: `Dosage: ${m.dosage || 'As prescribed'} · Schedule: ${m.schedule || 'Regular'} · Stock: ${m.availability || 'In stock'}`,
+        details: `Dosage: ${m.dosage || 'As prescribed'} · Schedule: ${m.schedule || 'Regular'}`,
         raw: m,
       })),
       ...chatSessions.map((c) => ({
@@ -919,6 +904,7 @@ class DatabaseService {
           patientId: patient?.patient_id || null,
           fullName: u.full_name,
           name: u.full_name,
+          uic: u.uic || '',
           email: u.email,
           emailVerified: u.email_verified !== false,
           contactNumber: u.contact_number || 'Not provided',
@@ -999,9 +985,9 @@ class DatabaseService {
   /**
    * Admin CRUD Operations
    */
-  adminCreateUser({ fullName, firstName, middleName, lastName, email, password, contactNumber, age, dateOfBirth, gender, careStatus = 'Active care plan', medicalNotes = '', preferredFacilityId = 1, assignedWorkerId = null, emergencyContact = '', emergencyPhone = '', isActive = true }) {
+  adminCreateUser({ fullName, firstName, middleName, lastName, email, password, contactNumber, age, dateOfBirth, birthOrder = 1, gender, careStatus = 'Active care plan', medicalNotes = '', preferredFacilityId = 1, assignedWorkerId = null, emergencyContact = '', emergencyPhone = '', isActive = true }) {
     if (this.useApi) {
-      return this.apiRequest('/api/admin/users', { method: 'POST', body: JSON.stringify({ firstName, middleName, lastName, email, password, contactNumber, age, dateOfBirth, gender, careStatus, medicalNotes, preferredFacilityId, assignedWorkerId, emergencyContact, emergencyPhone, isActive }) })
+      return this.apiRequest('/api/admin/users', { method: 'POST', body: JSON.stringify({ firstName, middleName, lastName, email, password, contactNumber, age, dateOfBirth, birthOrder, gender, careStatus, medicalNotes, preferredFacilityId, assignedWorkerId, emergencyContact, emergencyPhone, isActive }) })
         .then(async (result) => { await this.refresh(); return result; })
         .catch((error) => ({ error: error.message }));
     }
@@ -1012,6 +998,7 @@ class DatabaseService {
       role: 'patient',
       age,
       dateOfBirth,
+      birthOrder,
       gender,
       contactNumber,
       termsAccepted: true,
@@ -1038,9 +1025,9 @@ class DatabaseService {
     this.insert('ActivityLogs', {
       actor_user_id: 1,
       actor_name: 'Administrator',
-      action: `Created user account: ${user.full_name}`,
+      action: 'Created patient account',
       category: 'User Management',
-      details: `Created patient account ${user.email}`,
+      details: `Created patient UIC ${user.uic}`,
     });
 
     return { user: this.findById('Users', user.user_id), patient: patient ? this.findById('Patients', patient.patient_id) : null };
@@ -1084,9 +1071,9 @@ class DatabaseService {
     this.insert('ActivityLogs', {
       actor_user_id: 1,
       actor_name: 'Administrator',
-      action: `Updated user profile: ${updatedUser.full_name}`,
+      action: 'Updated patient profile',
       category: 'User Management',
-      details: `Updated details for ${updatedUser.email}`,
+      details: `Updated patient UIC ${updatedUser.uic}`,
     });
 
     return { user: updatedUser, patient: updatedPatient };
@@ -1323,14 +1310,14 @@ class DatabaseService {
       .map((mr) => {
         const patient = this.findById('Patients', mr.patient_id);
         const patientUser = patient ? this.findById('Users', patient.user_id) : null;
-        return { ...mr, patientName: patientUser?.full_name || 'Unknown Patient' };
+        return { ...mr, patientName: patientUser?.uic || 'Patient UIC unavailable' };
       });
     const appointments = this.getTable('Appointments')
       .filter((a) => a.worker_id === workerId)
       .map((a) => {
         const patient = this.findById('Patients', a.patient_id);
         const patientUser = patient ? this.findById('Users', patient.user_id) : null;
-        return { ...a, patientName: patientUser?.full_name || 'Patient' };
+        return { ...a, patientName: patientUser?.uic || 'Patient UIC unavailable' };
       });
     const groups = this.getTable('SupportGroups').filter((g) => g.facilitator_worker_id === workerId);
 

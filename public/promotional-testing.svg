@@ -1,0 +1,12 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 900 560" role="img" aria-labelledby="title">
+  <title id="title">Abstract illustration representing confidential HIV testing</title>
+  <rect width="900" height="560" fill="#f3d9d4"/>
+  <circle cx="710" cy="104" r="118" fill="#e7a08e"/>
+  <path d="M0 404c126-88 247-84 366-8s243 98 534-11v175H0z" fill="#c85f52"/>
+  <rect x="260" y="106" width="300" height="330" rx="26" fill="#fffaf0"/>
+  <rect x="300" y="152" width="220" height="30" rx="15" fill="#e8c7bd"/>
+  <rect x="300" y="211" width="166" height="17" rx="8" fill="#d8a69a"/>
+  <rect x="300" y="244" width="194" height="17" rx="8" fill="#d8a69a"/>
+  <circle cx="410" cy="344" r="46" fill="#f3d9d4"/>
+  <path d="M392 344l13 13 27-29" fill="none" stroke="#a43d3c" stroke-linecap="round" stroke-linejoin="round" stroke-width="12"/>
+</svg>

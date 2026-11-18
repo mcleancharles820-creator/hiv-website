@@ -2276,3 +2276,108 @@ html { scrollbar-gutter: stable; }
   margin: 14px 0;
   padding: 12px 14px;
 }
+
+.promo-section {
+  background: #fbf8f6;
+  padding: clamp(56px, 8vw, 104px) max(24px, calc((100vw - 1180px) / 2));
+}
+
+.promo-media-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 20px;
+  margin-top: 40px;
+}
+
+.promo-media-card {
+  background: #fff;
+  border: 1px solid rgba(31, 25, 30, 0.1);
+  border-radius: 14px;
+  color: inherit;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  text-decoration: none;
+  transition: box-shadow 180ms ease, transform 180ms ease;
+}
+
+.promo-media-card:hover,
+.promo-media-card:focus-visible {
+  box-shadow: 0 16px 36px rgba(31, 25, 30, 0.12);
+  transform: translateY(-3px);
+}
+
+.promo-media-kind {
+  align-self: flex-start;
+  background: #f5e8e7;
+  border-radius: 999px;
+  color: #754d55;
+  font-size: 11px;
+  font-weight: 700;
+  margin: 16px 16px 10px;
+  padding: 6px 10px;
+  text-transform: uppercase;
+}
+
+.promo-media-image {
+  aspect-ratio: 16 / 10;
+  overflow: hidden;
+  position: relative;
+}
+
+.promo-media-image img {
+  height: 100%;
+  object-fit: cover;
+  transition: transform 220ms ease;
+  width: 100%;
+}
+
+.promo-media-card:hover .promo-media-image img,
+.promo-media-card:focus-visible .promo-media-image img {
+  transform: scale(1.04);
+}
+
+.promo-media-play {
+  align-items: center;
+  background: rgba(32, 27, 31, 0.74);
+  border: 1px solid rgba(255, 255, 255, 0.75);
+  border-radius: 50%;
+  color: #fff;
+  display: flex;
+  height: 54px;
+  justify-content: center;
+  left: 50%;
+  padding-left: 3px;
+  position: absolute;
+  top: 50%;
+  transform: translate(-50%, -50%);
+  width: 54px;
+}
+
+.promo-media-copy {
+  padding: 18px 20px 22px;
+}
+
+.promo-media-copy h3 {
+  font-size: 20px;
+  margin: 0 0 10px;
+}
+
+.promo-media-copy p {
+  color: var(--muted);
+  font-size: 14px;
+  line-height: 1.6;
+  margin: 0 0 18px;
+}
+
+.promo-media-action {
+  color: var(--coral);
+  font-size: 13px;
+  font-weight: 700;
+}
+
+@media (max-width: 760px) {
+  .promo-media-grid {
+    grid-template-columns: 1fr;
+  }
+}

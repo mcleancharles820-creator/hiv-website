@@ -39,6 +39,7 @@ function makeInitialRequest(value = {}) {
 export default function AppointmentRequestForm({
   facilities = [],
   initialValue = {},
+  userCode = '',
   serviceEnabled = true,
   patientAvailable = true,
   onSubmit,
@@ -83,6 +84,7 @@ export default function AppointmentRequestForm({
       if (result?.error) {
         setError(result.error);
       } else if (result) {
+        if (!isEditing) window.alert('Please take note of your code.');
         setSubmitted(true);
       } else {
         setError('Your request could not be saved. Please review the details and try again.');
@@ -102,7 +104,7 @@ export default function AppointmentRequestForm({
           <>
             <p className="eyebrow">{isEditing ? 'Update request' : 'Care schedule'}</p>
             <h2 id="appointment-form-title">{isEditing ? 'Update appointment request' : 'Request an appointment'}</h2>
-            <p id="appointment-form-intro" className="appointment-request-intro">Choose the clinic and preferred time that work for you. A health worker will review the request and confirm or contact you about a different time.</p>
+            <p id="appointment-form-intro" className="appointment-request-intro">Choose the clinic and preferred time that work for you. An administrator will review and process your request.</p>
             {!serviceEnabled && <p className="form-error" role="status">Appointment requests are currently unavailable. Please contact your clinic directly.</p>}
             {!patientAvailable && <p className="form-error" role="status">Your patient record is unavailable, so this request cannot be submitted.</p>}
             {!facilities.length && <p className="form-error" role="status">No active clinics are available for appointment requests.</p>}
@@ -142,7 +144,7 @@ export default function AppointmentRequestForm({
               <small id="appointment-notes-help" className="appointment-field-help">Do not include urgent or highly sensitive details. Maximum 500 characters.</small>
 
               {error && <p className="form-error appointment-request-error" role="alert">{error}</p>}
-              <p className="appointment-request-notice">This is an appointment request, not a confirmed booking. Its status will remain <strong>Requested</strong> until a health worker reviews it.</p>
+              <p className="appointment-request-notice">This is an appointment request, not a confirmed booking. An administrator will review it and update its status.</p>
               <div className="appointment-request-actions">
                 <button className="text-button" type="button" onClick={onClose} disabled={submitting}>Cancel</button>
                 <button className="primary-button" type="submit" disabled={unavailable || submitting}>
@@ -155,7 +157,8 @@ export default function AppointmentRequestForm({
           <div className="appointment-request-success">
             <p className="eyebrow">Request received</p>
             <h2 id="appointment-form-title">Your request is in.</h2>
-            <p role="status">Your appointment has been submitted as <strong>Requested</strong>. A health worker will review it and confirm or reschedule it.</p>
+            <p role="status">Your appointment has been submitted as <strong>Requested</strong>. An administrator will review and process it.</p>
+            {userCode && <p>Your UIC: <strong>{userCode}</strong></p>}
             <button className="primary-button" type="button" onClick={onClose}>Return to appointments <span aria-hidden="true">↗</span></button>
           </div>
         )}

@@ -32,12 +32,17 @@ function supabaseClients() {
 }
 
 const sessionCookie = 'hivelink_session';
+function makeUic(firstName, birthOrder, dateOfBirth, userId) {
+  const initial = String(firstName || '').trim().normalize('NFD').replace(/[\u0300-\u036f]/g, '').match(/[A-Za-z]/)?.[0] || 'X';
+  const date = String(dateOfBirth || new Date().toISOString().slice(0, 10)).replace(/-/g, '');
+  return `${initial.toUpperCase()}-${String(birthOrder).padStart(2, '0')}-${date}-${String(userId).padStart(6, '0')}`;
+}
 const tableConfig = {
   Users: { sql: 'users', id: 'user_id', updated: true, columns: ['full_name', 'email', 'contact_number', 'age', 'date_of_birth', 'gender', 'is_active'] },
   Patients: { sql: 'patients', id: 'patient_id', updated: true, columns: ['care_status', 'medical_notes', 'has_doctors_prescription', 'medication_request_eligible', 'emergency_contact', 'emergency_phone', 'preferred_facility_id', 'assigned_worker_id'] },
   HealthWorkers: { sql: 'health_workers', id: 'worker_id', updated: true, columns: ['specialty', 'license_number', 'primary_facility_id', 'is_verified', 'is_available', 'bio_summary'] },
   Appointments: { sql: 'appointments', id: 'appointment_id', updated: true, columns: ['patient_id', 'worker_id', 'facility_id', 'appointment_date', 'appointment_time', 'appointment_type', 'status', 'notes'] },
-  MedicationRequests: { sql: 'medication_requests', id: 'request_id', updated: true, columns: ['patient_id', 'medication_id', 'medication_name', 'dosage', 'schedule', 'quantity_requested', 'is_refill', 'patient_notes', 'availability', 'status', 'reviewed_by_worker_id', 'review_notes'] },
+  MedicationRequests: { sql: 'medication_requests', id: 'request_id', updated: true, columns: ['patient_id', 'medication_id', 'medication_name', 'dosage', 'schedule', 'quantity_requested', 'is_refill', 'patient_notes', 'status', 'reviewed_by_worker_id', 'review_notes'] },
   ChatSessions: { sql: 'chat_sessions', id: 'chat_session_id', columns: ['patient_id', 'worker_id', 'subject', 'status', 'preview', 'last_updated'] },
   ChatMessages: { sql: 'chat_messages', id: 'message_id', columns: ['chat_session_id', 'sender_user_id', 'sender_role', 'message_text', 'is_read'] },
   SupportGroupMembers: { sql: 'support_group_members', id: 'membership_id', columns: ['group_id', 'patient_id', 'role_in_group'] },
@@ -92,7 +97,7 @@ async function currentUser(req) {
   let claims;
   try { claims = JSON.parse(Buffer.from(payload, 'base64url').toString('utf8')); } catch { return null; }
   if (!claims.sub || claims.exp <= Date.now() / 1000) return null;
-  const result = await pool.query('SELECT user_id, email, full_name, role, contact_number, age, date_of_birth, gender, is_active, email_verified, password_changed_at FROM users WHERE user_id = $1', [claims.sub]);
+  const result = await pool.query('SELECT user_id, uic, birth_order, email, full_name, role, contact_number, age, date_of_birth, gender, is_active, email_verified, password_changed_at FROM users WHERE user_id = $1', [claims.sub]);
   const profile = result.rows[0];
   if (!profile?.is_active || !profile.email_verified) return null;
   const currentPasswordChangedAt = profile.password_changed_at ? new Date(profile.password_changed_at).getTime() : null;
@@ -204,7 +209,7 @@ async function logActivity(user, action, category, details) {
   try {
     await pool.query(
       'INSERT INTO activity_logs (actor_user_id, actor_name, action, category, details) VALUES ($1,$2,$3,$4,$5)',
-      [user.user_id, user.full_name, action, category, details],
+      [user.user_id, user.uic || 'Unknown account', action, category, details],
     );
   } catch (error) {
     console.error('Could not write activity log:', error.message);
@@ -259,7 +264,7 @@ async function loadSnapshot(user) {
       for (const [key, config] of Object.entries(tableConfig)) {
         if (['PublicInquiries', 'SupportGroupMembers', 'SupportGroups'].includes(key)) continue;
         queries.push((async () => {
-          const selection = key === 'Users' ? 'user_id, email, full_name, role, contact_number, date_of_birth, age, gender, terms_accepted, is_active, email_verified, created_at, updated_at' : '*';
+          const selection = key === 'Users' ? 'user_id, uic, birth_order, email, full_name, role, contact_number, date_of_birth, age, gender, terms_accepted, is_active, email_verified, created_at, updated_at' : '*';
         const rows = await pool.query(`SELECT ${selection} FROM ${config.sql}`);
         snapshot[key] = rows.rows;
       })());
@@ -323,7 +328,7 @@ async function loadSnapshot(user) {
       snapshot.SupportGroupMessages = messages.rows;
     })();
     queries.push(supervisorMessagesQuery);
-    queries.push((async () => { snapshot.Users = [user, ...(await pool.query("SELECT u.user_id, u.email, u.full_name, u.role, u.contact_number, u.date_of_birth, u.age, u.gender, u.is_active, u.email_verified FROM users u JOIN patients p USING (user_id) JOIN health_workers h ON h.worker_id = p.assigned_worker_id WHERE h.user_id = $1", [user.user_id])).rows]; })());
+    queries.push((async () => { snapshot.Users = [user, ...(await pool.query("SELECT u.user_id, u.uic, u.birth_order, u.email, u.full_name, u.role, u.contact_number, u.date_of_birth, u.age, u.gender, u.is_active, u.email_verified FROM users u JOIN patients p USING (user_id) JOIN health_workers h ON h.worker_id = p.assigned_worker_id WHERE h.user_id = $1", [user.user_id])).rows]; })());
     queries.push((async () => { snapshot.HealthWorkers = (await pool.query('SELECT * FROM health_workers WHERE user_id = $1', [user.user_id])).rows; })());
     queries.push((async () => { snapshot.Patients = (await pool.query('SELECT p.* FROM patients p JOIN health_workers h ON h.worker_id = p.assigned_worker_id WHERE h.user_id = $1', [user.user_id])).rows; })());
     queries.push((async () => { snapshot.Appointments = (await pool.query('SELECT a.* FROM appointments a JOIN patients p USING (patient_id) JOIN health_workers h ON h.worker_id = p.assigned_worker_id WHERE h.user_id = $1', [user.user_id])).rows; })());
@@ -359,12 +364,12 @@ function allowed(role, table, operation) {
     if (table === 'HealthWorkers') return operation === 'update';
     if (table === 'SupportGroups') return ['insert', 'update', 'delete'].includes(operation);
     if (table === 'ChatMessages') return ['insert', 'update'].includes(operation);
-    if (['Patients', 'Appointments', 'MedicationRequests', 'ChatSessions'].includes(table)) return operation === 'update';
+    if (['Patients', 'MedicationRequests', 'ChatSessions'].includes(table)) return operation === 'update';
     return false;
   }
   if (role === 'patient') {
     if (table === 'Users') return operation === 'update';
-    if (['Appointments', 'MedicationRequests'].includes(table)) return ['insert', 'update', 'delete'].includes(operation);
+    if (table === 'Appointments') return ['insert', 'update', 'delete'].includes(operation);
     if (table === 'ChatSessions') return operation === 'update';
     if (table === 'ChatMessages') return ['insert', 'update'].includes(operation);
     if (table === 'SupportGroupMembers') return operation === 'insert';
@@ -426,7 +431,7 @@ async function mutate(req, user, table, id) {
   const values = {};
   for (const column of config.columns) if (Object.prototype.hasOwnProperty.call(record, column)) values[column] = record[column];
   if (table === 'Users' && values.gender !== undefined && !isAllowedGender(values.gender, user.role === 'health-worker' ? 'health-worker' : 'patient')) {
-    return { status: 400, body: { error: user.role === 'health-worker' ? 'Choose Male or Female for health worker gender.' : 'Choose Male, Female, or Other for gender.' } };
+    return { status: 400, body: { error: user.role === 'health-worker' ? 'Choose Male or Female for health worker gender.' : 'Choose a valid gender option.' } };
   }
   if (user.role === 'patient' && table === 'Users' && values.email) {
     const current = await pool.query('SELECT email FROM users WHERE user_id = $1', [user.user_id]);
@@ -474,12 +479,12 @@ async function mutate(req, user, table, id) {
   }
   if (user.role === 'patient') {
     if (table === 'Users') {
-      for (const key of Object.keys(values)) if (!['full_name', 'email', 'contact_number'].includes(key)) delete values[key];
+      for (const key of Object.keys(values)) if (!['full_name', 'email', 'contact_number', 'gender'].includes(key)) delete values[key];
     } else if (table === 'Appointments') {
        for (const key of Object.keys(values)) if (!['appointment_date', 'appointment_time', 'appointment_type', 'facility_id', 'notes', 'status'].includes(key)) delete values[key];
        if (values.status && !['Requested', 'Cancelled'].includes(values.status)) return { status: 403, body: { error: 'Patients may only cancel or request appointments.' } };
     } else if (table === 'MedicationRequests') {
-      for (const key of Object.keys(values)) if (!['medication_id', 'medication_name', 'dosage', 'schedule', 'quantity_requested', 'is_refill', 'patient_notes', 'availability', 'status'].includes(key)) delete values[key];
+      for (const key of Object.keys(values)) if (!['medication_id', 'medication_name', 'dosage', 'schedule', 'quantity_requested', 'is_refill', 'patient_notes', 'status'].includes(key)) delete values[key];
       if (values.status && values.status !== 'Cancelled') return { status: 403, body: { error: 'Patients may only cancel medication requests.' } };
       if (operation === 'update') {
         for (const [key, maxLength] of [['medication_name', 150], ['dosage', 100], ['schedule', 150]]) {
@@ -533,6 +538,10 @@ async function mutate(req, user, table, id) {
     }
   }
   if (user.role === 'health-worker' && table === 'Appointments' && operation === 'update'
+      && values.status && !['Requested', 'Confirmed', 'Completed', 'Cancelled', 'Rescheduled'].includes(values.status)) {
+    return { status: 400, body: { error: 'Choose a valid appointment status.' } };
+  }
+  if (user.role === 'admin' && table === 'Appointments' && operation === 'update'
       && values.status && !['Requested', 'Confirmed', 'Completed', 'Cancelled', 'Rescheduled'].includes(values.status)) {
     return { status: 400, body: { error: 'Choose a valid appointment status.' } };
   }
@@ -648,8 +657,15 @@ module.exports = async function handler(req, res) {
       const { fullName, error: nameError } = getFullNameFromParts(body);
       const email = String(body.email || '').trim().toLowerCase();
       const password = String(body.password || '');
+      const birthOrder = Number(body.birthOrder);
+      const dateOfBirth = String(body.dateOfBirth || '').trim();
       if (nameError) return send(res, 400, { error: nameError });
-      if (!isAllowedGender(body.gender, 'patient')) return send(res, 400, { error: 'Choose Male, Female, or Other for gender.' });
+      if (!isAllowedGender(body.gender, 'patient')) return send(res, 400, { error: 'Choose a valid gender option.' });
+      if (!Number.isSafeInteger(birthOrder) || birthOrder < 1 || birthOrder > 50) return send(res, 400, { error: 'Enter a birth order between 1 and 50.' });
+      const dateParts = dateOfBirth.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+      if (!dateParts || new Date(Date.UTC(Number(dateParts[1]), Number(dateParts[2]) - 1, Number(dateParts[3]))).toISOString().slice(0, 10) !== dateOfBirth) {
+        return send(res, 400, { error: 'Enter a valid date of birth.' });
+      }
       if (!email || password.length < 12) return send(res, 400, { error: 'Email and a password of at least 12 characters are required.' });
       const { publicClient, adminClient } = supabaseClients();
       const { data: authData, error: authError } = await publicClient.auth.signUp({
@@ -663,7 +679,9 @@ module.exports = async function handler(req, res) {
       const client = await pool.connect();
       try {
         await client.query('BEGIN');
-        const inserted = await client.query('INSERT INTO users (supabase_user_id, email, password_hash, full_name, role, contact_number, date_of_birth, age, gender, terms_accepted, email_verified) VALUES ($1,$2,NULL,$3,$4,$5,$6,$7,$8,$9,$10) RETURNING user_id, supabase_user_id, email, full_name, role, contact_number, date_of_birth, age, gender, is_active, email_verified', [authData.user.id, email, fullName, 'patient', body.contactNumber || null, body.dateOfBirth || null, body.age || null, body.gender || null, Boolean(body.termsAccepted), emailVerified]);
+        const allocatedId = (await client.query("SELECT nextval(pg_get_serial_sequence('users', 'user_id')) AS user_id")).rows[0].user_id;
+        const uic = makeUic(body.firstName, birthOrder, dateOfBirth, allocatedId);
+        const inserted = await client.query('INSERT INTO users (user_id, uic, birth_order, supabase_user_id, email, password_hash, full_name, role, contact_number, date_of_birth, age, gender, terms_accepted, email_verified) VALUES ($1,$2,$3,$4,$5,NULL,$6,$7,$8,$9,$10,$11,$12,$13) RETURNING user_id, uic, birth_order, supabase_user_id, email, full_name, role, contact_number, date_of_birth, age, gender, is_active, email_verified', [allocatedId, uic, birthOrder, authData.user.id, email, fullName, 'patient', body.contactNumber || null, dateOfBirth, body.age || null, body.gender || null, Boolean(body.termsAccepted), emailVerified]);
         const patient = await client.query("INSERT INTO patients (user_id, preferred_facility_id, care_status, medical_notes) VALUES ($1, 1, 'Active care plan', 'Newly registered patient account.') RETURNING *", [inserted.rows[0].user_id]);
         await client.query("INSERT INTO chat_sessions (patient_id, subject, status, preview) VALUES ($1, 'Welcome to private support', 'Open', 'A health worker will be ready to answer your questions.')", [patient.rows[0].patient_id]);
         await client.query('COMMIT');
@@ -671,7 +689,7 @@ module.exports = async function handler(req, res) {
         if (emailVerified && authData.session) setSessionCookie(res, signSession(user));
         return send(res, 201, emailVerified && authData.session
           ? { user, patient: patient.rows[0], worker: null, realtimeSession: authData.session }
-          : { verificationRequired: true, email: user.email });
+          : { verificationRequired: true, email: user.email, uic: user.uic });
       } catch (error) {
         await client.query('ROLLBACK');
         await adminClient.auth.admin.deleteUser(authData.user.id).catch(() => {});
@@ -682,21 +700,22 @@ module.exports = async function handler(req, res) {
     }
     if (pathname === '/api/auth/login' && req.method === 'POST') {
       const body = getBody(req);
-      const email = String(body.email || '').trim().toLowerCase();
+      const uic = String(body.uic || '').trim().toUpperCase();
       const { publicClient, adminClient } = supabaseClients();
-      let profile = (await pool.query('SELECT * FROM users WHERE email = $1 AND is_active = TRUE', [email])).rows[0];
-      if (!profile) return send(res, 401, { error: 'Email or password is incorrect.' });
+      let profile = (await pool.query('SELECT * FROM users WHERE uic = $1 AND is_active = TRUE', [uic])).rows[0];
+      if (!profile) return send(res, 401, { error: 'UIC or password is incorrect.' });
+      const email = profile.email;
       let supabaseUserId = profile.supabase_user_id;
       let realtimeSession = null;
       if (!supabaseUserId) {
-        if (!profile.password_hash || !(await bcrypt.compare(String(body.password || ''), profile.password_hash))) return send(res, 401, { error: 'Email or password is incorrect.' });
+        if (!profile.password_hash || !(await bcrypt.compare(String(body.password || ''), profile.password_hash))) return send(res, 401, { error: 'UIC or password is incorrect.' });
         const { data: legacyAuth, error: legacyError } = await adminClient.auth.admin.createUser({
           email,
           password: String(body.password || ''),
           email_confirm: true,
           user_metadata: { full_name: profile.full_name },
         });
-        if (legacyError || !legacyAuth.user) return send(res, 401, { error: 'Email or password is incorrect.' });
+        if (legacyError || !legacyAuth.user) return send(res, 401, { error: 'UIC or password is incorrect.' });
         supabaseUserId = legacyAuth.user.id;
         profile = (await pool.query('UPDATE users SET supabase_user_id = $1, password_hash = NULL, email_verified = TRUE, updated_at = NOW() WHERE user_id = $2 RETURNING *', [supabaseUserId, profile.user_id])).rows[0];
         const { data: legacySession, error: legacySessionError } = await publicClient.auth.signInWithPassword({ email, password: String(body.password || '') });
@@ -706,7 +725,7 @@ module.exports = async function handler(req, res) {
         const { data: authData, error: authError } = await publicClient.auth.signInWithPassword({ email, password: String(body.password || '') });
         if (authError || !authData.user) {
           if (/email not confirmed/i.test(authError?.message || '')) return send(res, 403, { error: 'Please verify your email before signing in.' });
-          return send(res, 401, { error: 'Email or password is incorrect.' });
+          return send(res, 401, { error: 'UIC or password is incorrect.' });
         }
         if (!authData.user.email_confirmed_at) return send(res, 403, { error: 'Please verify your email before signing in.' });
         realtimeSession = authData.session;
@@ -828,7 +847,7 @@ module.exports = async function handler(req, res) {
     if (pathname === '/api/worker/claimable-patients' && req.method === 'GET') {
       if (user?.role !== 'health-worker') return send(res, user ? 403 : 401, { error: 'Health worker access required.' });
       const result = await pool.query(
-        `SELECT p.patient_id, p.care_status, p.preferred_facility_id, p.created_at, u.full_name
+        `SELECT p.patient_id, p.care_status, p.preferred_facility_id, p.created_at, u.uic
          FROM patients p JOIN users u USING (user_id)
          JOIN health_workers h ON h.user_id = $1
          JOIN users worker_user ON worker_user.user_id = h.user_id
@@ -858,7 +877,7 @@ module.exports = async function handler(req, res) {
         [user.user_id, patientId],
       );
       if (!claimed.rowCount) return send(res, 409, { error: 'This patient is no longer available to claim, or is outside your assigned facility.' });
-      await pool.query('INSERT INTO activity_logs (actor_user_id, actor_name, action, category, details) VALUES ($1,$2,$3,$4,$5)', [user.user_id, user.full_name, 'Claimed patient assignment', 'Care Team Management', `Claimed patient ID #${patientId}`]);
+      await pool.query('INSERT INTO activity_logs (actor_user_id, actor_name, action, category, details) VALUES ($1,$2,$3,$4,$5)', [user.user_id, user.uic || 'Unknown account', 'Claimed patient assignment', 'Care Team Management', `Claimed patient UIC ${claimed.rows[0].uic || 'unavailable'}`]);
       return send(res, 200, { patient: claimed.rows[0] });
     }
     if (pathname === '/api/chat/session' && req.method === 'POST') {
@@ -1158,7 +1177,7 @@ module.exports = async function handler(req, res) {
         }
         await client.query(
           'INSERT INTO activity_logs (actor_user_id, actor_name, action, category, details) VALUES ($1,$2,$3,$4,$5)',
-          [user.user_id, user.full_name, 'Redacted a support-group message', 'Community Safety', `Removed support-group message #${messageId}`],
+          [user.user_id, user.uic || 'Unknown account', 'Redacted a support-group message', 'Community Safety', `Removed support-group message #${messageId}`],
         );
         await client.query('COMMIT');
         return send(res, 200, { ok: true });
@@ -1215,7 +1234,7 @@ module.exports = async function handler(req, res) {
         await client.query('UPDATE support_groups SET facilitator_worker_id = $1 WHERE group_id = $2', [workerId, group.rows[0].group_id]);
         await client.query(
           'INSERT INTO activity_logs (actor_user_id, actor_name, action, category, details) VALUES ($1,$2,$3,$4,$5)',
-          [user.user_id, user.full_name, workerId ? 'Assigned support-group supervisor' : 'Removed support-group supervisor', 'Community Safety', workerId ? `Assigned verified worker ${workerId} to the single support group` : 'Paused access to the single support group until a supervisor is assigned'],
+          [user.user_id, user.uic || 'Unknown account', workerId ? 'Assigned support-group supervisor' : 'Removed support-group supervisor', 'Community Safety', workerId ? `Assigned verified worker ${workerId} to the single support group` : 'Paused access to the single support group until a supervisor is assigned'],
         );
         await client.query('COMMIT');
         return send(res, 200, { group: { group_id: group.rows[0].group_id, facilitator_worker_id: workerId, supervisor_name: supervisorName, has_supervisor: Boolean(workerId) } });
@@ -1252,8 +1271,16 @@ module.exports = async function handler(req, res) {
           const { fullName, error: nameError } = getFullNameFromParts(body);
           const email = String(body.email || '').trim().toLowerCase();
           const password = String(body.password || '');
+          const birthOrder = Number(body.birthOrder);
+          const dateOfBirth = String(body.dateOfBirth || '').trim();
           if (nameError) { await client.query('ROLLBACK'); return send(res, 400, { error: nameError }); }
-          if (!isAllowedGender(body.gender, 'patient')) { await client.query('ROLLBACK'); return send(res, 400, { error: 'Choose Male, Female, or Other for gender.' }); }
+          if (!isAllowedGender(body.gender, 'patient')) { await client.query('ROLLBACK'); return send(res, 400, { error: 'Choose a valid gender option.' }); }
+          if (!Number.isSafeInteger(birthOrder) || birthOrder < 1 || birthOrder > 50) { await client.query('ROLLBACK'); return send(res, 400, { error: 'Enter a birth order between 1 and 50.' }); }
+          const dateParts = dateOfBirth.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+          if (!dateParts || new Date(Date.UTC(Number(dateParts[1]), Number(dateParts[2]) - 1, Number(dateParts[3]))).toISOString().slice(0, 10) !== dateOfBirth) {
+            await client.query('ROLLBACK');
+            return send(res, 400, { error: 'Enter a valid date of birth.' });
+          }
           if (!email || password.length < 12) { await client.query('ROLLBACK'); return send(res, 400, { error: 'Email and a password of at least 12 characters are required.' }); }
           const assignedWorkerId = body.assignedWorkerId === '' || body.assignedWorkerId === undefined || body.assignedWorkerId === null ? null : Number(body.assignedWorkerId);
           if (assignedWorkerId !== null) {
@@ -1265,10 +1292,13 @@ module.exports = async function handler(req, res) {
           const { data: authData, error: authError } = await adminClient.auth.admin.createUser({ email, password, email_confirm: false, user_metadata: { full_name: fullName } });
           if (authError || !authData.user) { await client.query('ROLLBACK'); return send(res, 400, { error: authError?.message || 'Could not create the Supabase Auth account.' }); }
           supabaseAuthUserId = authData.user.id;
-          const created = await client.query('INSERT INTO users (supabase_user_id, email, password_hash, full_name, role, contact_number, date_of_birth, age, gender, is_active, terms_accepted, email_verified) VALUES ($1,$2,NULL,$3,\'patient\',$4,$5,$6,$7,$8,$9,FALSE) RETURNING user_id, supabase_user_id, email, full_name, role, contact_number, date_of_birth, age, gender, is_active, email_verified', [supabaseAuthUserId, email, fullName, body.contactNumber || null, body.dateOfBirth || null, body.age || null, body.gender || null, body.isActive !== false, true]);
+          if (!Number.isSafeInteger(birthOrder) || birthOrder < 1 || birthOrder > 50) { await client.query('ROLLBACK'); return send(res, 400, { error: 'Enter a birth order between 1 and 50.' }); }
+          const allocatedId = (await client.query("SELECT nextval(pg_get_serial_sequence('users', 'user_id')) AS user_id")).rows[0].user_id;
+          const uic = makeUic(body.firstName, birthOrder, dateOfBirth, allocatedId);
+          const created = await client.query('INSERT INTO users (user_id, uic, birth_order, supabase_user_id, email, password_hash, full_name, role, contact_number, date_of_birth, age, gender, is_active, terms_accepted, email_verified) VALUES ($1,$2,$3,$4,$5,NULL,$6,\'patient\',$7,$8,$9,$10,$11,$12,FALSE) RETURNING user_id, uic, birth_order, supabase_user_id, email, full_name, role, contact_number, date_of_birth, age, gender, is_active, email_verified', [allocatedId, uic, birthOrder, supabaseAuthUserId, email, fullName, body.contactNumber || null, dateOfBirth, body.age || null, body.gender || null, body.isActive !== false, true]);
           const patient = await client.query('INSERT INTO patients (user_id, care_status, medical_notes, preferred_facility_id, assigned_worker_id, emergency_contact, emergency_phone) VALUES ($1,$2,$3,$4,$5,$6,$7) RETURNING *', [created.rows[0].user_id, body.careStatus || 'Active care plan', body.medicalNotes || 'Managed patient account', body.preferredFacilityId || 1, assignedWorkerId, body.emergencyContact || null, body.emergencyPhone || null]);
           await client.query("INSERT INTO chat_sessions (patient_id, subject, status, preview) VALUES ($1, 'Welcome to private support', 'Open', 'A health worker will be ready to answer your questions.')", [patient.rows[0].patient_id]);
-          await client.query('INSERT INTO activity_logs (actor_user_id, actor_name, action, category, details) VALUES ($1,$2,$3,$4,$5)', [user.user_id, user.full_name, `Created user account: ${fullName}`, 'User Management', `Created patient account ${email}`]);
+          await client.query('INSERT INTO activity_logs (actor_user_id, actor_name, action, category, details) VALUES ($1,$2,$3,$4,$5)', [user.user_id, user.uic || 'Unknown account', 'Created patient account', 'User Management', `Created patient UIC ${created.rows[0].uic}`]);
           await client.query('COMMIT');
           const verification = await sendVerificationEmail(created.rows[0].user_id);
           return send(res, 201, { user: created.rows[0], patient: patient.rows[0], verificationRequired: true, verificationEmailSent: verification.sent });
@@ -1284,9 +1314,12 @@ module.exports = async function handler(req, res) {
           const { data: authData, error: authError } = await adminClient.auth.admin.createUser({ email, password, email_confirm: false, user_metadata: { full_name: fullName } });
           if (authError || !authData.user) { await client.query('ROLLBACK'); return send(res, 400, { error: authError?.message || 'Could not create the Supabase Auth account.' }); }
           supabaseAuthUserId = authData.user.id;
-          const created = await client.query('INSERT INTO users (supabase_user_id, email, password_hash, full_name, role, contact_number, gender, is_active, terms_accepted, email_verified) VALUES ($1,$2,NULL,$3,\'health-worker\',$4,$5,$6,TRUE,FALSE) RETURNING user_id, supabase_user_id, email, full_name, role, contact_number, gender, is_active, email_verified', [supabaseAuthUserId, email, fullName, body.contactNumber || null, body.gender, body.isActive !== false]);
+          const allocatedId = (await client.query("SELECT nextval(pg_get_serial_sequence('users', 'user_id')) AS user_id")).rows[0].user_id;
+          const birthOrder = 1;
+          const uic = makeUic(body.firstName, birthOrder, body.dateOfBirth, allocatedId);
+          const created = await client.query('INSERT INTO users (user_id, uic, birth_order, supabase_user_id, email, password_hash, full_name, role, contact_number, date_of_birth, gender, is_active, terms_accepted, email_verified) VALUES ($1,$2,$3,$4,$5,NULL,$6,\'health-worker\',$7,$8,$9,$10,TRUE,FALSE) RETURNING user_id, uic, birth_order, supabase_user_id, email, full_name, role, contact_number, date_of_birth, gender, is_active, email_verified', [allocatedId, uic, birthOrder, supabaseAuthUserId, email, fullName, body.contactNumber || null, body.dateOfBirth || null, body.gender, body.isActive !== false]);
           const worker = await client.query('INSERT INTO health_workers (user_id, specialty, license_number, primary_facility_id, is_verified, is_available, bio_summary) VALUES ($1,$2,$3,$4,$5,$6,$7) RETURNING *', [created.rows[0].user_id, body.specialty || 'HIV care support', body.licenseNumber || null, body.primaryFacilityId || 1, body.isVerified !== false, body.isAvailable !== false, body.bioSummary || 'Licensed Health Worker']);
-          await client.query('INSERT INTO activity_logs (actor_user_id, actor_name, action, category, details) VALUES ($1,$2,$3,$4,$5)', [user.user_id, user.full_name, `Created health worker: ${fullName}`, 'Care Team Management', `Created health worker ${email}`]);
+          await client.query('INSERT INTO activity_logs (actor_user_id, actor_name, action, category, details) VALUES ($1,$2,$3,$4,$5)', [user.user_id, user.uic || 'Unknown account', 'Created health worker', 'Care Team Management', `Created health worker UIC ${created.rows[0].uic}`]);
           await client.query('COMMIT');
           const verification = await sendVerificationEmail(created.rows[0].user_id);
           return send(res, 201, { user: created.rows[0], worker: worker.rows[0], verificationRequired: true, verificationEmailSent: verification.sent });
@@ -1342,12 +1375,12 @@ module.exports = async function handler(req, res) {
         if (req.method === 'DELETE' && id) {
           let removed;
           if (kind === 'workers') {
-            removed = await client.query('DELETE FROM users u USING health_workers h WHERE u.user_id = h.user_id AND h.worker_id = $1 RETURNING u.full_name, u.supabase_user_id', [id]);
+            removed = await client.query('DELETE FROM users u USING health_workers h WHERE u.user_id = h.user_id AND h.worker_id = $1 RETURNING u.uic, u.supabase_user_id', [id]);
           } else {
-            removed = await client.query('DELETE FROM users WHERE user_id = $1 AND role = \'patient\' RETURNING full_name, supabase_user_id', [id]);
+            removed = await client.query('DELETE FROM users WHERE user_id = $1 AND role = \'patient\' RETURNING uic, supabase_user_id', [id]);
           }
           if (!removed.rowCount) { await client.query('ROLLBACK'); return send(res, 404, { error: 'Record not found.' }); }
-          await client.query('INSERT INTO activity_logs (actor_user_id, actor_name, action, category, details) VALUES ($1,$2,$3,$4,$5)', [user.user_id, user.full_name, `Deleted ${kind === 'workers' ? 'health worker' : 'user'}: ${removed.rows[0].full_name}`, 'Account Management', `Deleted record ${id}`]);
+          await client.query('INSERT INTO activity_logs (actor_user_id, actor_name, action, category, details) VALUES ($1,$2,$3,$4,$5)', [user.user_id, user.uic || 'Unknown account', `Deleted ${kind === 'workers' ? 'health worker' : 'patient'} account`, 'Account Management', `Deleted UIC ${removed.rows[0].uic || 'unavailable'}`]);
           await client.query('COMMIT');
           if (removed.rows[0].supabase_user_id) {
             const { adminClient } = supabaseClients();
@@ -1385,8 +1418,14 @@ module.exports = async function handler(req, res) {
       const result = await mutate(req, user, table, id);
       if (result.status >= 200 && result.status < 300) {
         if (table === 'Appointments' && req.method === 'POST') {
-          const patient = await pool.query('SELECT user_id FROM patients WHERE patient_id = $1', [result.body.record.patient_id]);
-          if (patient.rows[0]) await bestEffort(() => sendRegisteredEmail(patient.rows[0].user_id, { subject: 'Appointment request received', text: 'Your appointment request was received. Sign in to HIVeLink to review its current status.' }));
+          const patient = await pool.query('SELECT u.user_id, u.uic FROM patients p JOIN users u USING (user_id) WHERE p.patient_id = $1', [result.body.record.patient_id]);
+          if (patient.rows[0]) {
+            const appointment = result.body.record;
+            const details = `UIC ${patient.rows[0].uic} requested ${appointment.appointment_type} on ${appointment.appointment_date} at ${appointment.appointment_time}.`;
+            await bestEffort(() => sendRegisteredEmail(patient.rows[0].user_id, { subject: 'Appointment request received', text: `Your appointment request has been received. ${details} Sign in to HIVeLink to review its status.` }));
+            const administrators = await pool.query("SELECT user_id FROM users WHERE role = 'admin' AND is_active = TRUE");
+            await bestEffort(() => Promise.all(administrators.rows.map((administrator) => sendRegisteredEmail(administrator.user_id, { subject: 'New appointment request', text: details }))));
+          }
         }
         if (table === 'Appointments' && req.method === 'PATCH' && record.status) await bestEffort(() => notifyPatientRecord(table, id, 'Appointment status updated', `Your appointment status is now ${record.status}. Sign in to HIVeLink for details.`));
         if (table === 'MedicationRequests' && req.method === 'POST') {

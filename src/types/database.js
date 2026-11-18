@@ -7,11 +7,11 @@
 /**
  * @typedef {'patient' | 'health-worker' | 'admin'} UserRole
  * @typedef {'Male' | 'Female' | 'Other'} GenderType
- * @typedef {GenderType | 'Woman' | 'Man' | 'Non-binary' | 'Prefer not to say' | 'Self-describe'} StoredGenderType
+ * @typedef {GenderType | 'Woman' | 'Man' | 'Non-binary' | 'Prefer not to say' | 'Self-describe' | 'Self-described'} StoredGenderType
  * @typedef {'Active care plan' | 'New referral' | 'Stable' | 'Needs follow-up' | 'Inactive'} CareStatus
  * @typedef {'Requested' | 'Confirmed' | 'Completed' | 'Cancelled' | 'Rescheduled'} AppointmentStatus
  * @typedef {'Pending' | 'Ready for review' | 'Approved' | 'Needs information' | 'Dispensed' | 'Cancelled'} MedicationRequestStatus
- * @typedef {'In stock' | 'Out of stock' | 'Low stock'} StockStatus
+
  * @typedef {'Open' | 'Pending' | 'Closed' | 'Resolved'} ChatStatus
  * @typedef {'patient' | 'worker' | 'admin' | 'system'} MessageSenderRole
  */
@@ -24,6 +24,8 @@ export const UserModel = {
   primaryKey: 'user_id',
   fields: {
     user_id: { type: 'number', isPrimary: true, autoIncrement: true },
+    uic: { type: 'string', required: true, unique: true, maxLength: 32 },
+    birth_order: { type: 'number', required: true, min: 1, max: 50, default: 1 },
     email: { type: 'string', required: true, unique: true },
     password_hash: { type: 'string', required: true },
     full_name: { type: 'string', required: true, maxLength: 150 },
@@ -31,7 +33,7 @@ export const UserModel = {
     contact_number: { type: 'string', required: false, maxLength: 30 },
     date_of_birth: { type: 'date', required: false },
     age: { type: 'number', required: false, min: 13, max: 120 },
-    gender: { type: 'enum', options: ['Male', 'Female', 'Other', 'Woman', 'Man', 'Non-binary', 'Prefer not to say', 'Self-describe'], required: false },
+    gender: { type: 'enum', options: ['Male', 'Female', 'Other', 'Woman', 'Man', 'Non-binary', 'Prefer not to say', 'Self-describe', 'Self-described'], required: false },
     terms_accepted: { type: 'boolean', default: true },
     is_active: { type: 'boolean', default: true },
     created_at: { type: 'datetime', default: () => new Date().toISOString() },
@@ -146,8 +148,6 @@ export const MedicationModel = {
     category: { type: 'string', required: true, maxLength: 100 },
     detail: { type: 'string', required: true, maxLength: 500 },
     default_dosage: { type: 'string', required: false },
-    stock_status: { type: 'enum', options: ['In stock', 'Out of stock', 'Low stock'], default: 'In stock' },
-    stock_quantity: { type: 'number', default: 100 },
     prescription_needed: { type: 'boolean', default: true },
     is_active: { type: 'boolean', default: true },
     created_at: { type: 'datetime', default: () => new Date().toISOString() },
@@ -173,7 +173,6 @@ export const MedicationRequestModel = {
     quantity_requested: { type: 'number', required: true, min: 1, max: 1000, default: 30 },
     is_refill: { type: 'boolean', required: true, default: false },
     patient_notes: { type: 'string', required: false, maxLength: 500 },
-    availability: { type: 'string', default: 'In stock' },
     status: { type: 'enum', options: ['Pending', 'Ready for review', 'Approved', 'Needs information', 'Dispensed', 'Cancelled'], default: 'Pending' },
     reviewed_by_worker_id: { type: 'number', required: false, references: 'HealthWorkers.worker_id' },
     review_notes: { type: 'string', required: false },

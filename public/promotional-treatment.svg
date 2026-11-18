@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 900 560" role="img" aria-labelledby="title">
+  <title id="title">Abstract illustration representing ongoing treatment and care</title>
+  <rect width="900" height="560" fill="#e5e8dc"/>
+  <circle cx="178" cy="128" r="110" fill="#c2cbb3"/>
+  <path d="M0 422c167-80 289-93 436-25s305 67 464-6v169H0z" fill="#7d9273"/>
+  <rect x="312" y="107" width="276" height="334" rx="28" fill="#fffaf0"/>
+  <path d="M450 174v168M366 258h168" stroke="#b94e44" stroke-linecap="round" stroke-width="42"/>
+  <rect x="348" y="378" width="204" height="15" rx="7" fill="#d8d1c4"/>
+</svg>

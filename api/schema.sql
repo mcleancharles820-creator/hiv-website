@@ -19,12 +19,14 @@ CREATE TABLE users (
     email VARCHAR(255) NOT NULL UNIQUE,
     password_hash VARCHAR(255),
     password_changed_at TIMESTAMPTZ,
+    uic VARCHAR(32) NOT NULL UNIQUE,
     full_name VARCHAR(150) NOT NULL,
     role VARCHAR(20) NOT NULL CHECK (role IN ('patient', 'health-worker', 'admin')),
     contact_number VARCHAR(30),
     date_of_birth DATE,
+    birth_order INT NOT NULL DEFAULT 1 CHECK (birth_order BETWEEN 1 AND 50),
     age INT CHECK (age IS NULL OR (age >= 13 AND age <= 120)),
-    gender VARCHAR(50) CHECK (gender IS NULL OR gender IN ('Male', 'Female', 'Other', 'Woman', 'Man', 'Non-binary', 'Prefer not to say', 'Self-describe')),
+    gender VARCHAR(50) CHECK (gender IS NULL OR gender IN ('Male', 'Female', 'Other', 'Woman', 'Man', 'Non-binary', 'Prefer not to say', 'Self-describe', 'Self-described')),
     terms_accepted BOOLEAN NOT NULL DEFAULT TRUE,
     is_active BOOLEAN NOT NULL DEFAULT TRUE,
     email_verified BOOLEAN NOT NULL DEFAULT FALSE,
@@ -98,8 +100,6 @@ CREATE TABLE medications (
     category VARCHAR(100) NOT NULL,
     detail TEXT NOT NULL,
     default_dosage VARCHAR(100),
-    stock_status VARCHAR(30) NOT NULL DEFAULT 'In stock' CHECK (stock_status IN ('In stock', 'Out of stock', 'Low stock')),
-    stock_quantity INT NOT NULL DEFAULT 100,
     prescription_needed BOOLEAN NOT NULL DEFAULT TRUE,
     is_active BOOLEAN NOT NULL DEFAULT TRUE,
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
@@ -117,7 +117,6 @@ CREATE TABLE medication_requests (
     quantity_requested INT NOT NULL DEFAULT 30 CHECK (quantity_requested BETWEEN 1 AND 1000),
     is_refill BOOLEAN NOT NULL DEFAULT FALSE,
     patient_notes VARCHAR(500),
-    availability VARCHAR(50) NOT NULL DEFAULT 'In stock',
     status VARCHAR(50) NOT NULL DEFAULT 'Pending' CHECK (status IN ('Pending', 'Ready for review', 'Approved', 'Needs information', 'Dispensed', 'Cancelled')),
     reviewed_by_worker_id INT REFERENCES health_workers(worker_id) ON DELETE SET NULL,
     review_notes TEXT,
@@ -255,12 +254,12 @@ VALUES
 (1, 'Rural Health Unit Odiongan', 'Rural Health Unit', '9XXJ+WXX, JP Laurel St, Odiongan, Romblon', 'Odiongan', 'Romblon', 'Philippines', 12.399980, 121.981360, '+63 917 123 4567', 'Confidential HIV Testing, PrEP counseling, Primary Healthcare', 'Mon-Fri 8:00 AM - 5:00 PM', 'https://www.google.com/maps/search/?api=1&query=9XXJ%2BWXX%2C+JP+Laurel+St%2C+Odiongan%2C+Romblon'),
 (2, 'Romblon Provincial Hospital', 'Provincial Hospital', 'Liwanag, Odiongan', 'Odiongan', 'Romblon', 'Philippines', 12.405500, 121.986200, '+63 920 987 6543', 'HIV Treatment Hub, ART Dispensing, Confirmatory Testing', '24/7 Care', 'https://www.google.com/maps/search/Romblon+Provincial+Hospital+Odiongan');
 
-INSERT INTO medications (medication_id, medication_code, name, category, detail, default_dosage, stock_status)
+INSERT INTO medications (medication_id, medication_code, name, category, detail, default_dosage)
 VALUES
-(1, 'art', 'Antiretroviral therapy (ART)', 'HIV Treatment', 'HIV treatment · Take only as prescribed', '1 tablet daily', 'In stock'),
-(2, 'prep', 'Pre-Exposure Prophylaxis (PrEP)', 'HIV Prevention', 'HIV prevention medication · Ask a health worker', '1 tablet daily', 'In stock'),
-(3, 'pep', 'Post-Exposure Prophylaxis (PEP)', 'Emergency Prevention', 'Post-exposure medication · Urgent care required', '28-day course', 'Out of stock'),
-(4, 'opportunistic', 'Preventive Care Medication (OI Prophylaxis)', 'Preventive Care', 'For infection prevention · Prescription required', 'As directed', 'Out of stock');
+(1, 'art', 'Antiretroviral therapy (ART)', 'HIV Treatment', 'HIV treatment · Take only as prescribed', '1 tablet daily'),
+(2, 'prep', 'Pre-Exposure Prophylaxis (PrEP)', 'HIV Prevention', 'HIV prevention medication · Ask a health worker', '1 tablet daily'),
+(3, 'pep', 'Post-Exposure Prophylaxis (PEP)', 'Emergency Prevention', 'Post-exposure medication · Urgent care required', '28-day course'),
+(4, 'opportunistic', 'Preventive Care Medication (OI Prophylaxis)', 'Preventive Care', 'For infection prevention · Prescription required', 'As directed');
 
 INSERT INTO support_groups (group_id, name, detail, schedule, target_audience, facilitator_worker_id, member_count)
 VALUES
