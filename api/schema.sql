@@ -39,16 +39,6 @@ CREATE TABLE users (
     )
 );
 
-CREATE TABLE email_verification_tokens (
-    token_id BIGSERIAL PRIMARY KEY,
-    user_id INT NOT NULL REFERENCES users(user_id) ON DELETE CASCADE,
-    token_hash CHAR(64) NOT NULL UNIQUE,
-    expires_at TIMESTAMPTZ NOT NULL,
-    consumed_at TIMESTAMPTZ,
-    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
-);
-CREATE INDEX idx_email_verification_tokens_user ON email_verification_tokens(user_id, expires_at);
-
 -- 2. Testing Facilities
 CREATE TABLE testing_facilities (
     facility_id SERIAL PRIMARY KEY,
@@ -95,7 +85,7 @@ CREATE TABLE patients (
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
--- 7. Appointments
+-- 5. Appointments
 CREATE TABLE appointments (
     appointment_id SERIAL PRIMARY KEY,
     patient_id INT NOT NULL REFERENCES patients(patient_id) ON DELETE CASCADE,
@@ -110,7 +100,7 @@ CREATE TABLE appointments (
     updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
--- 8. Chat Sessions
+-- 6. Chat Sessions
 CREATE TABLE chat_sessions (
     chat_session_id SERIAL PRIMARY KEY,
     patient_id INT NOT NULL REFERENCES patients(patient_id) ON DELETE CASCADE,
@@ -122,7 +112,7 @@ CREATE TABLE chat_sessions (
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
--- 9. Chat Messages
+-- 7. Chat Messages
 CREATE TABLE chat_messages (
     message_id SERIAL PRIMARY KEY,
     chat_session_id INT NOT NULL REFERENCES chat_sessions(chat_session_id) ON DELETE CASCADE,
@@ -133,7 +123,7 @@ CREATE TABLE chat_messages (
     sent_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
--- 10. Support Groups
+-- 8. Support Groups
 CREATE TABLE support_groups (
     group_id SERIAL PRIMARY KEY,
     name VARCHAR(150) NOT NULL,
@@ -146,7 +136,7 @@ CREATE TABLE support_groups (
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
--- 11. Support Group Members
+-- 9. Support Group Members
 CREATE TABLE support_group_members (
     membership_id SERIAL PRIMARY KEY,
     group_id INT NOT NULL REFERENCES support_groups(group_id) ON DELETE CASCADE,
@@ -155,7 +145,7 @@ CREATE TABLE support_group_members (
     joined_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     UNIQUE (group_id, patient_id)
 );
--- 12. Public Inquiries
+-- 10. Public Inquiries
 CREATE TABLE public_inquiries (
     inquiry_id SERIAL PRIMARY KEY,
     first_name VARCHAR(100) NOT NULL,
@@ -168,7 +158,7 @@ CREATE TABLE public_inquiries (
     responded_at TIMESTAMPTZ
 );
 
--- 13. Platform Services
+-- 11. Platform Services
 CREATE TABLE platform_services (
     service_id SERIAL PRIMARY KEY,
     service_key VARCHAR(50) NOT NULL UNIQUE,
@@ -179,16 +169,7 @@ CREATE TABLE platform_services (
     updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
--- 14. System Settings
-CREATE TABLE system_settings (
-    setting_key VARCHAR(100) PRIMARY KEY,
-    setting_value TEXT NOT NULL,
-    data_type VARCHAR(30) NOT NULL DEFAULT 'string' CHECK (data_type IN ('string', 'boolean', 'number', 'json')),
-    description TEXT,
-    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
-);
-
--- 15. Activity Logs
+-- 12. Activity Logs
 CREATE TABLE activity_logs (
     log_id SERIAL PRIMARY KEY,
     actor_user_id INT REFERENCES users(user_id) ON DELETE SET NULL,
@@ -197,19 +178,6 @@ CREATE TABLE activity_logs (
     category VARCHAR(50) NOT NULL DEFAULT 'General',
     ip_address VARCHAR(50),
     details TEXT,
-    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
-);
-
--- 16. Educational Resources
-CREATE TABLE educational_resources (
-    resource_id SERIAL PRIMARY KEY,
-    resource_number VARCHAR(10) NOT NULL,
-    category VARCHAR(50) NOT NULL DEFAULT 'Knowledge 101',
-    title VARCHAR(200) NOT NULL,
-    summary TEXT NOT NULL,
-    action_label VARCHAR(100),
-    display_order INT NOT NULL DEFAULT 1,
-    is_published BOOLEAN NOT NULL DEFAULT TRUE,
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
@@ -235,18 +203,6 @@ VALUES
 (2, 'treatment_referrals', 'Treatment referrals', 'Connect patients to treatment hubs', TRUE, 2),
 (3, 'chat_support', 'Private chat support', 'Patient to health worker messaging', TRUE, 3);
 
-INSERT INTO system_settings (setting_key, setting_value, data_type, description)
-VALUES
-('platform_name', 'HIVeLink', 'string', 'Platform brand name'),
-('support_email', 'support@risinghiv.org', 'string', 'Public and escalation contact email');
-
-INSERT INTO educational_resources (resource_id, resource_number, category, title, summary, action_label, display_order)
-VALUES
-(1, '01', 'Guest Essentials', 'Know your status', 'Testing is the only way to know. Most results are ready quickly, and confidential options are available.', 'Find a test', 1),
-(2, '02', 'Guest Essentials', 'Treatment works', 'With the right treatment, people living with HIV can live long, healthy lives.', 'Understand U=U', 2),
-(3, '03', 'Guest Essentials', 'Prevention is personal', 'Condoms, PrEP, PEP, and regular testing can all help.', 'Explore prevention', 3);
-
 SELECT setval('testing_facilities_facility_id_seq', (SELECT MAX(facility_id) FROM testing_facilities));
 SELECT setval('support_groups_group_id_seq', (SELECT MAX(group_id) FROM support_groups));
 SELECT setval('platform_services_service_id_seq', (SELECT MAX(service_id) FROM platform_services));
-SELECT setval('educational_resources_resource_id_seq', (SELECT MAX(resource_id) FROM educational_resources));

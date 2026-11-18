@@ -283,21 +283,6 @@ export const PlatformServiceModel = {
 };
 
 /**
- * 14. System Setting Entity Model
- */
-export const SystemSettingModel = {
-  tableName: 'SystemSettings',
-  primaryKey: 'setting_key',
-  fields: {
-    setting_key: { type: 'string', isPrimary: true },
-    setting_value: { type: 'string', required: true },
-    data_type: { type: 'enum', options: ['string', 'boolean', 'number', 'json'], default: 'string' },
-    description: { type: 'string', required: false },
-    updated_at: { type: 'datetime', default: () => new Date().toISOString() },
-  },
-};
-
-/**
  * 15. Activity Log Entity Model
  */
 export const ActivityLogModel = {
@@ -315,43 +300,6 @@ export const ActivityLogModel = {
   },
   relationships: {
     actor: { type: 'belongsTo', model: 'Users', foreignKey: 'actor_user_id' },
-  },
-};
-
-/**
- * 16. Educational Resource Entity Model
- */
-export const EducationalResourceModel = {
-  tableName: 'EducationalResources',
-  primaryKey: 'resource_id',
-  fields: {
-    resource_id: { type: 'number', isPrimary: true, autoIncrement: true },
-    resource_number: { type: 'string', required: true },
-    category: { type: 'string', default: 'Knowledge 101' },
-    title: { type: 'string', required: true },
-    summary: { type: 'string', required: true },
-    action_label: { type: 'string', required: false },
-    display_order: { type: 'number', default: 1 },
-    is_published: { type: 'boolean', default: true },
-    created_at: { type: 'datetime', default: () => new Date().toISOString() },
-  },
-};
-
-/**
- * 17. Partner Organization Entity Model
- */
-export const PartnerOrganizationModel = {
-  tableName: 'PartnerOrganizations',
-  primaryKey: 'org_id',
-  fields: {
-    org_id: { type: 'number', isPrimary: true, autoIncrement: true },
-    name: { type: 'string', required: true },
-    description: { type: 'string', required: true },
-    website_url: { type: 'string', required: true },
-    category: { type: 'string', default: 'Referral' },
-    display_order: { type: 'number', default: 1 },
-    is_active: { type: 'boolean', default: true },
-    created_at: { type: 'datetime', default: () => new Date().toISOString() },
   },
 };
 
@@ -382,10 +330,7 @@ export const DatabaseSchema = {
   SupportGroupMessages: SupportGroupMessageModel,
   PublicInquiries: PublicInquiryModel,
   PlatformServices: PlatformServiceModel,
-  SystemSettings: SystemSettingModel,
   ActivityLogs: ActivityLogModel,
-  EducationalResources: EducationalResourceModel,
-  PartnerOrganizations: PartnerOrganizationModel,
 };
 
 export default DatabaseSchema;

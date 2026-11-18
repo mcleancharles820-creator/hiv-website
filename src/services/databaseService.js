@@ -32,15 +32,6 @@ const initialDatabase = {
     { service_id: 2, service_key: 'treatment_referrals', name: 'Treatment referrals', detail: 'Connect patients to treatment hubs', is_enabled: true, display_order: 2, updated_at: '2026-01-01T00:00:00Z' },
     { service_id: 3, service_key: 'chat_support', name: 'Private chat support', detail: 'Patient to health worker messaging', is_enabled: true, display_order: 3, updated_at: '2026-01-01T00:00:00Z' },
   ],
-  SystemSettings: [
-    { setting_key: 'platform_name', setting_value: 'HIVeLink', data_type: 'string', description: 'Platform brand name', updated_at: '2026-01-01T00:00:00Z' },
-    { setting_key: 'support_email', setting_value: 'support@risinghiv.org', data_type: 'string', description: 'Primary support email', updated_at: '2026-01-01T00:00:00Z' }
-  ],
-  EducationalResources: [
-    { resource_id: 1, resource_number: '01', category: 'Guest Essentials', title: 'Know your status', summary: 'Testing is the only way to know. Most results are ready quickly, and confidential options are available.', action_label: 'Find a test', display_order: 1, is_published: true, created_at: '2026-01-01T00:00:00Z' },
-    { resource_id: 2, resource_number: '02', category: 'Guest Essentials', title: 'Treatment works', summary: 'With the right treatment, people living with HIV can live long, healthy lives. Undetectable means untransmittable.', action_label: 'Understand U=U', display_order: 2, is_published: true, created_at: '2026-01-01T00:00:00Z' },
-    { resource_id: 3, resource_number: '03', category: 'Guest Essentials', title: 'Prevention is personal', summary: 'Condoms, PrEP, PEP, and regular testing can all help. Choose the tools that feel right for you.', action_label: 'Explore prevention', display_order: 3, is_published: true, created_at: '2026-01-01T00:00:00Z' }
-  ]
 };
 class DatabaseService {
   constructor() {
@@ -396,6 +387,12 @@ class DatabaseService {
         const database = JSON.parse(stored);
         const staffUics = new Map();
         let changed = false;
+        ['SystemSettings', 'EducationalResources', 'PartnerOrganizations'].forEach((tableName) => {
+          if (Object.prototype.hasOwnProperty.call(database, tableName)) {
+            delete database[tableName];
+            changed = true;
+          }
+        });
         database.Users = (database.Users || []).map((user) => {
           if (user.role === 'patient' || !user.uic) return user;
           staffUics.set(user.user_id, { uic: user.uic, role: user.role });
@@ -1377,7 +1374,6 @@ class DatabaseService {
     const chatSessions = this.getTable('ChatSessions');
     const services = this.getTable('PlatformServices');
     const logs = this.getTable('ActivityLogs');
-    const settings = this.getTable('SystemSettings');
 
     return {
       totalUsers: users.length,
@@ -1389,7 +1385,6 @@ class DatabaseService {
       workers,
       services,
       logs,
-      settings,
     };
   }
 }

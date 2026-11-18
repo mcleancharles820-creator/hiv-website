@@ -37,12 +37,11 @@ This document explains the database structure, entity models, variables, data ty
 | **SupportGroupMessages** | Alias-only moderated conversation | `message_id` (PK, int), `group_id` (FK, int), `sender_alias` (string), `sender_role` (member/supervisor), `message_text` (max 2,000), `is_redacted` (bool), `sent_at` (datetime) | No patient/user foreign key; Supabase RLS allows current members and the assigned supervisor |
 | **PublicInquiries** | Guest contact forms | `inquiry_id` (PK, int), `first_name` (string), `email` (string), `message` (text), `status` (enum), `assigned_worker_id` (FK, int) | Optional FK to `HealthWorkers` |
 | **PlatformServices**| Feature switches | `service_id` (PK, int), `service_key` (string, unique), `name` (string), `detail` (string), `is_enabled` (bool), `display_order` (int) | Independent entity |
-| **SystemSettings** | Platform config | `setting_key` (PK, string), `setting_value` (text), `data_type` (enum), `description` (text) | Independent entity |
 | **ActivityLogs** | Security audit trail | `log_id` (PK, int), `actor_user_id` (FK, int), `actor_name` (string), `action` (string), `category` (string), `created_at` (datetime) | FK to `Users` |
-| **EducationalResources**| Knowledge base | `resource_id` (PK, int), `resource_number` (string), `category` (string), `title` (string), `summary` (text), `action_label` (string) | Independent entity |
-| **PartnerOrganizations**| NGO directories | `org_id` (PK, int), `name` (string), `description` (text), `website_url` (string), `category` (string) | Independent entity |
 
 Medication request tables and eligibility fields are no longer part of HIVeLink. Apply `api/migrations/017_remove_medication_requests.sql` to an existing database to remove them and the `medication_requests` platform-service setting.
+
+The current application has no database-backed educational-resource catalog, system-settings storage, or partner-organization directory. Apply `api/migrations/018_remove_unused_tables.sql` to remove those legacy tables and the unused email-verification-token table from an existing database. The public support form still writes to `PublicInquiries`, so that table remains.
 
 ---
 

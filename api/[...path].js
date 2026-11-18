@@ -56,7 +56,7 @@ const tableConfig = {
   PublicInquiries: { sql: 'public_inquiries', id: 'inquiry_id', columns: ['first_name', 'email', 'message', 'status', 'assigned_worker_id', 'response_notes'] },
 };
 const catalogTables = {
-  TestingFacilities: 'testing_facilities', EducationalResources: 'educational_resources',
+  TestingFacilities: 'testing_facilities',
 };
 
 function send(res, status, body) {
@@ -229,10 +229,6 @@ async function loadSnapshot(user) {
   queries.push((async () => {
     const rows = await pool.query('SELECT * FROM platform_services ORDER BY display_order');
     snapshot.PlatformServices = rows.rows;
-  })());
-  queries.push((async () => {
-    const rows = await pool.query("SELECT setting_key, setting_value, data_type, description, updated_at FROM system_settings WHERE setting_key IN ('platform_name', 'support_email')");
-    snapshot.SystemSettings = rows.rows;
   })());
   queries.push((async () => {
     const rows = await pool.query(
