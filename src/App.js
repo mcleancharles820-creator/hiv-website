@@ -27,6 +27,7 @@ function normalizeGender(value) {
   return ({
     Woman: 'Female',
     Man: 'Male',
+    LGBT: 'Lesbian, Gay, Bisexual, and Transgender',
     'Non-binary': 'Other',
     'Self-describe': 'Other',
     'Self-described': 'Other',
@@ -85,11 +86,51 @@ const resources = [
 const promotionalContent = [
   {
     kind: 'video',
-    title: 'HIV testing: know your status',
-    description: 'Explore trusted HIV testing information and watch educational clips from public health organizations.',
+    title: 'HIV basics: testing, prevention, and living with HIV',
+    description: 'A CDC overview of testing, prevention, and living well with HIV.',
     image: '/promotional-testing.svg',
-    href: 'https://www.youtube.com/results?search_query=CDC+HIV+testing+awareness',
-    action: 'Watch awareness videos',
+    videoId: 'JY1qi3bf-Os',
+    publisher: 'Centers for Disease Control and Prevention',
+  },
+  {
+    kind: 'video',
+    title: 'HIV prevention',
+    description: 'Learn about practical tools that can help prevent HIV.',
+    image: '/promotional-prevention.svg',
+    videoId: 'f6umofGzPpc',
+    publisher: 'Centers for Disease Control and Prevention',
+  },
+  {
+    kind: 'video',
+    title: 'HIV basics',
+    description: 'A short introduction to HIV and the basics of care.',
+    image: '/promotional-testing.svg',
+    videoId: '12vTnXekJu8',
+    publisher: 'Centers for Disease Control and Prevention',
+  },
+  {
+    kind: 'video',
+    title: 'PEP: prevention after a possible exposure',
+    description: 'Learn why PEP is time-sensitive and how to seek help quickly.',
+    image: '/promotional-prevention.svg',
+    videoId: 'hsgQNimo7o0',
+    publisher: 'Centers for Disease Control and Prevention',
+  },
+  {
+    kind: 'video',
+    title: 'Get the facts, talk about HIV',
+    description: 'A CDC awareness clip encouraging informed and open conversations.',
+    image: '/promotional-treatment.svg',
+    videoId: '0uh5NLKX5ag',
+    publisher: 'Centers for Disease Control and Prevention',
+  },
+  {
+    kind: 'video',
+    title: 'Reasons to get tested for HIV',
+    description: 'A CDC testing campaign clip about knowing your status.',
+    image: '/promotional-testing.svg',
+    videoId: 'arkOjDaOE_c',
+    publisher: 'Centers for Disease Control and Prevention',
   },
   {
     kind: 'image',
@@ -97,7 +138,7 @@ const promotionalContent = [
     description: 'Learn how HIV treatment supports long, healthy lives and helps prevent transmission.',
     image: '/promotional-treatment.svg',
     href: 'https://www.who.int/news-room/fact-sheets/detail/hiv-aids',
-    action: 'Explore treatment information',
+    action: 'Treatment and U=U',
   },
   {
     kind: 'image',
@@ -105,7 +146,7 @@ const promotionalContent = [
     description: 'Explore practical prevention options and choose what works for you.',
     image: '/promotional-prevention.svg',
     href: 'https://www.cdc.gov/hiv/prevention/index.html',
-    action: 'Explore prevention options',
+    action: 'Prevention options',
   },
 ];
 
@@ -124,45 +165,42 @@ function PromotionalMediaGallery() {
   return (
     <section className="promo-section" aria-labelledby="promo-heading">
       <div className="section-heading">
-        <p className="eyebrow">Watch, learn, share</p>
-        <h2 id="promo-heading">Stories that<br /><i>move us forward.</i></h2>
-        <p>Explore shareable HIV awareness videos and visual stories from trusted health organizations.</p>
+        <p className="eyebrow">Watch and learn</p>
+        <h2 id="promo-heading">Videos and<br /><i>visual guides.</i></h2>
+        <p>Watch trusted educational videos here, then explore visual guides and practical information.</p>
       </div>
       <div className="promo-media-grid">
         {promotionalContent.map((item) => (
-          <a
+          <button
             className="promo-media-card"
-            href={item.href}
             key={item.title}
-            target="_blank"
-            rel="noreferrer"
-            aria-label={`${item.action}: ${item.title}`}
-            onClick={item.kind === 'image' ? (event) => {
-              event.preventDefault();
-              setActivePromo(item);
-            } : undefined}
+            type="button"
+            aria-label={`${item.kind === 'video' ? 'Watch' : 'View'}: ${item.title}`}
+            onClick={() => setActivePromo(item)}
           >
-            <span className="promo-media-kind">{item.kind === 'video' ? 'Video clip' : 'Image story'}</span>
+            <span className="promo-media-kind">{item.kind === 'video' ? 'Watch video' : 'Visual guide'}</span>
             <div className="promo-media-image">
-              <img src={item.image} alt="" loading="lazy" />
-              {item.kind === 'video' && <span className="promo-media-play" aria-hidden="true">▶</span>}
+              <img src={item.kind === 'video' ? `https://img.youtube.com/vi/${item.videoId}/hqdefault.jpg` : item.image} alt="" loading="lazy" />
+              <span className="promo-media-play" aria-hidden="true">{item.kind === 'video' ? '▶' : '+'}</span>
             </div>
             <div className="promo-media-copy">
               <h3>{item.title}</h3>
               <p>{item.description}</p>
-              <span className="promo-media-action">{item.action} ↗</span>
+              <span className="promo-media-action">{item.kind === 'video' ? 'Play in HIVeLink' : 'Open visual guide'} <span aria-hidden="true">→</span></span>
             </div>
-          </a>
+          </button>
         ))}
       </div>
       {activePromo && <div className="modal-backdrop promo-preview-backdrop" role="presentation" onClick={() => setActivePromo(null)}>
         <section className="promo-preview-modal" role="dialog" aria-modal="true" aria-labelledby="promo-preview-title" onClick={(event) => event.stopPropagation()}>
           <button className="close-button" type="button" onClick={() => setActivePromo(null)} aria-label="Close image preview">×</button>
-          <img src={activePromo.image} alt={activePromo.title} />
-          <p className="eyebrow">HIVeLink · Image story</p>
+          {activePromo.kind === 'video'
+            ? <div className="promo-video-frame"><iframe src={`https://www.youtube-nocookie.com/embed/${activePromo.videoId}?autoplay=1&rel=0`} title={activePromo.title} allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerPolicy="strict-origin-when-cross-origin" allowFullScreen /></div>
+            : <img src={activePromo.image} alt={activePromo.title} />}
+          <p className="eyebrow">HIVeLink · {activePromo.kind === 'video' ? `Video · ${activePromo.publisher}` : 'Visual guide'}</p>
           <h2 id="promo-preview-title">{activePromo.title}</h2>
           <p>{activePromo.description}</p>
-          <a className="primary-button" href={activePromo.href} target="_blank" rel="noreferrer">{activePromo.action} <span aria-hidden="true">↗</span></a>
+          {activePromo.kind === 'image' && <a className="primary-button" href={activePromo.href} target="_blank" rel="noreferrer">{activePromo.action} <span aria-hidden="true">↗</span></a>}
         </section>
       </div>}
     </section>
@@ -180,9 +218,28 @@ const guestKnowledge = [
   ['PrEP', 'Pre-exposure prophylaxis (PrEP) is medicine for people who do not have HIV that can help prevent HIV. A health worker can discuss whether it fits your needs.'],
   ['PEP is time-sensitive', 'Post-exposure prophylaxis (PEP) is emergency medicine after a possible exposure. It must be started as soon as possible and within 72 hours. Seek care right away.'],
   ['Condoms and prevention', 'Using condoms correctly and consistently can reduce the risk of HIV and some other sexually transmitted infections. Prevention choices can be combined.'],
+  ['HIV treatment and ART', 'Antiretroviral therapy (ART) controls HIV. Taking treatment as prescribed and keeping follow-up appointments helps protect your health. A health worker can help find a treatment plan that works for you.'],
+  ['What to expect from testing', 'A health worker can explain the test, how results are shared, and whether you may need another test after a window period. You can ask questions before deciding what to do next.'],
+  ['Confidential care', 'You can ask a clinic how your information is protected and who can access it. If you have concerns, talk privately with a health worker before sharing details.'],
+  ['HIV and pregnancy', 'With appropriate treatment and care, people living with HIV can have healthy pregnancies and greatly reduce the chance of passing HIV to their baby. Seek guidance from a qualified care team.'],
+  ['Mental health and support', 'An HIV diagnosis can bring many emotions. Peer support, counseling, trusted friends, and health workers can help; choose support that feels safe for you.'],
+  ['Sexual health check-ins', 'Regular conversations with a health worker can help you choose prevention, testing, and care options that fit your circumstances and preferences.'],
   ['Your questions matter', 'You deserve respectful, judgment-free support. A health worker can help you understand testing, prevention, treatment, or your next step.'],
-  ['More information soon', 'This section can grow with locally reviewed information about testing, treatment, and support services in Odiongan.'],
 ];
+
+function KnowledgeInformationGrid({ className = 'knowledge-grid' }) {
+  return (
+    <div className={className}>
+      {guestKnowledge.map(([title, text], index) => (
+        <article key={title}>
+          <span>{String(index + 1).padStart(2, '0')}</span>
+          <h2>{title}</h2>
+          <p>{text}</p>
+        </article>
+      ))}
+    </div>
+  );
+}
 
 const patientPrivateNavItems = [
   ['chat', 'Private Chat'],
@@ -305,8 +362,8 @@ function GuestHub({ onExit, patientMode = false, appointmentsEnabled = true, onP
   };
 
   const pageContent = {
-    home: <><section className="guest-hero guest-page"><div><p className="eyebrow"><span className="pulse-dot" /> Public information and support</p><h1>Start with<br /><span>what you know.</span></h1><p>Clear HIV and AIDS information, local testing guidance, and trusted ways to help in Odiongan and beyond.</p><button className="primary-button" onClick={() => navigate('knowledge')}>Explore the essentials <span>↓</span></button></div><figure className="guest-hero-image"><img src="https://images.unsplash.com/photo-1576091160399-112ba8d25d1d?auto=format&fit=crop&w=1100&q=85" alt="Healthcare professional speaking with a patient" /><figcaption>You deserve care, support, and a place to begin.</figcaption></figure></section><PromotionalMediaGallery /></>,
-    knowledge: <section className="guest-knowledge guest-page" id="guest-knowledge"><div className="guest-section-intro"><p className="eyebrow">HIV / AIDS 101</p><h1>Knowledge<br /><i>without stigma.</i></h1><p>Clear, evidence-based basics to help you learn at your own pace. Locally reviewed information can be added here over time.</p></div><div><div className="knowledge-grid">{guestKnowledge.map(([title, text], index) => <article key={title}><span>{String(index + 1).padStart(2, '0')}</span><h2>{title}</h2><p>{text}</p></article>)}</div><nav className="knowledge-sources" aria-label="Trusted HIV information sources"><strong>Trusted sources</strong><a href="https://www.who.int/news-room/fact-sheets/detail/hiv-aids" target="_blank" rel="noreferrer">World Health Organization: HIV and AIDS</a><a href="https://www.cdc.gov/hiv/testing/" target="_blank" rel="noreferrer">CDC: Getting tested for HIV</a><a href="https://www.cdc.gov/hiv/prevention/pep.html" target="_blank" rel="noreferrer">CDC: PEP for HIV prevention</a><a href="https://www.hiv.gov/hiv-basics/staying-in-hiv-care/hiv-treatment/hiv-treatment-overview" target="_blank" rel="noreferrer">HIV.gov: HIV treatment</a></nav></div></section>,
+    home: <><section className="guest-hero guest-page"><div><p className="eyebrow"><span className="pulse-dot" /> Welcome to HIVeLink</p><h1>Care and support,<br /><span>at your pace.</span></h1><p>HIVeLink brings trusted HIV information, local testing guidance, appointment requests, and supportive connections together in one welcoming place. You can explore public resources without an account, or sign in to access patient services.</p><div className="hero-actions"><button className="primary-button" onClick={() => navigate('knowledge')}>Explore information <span>→</span></button><button className="text-button" onClick={() => navigate('testing')}>Find local care ↗</button></div></div><figure className="guest-hero-image"><img src="https://images.unsplash.com/photo-1576091160399-112ba8d25d1d?auto=format&fit=crop&w=1100&q=85" alt="Healthcare professional speaking with a patient" /><figcaption>A welcoming place to learn and find support.</figcaption></figure></section><section className="guest-offerings" aria-labelledby="guest-offerings-heading"><div className="guest-section-intro"><p className="eyebrow">What you can do here</p><h2 id="guest-offerings-heading">A clear next<br /><i>step forward.</i></h2></div><div className="guest-offerings-grid"><button type="button" onClick={() => navigate('knowledge')}><span>01 · INFORMATION</span><strong>Learn with confidence</strong><p>Explore HIV basics, prevention, testing, treatment, and videos from trusted health organizations.</p></button><button type="button" onClick={() => navigate('testing')}><span>02 · LOCAL CARE</span><strong>Find nearby services</strong><p>See local testing and treatment contacts in Odiongan and find the next place to ask for help.</p></button><div><span>03 · PATIENT SERVICES</span><strong>Manage care privately</strong><p>Registered patients can request appointments, review service history, and connect with support.</p></div><div><span>04 · SUPPORT</span><strong>Talk with someone</strong><p>Use private support options and community resources when you are ready.</p></div></div></section></>,
+    knowledge: <section className="guest-knowledge guest-page" id="guest-knowledge"><div className="guest-section-intro"><p className="eyebrow">HIV / AIDS information</p><h1>Knowledge<br /><i>without stigma.</i></h1><p>Clear, practical information to help you learn at your own pace. These resources support learning and do not replace advice from a qualified health worker.</p></div><div><KnowledgeInformationGrid /><nav className="knowledge-sources" aria-label="Further reading and source organizations"><strong>Further reading and source organizations</strong><a href="https://www.who.int/news-room/fact-sheets/detail/hiv-aids" target="_blank" rel="noreferrer">World Health Organization: HIV and AIDS</a><a href="https://www.cdc.gov/hiv/testing/" target="_blank" rel="noreferrer">CDC: Getting tested for HIV</a><a href="https://www.cdc.gov/hiv/prevention/pep.html" target="_blank" rel="noreferrer">CDC: PEP for HIV prevention</a><a href="https://www.hiv.gov/hiv-basics/staying-in-hiv-care/hiv-treatment/hiv-treatment-overview" target="_blank" rel="noreferrer">HIV.gov: HIV treatment</a></nav><PromotionalMediaGallery /></div></section>,
     testing: <section className="guest-testing guest-page" id="guest-testing"><div className="guest-section-intro"><p className="eyebrow">Find your next step</p><h1>Testing and<br /><i>treatment.</i></h1><p>Testing is confidential. Treatment is available, and early care makes a difference.</p><a className="text-button" href="https://www.google.com/maps/dir/?api=1&origin=12.39998%2C121.98136&destination=12.39459,121.98408" target="_blank" rel="noreferrer">Open in Google Maps ↗</a>{patientMode && (appointmentsEnabled ? <button className="primary-button patient-testing-button" onClick={() => onPrivatePage('appointments')}>Request an appointment <span>↗</span></button> : <p className="form-error patient-testing-button" role="status">Online appointment requests are currently unavailable. Contact your clinic directly.</p>)}</div><div className="map-wrap"><FacilityMap /><p className="map-caption"><strong>Odiongan, Romblon</strong><span>OpenStreetMap with both facilities marked. Select a pin for its name.</span></p></div><div className="testing-facilities"><div className="facility-heading"><p className="eyebrow">Local care contacts</p><h2>Care to<br /><i>contact first.</i></h2><p>Call ahead and ask about HIV testing, treatment referral, and current clinic schedules.</p></div><div className="facility-list"><a href="https://www.google.com/maps/search/?api=1&query=9XXJ%2BWXX%2C+JP+Laurel+St%2C+Odiongan%2C+Romblon" target="_blank" rel="noreferrer"><strong>Rural Health Unit</strong><span>9XXJ+WXX, JP Laurel St, Odiongan, Romblon · Find on map ↗</span></a><a href="https://www.google.com/maps/search/?api=1&query=Romblon+Provincial+Hospital+Liwanag+Odiongan" target="_blank" rel="noreferrer"><strong>Romblon Provincial Hospital</strong><span>Barangay Liwanag, Odiongan · Find on map ↗</span></a></div></div><div className="testing-notes"><div><span>01</span><h2>Where to begin</h2><p>Visit your local Rural Health Unit, municipal health office, or a hospital and ask about confidential HIV testing.</p></div><div><span>02</span><h2>Where to get treated</h2><p>Ask a health worker about referral to an HIV treatment hub. They can guide you to care, medicines, and follow-up.</p></div><div><span>03</span><h2>Need urgent help?</h2><p>PEP may prevent HIV after a recent exposure and works best as soon as possible. Visit a health facility or emergency department.</p></div></div></section>,
   };
 
@@ -514,7 +571,7 @@ function AuthScreen({ onEnter, onPasswordRecoveryComplete }) {
         <div key={mode} className="auth-form-wrap route-transition">
           <div className="auth-page-label"><span>{verificationEmail ? 'VERIFY EMAIL' : mode === 'login' ? 'LOG IN' : mode === 'register' ? 'SIGN UP' : 'PASSWORD RECOVERY'}</span><span>01 / 01</span></div>
           <h2>{verificationEmail || mode === 'forgot-sent' ? <>Check your<br /><i>email.</i></> : mode === 'reset' ? <>Choose a new<br /><i>password.</i></> : mode === 'reset-complete' ? <>Password<br /><i>updated.</i></> : mode === 'forgot' ? <>Reset your<br /><i>password.</i></> : mode === 'login' ? <>Good to<br /><i>see you.</i></> : <>Make space<br /><i>for care.</i></>}</h2>
-          <p className="auth-intro">{verificationEmail ? `We sent a verification link to ${verificationEmail}. Verify your address, then sign in with your ${role === 'patient' ? 'UIC' : 'email address'}.` : mode === 'forgot' ? 'Enter the email address associated with your account. We will send a secure password reset link if it matches an active account.' : mode === 'forgot-sent' ? `If an active account exists for ${resetEmail}, a password reset link has been sent.` : mode === 'reset' ? 'Create a new password to secure your account. Use at least 12 characters.' : mode === 'reset-complete' ? 'Your password has been changed. You can now log in with your new password.' : mode === 'login' ? (role === 'patient' ? 'Patients sign in with their Unique Identifier Code (UIC) and password. Administrators and health workers sign in with their email address and password.' : 'Administrators and health workers sign in with their registered email address and password.') : 'Create an account to save resources and connect with support. Your UIC will be generated from your name initial, birth order, and date of birth.'}</p>
+          <p className="auth-intro">{verificationEmail ? `We sent a verification link to ${verificationEmail}. Verify your address, then sign in with your ${role === 'patient' ? 'UIC' : 'email address'}.` : mode === 'forgot' ? 'Enter the email address associated with your account. We will send a secure password reset link if it matches an active account.' : mode === 'forgot-sent' ? `If an active account exists for ${resetEmail}, a password reset link has been sent.` : mode === 'reset' ? 'Create a new password to secure your account. Use at least 12 characters.' : mode === 'reset-complete' ? 'Your password has been changed. You can now log in with your new password.' : mode === 'login' ? (role === 'patient' ? 'Patients sign in with their Unique Identifier Code (UIC) and password. Administrators and health workers sign in with their email address and password.' : 'Administrators and health workers sign in with their registered email address and password.') : 'Create an account to save resources and connect with support. Your UIC will be generated from your first and last initials, birth order, and date of birth.'}</p>
           {verificationEmail ? <div className="verification-prompt">
             <p className="verification-address">{verificationEmail}</p>
             {registeredUic && <p className="verification-feedback" role="status">Your UIC (save this for sign-in): <strong>{registeredUic}</strong></p>}
@@ -531,12 +588,12 @@ function AuthScreen({ onEnter, onPasswordRecoveryComplete }) {
           <form key={mode} className={`auth-form ${mode === 'register' ? 'registration-form' : ''}`} onSubmit={handleSubmit} autoComplete="off">
             {mode === 'register' && <div className="field-row registration-name-row"><label>First Name<input name="firstName" required type="text" autoComplete="given-name" placeholder="First name" /></label><label>Middle Name<input name="middleName" required type="text" autoComplete="additional-name" placeholder="Middle name" /></label><label>Last Name<input name="lastName" required type="text" autoComplete="family-name" placeholder="Last name" /></label></div>}
             {mode === 'login' && <label>Account type<select name="role" value={role} onChange={(event) => setRole(event.target.value)} required><option value="patient">Patient / User</option><option value="health-worker">Health Worker</option><option value="admin">Admin</option></select></label>}
-            {mode === 'login' && role === 'patient' && <label>UIC (Unique Identifier Code)<input name="uic" required type="text" autoComplete="username" placeholder="e.g. A-01-20000101-000001" /></label>}
+            {mode === 'login' && role === 'patient' && <label>UIC (Unique Identifier Code)<input name="uic" required type="text" autoComplete="username" placeholder="e.g. AR-01-20000101-123" /></label>}
             {mode === 'login' && role !== 'patient' && <label>Email Address<input name="email" required type="email" autoComplete="username" placeholder="you@example.com" /></label>}
             {mode !== 'reset' && mode !== 'login' && <label>Email Address<input name="email" required type="email" autoComplete="email" defaultValue={mode === 'forgot' ? resetEmail : ''} placeholder="you@example.com" /></label>}
             {mode === 'register' && <div className="field-row"><label>Age<input name="age" required type="number" min="13" max="120" placeholder="Age" /></label><label>Date of Birth<input name="dateOfBirth" required type="date" /></label></div>}
             {mode === 'register' && <label>Birth order in family<input name="birthOrder" required type="number" min="1" max="50" placeholder="e.g. 1" /></label>}
-            {mode === 'register' && <label>Gender<select name="gender" defaultValue="" required><option value="" disabled>Select an option</option><option>Male</option><option>Female</option><option>Other</option><option>LGBT</option><option>Prefer not to say</option></select></label>}
+            {mode === 'register' && <label>Gender<select name="gender" defaultValue="" required><option value="" disabled>Select an option</option><option>Male</option><option>Female</option><option>Lesbian, Gay, Bisexual, and Transgender</option><option>Prefer not to say</option></select></label>}
             {(mode === 'login' || mode === 'register') && <PasswordField id="auth-password" label="Password" name="password" required minLength={mode === 'register' ? 12 : undefined} autoComplete={mode === 'login' ? 'current-password' : 'new-password'} placeholder="Enter your password" />}
             {(mode === 'reset' || mode === 'register') && <PasswordField id="auth-confirm-password" label={mode === 'reset' ? 'New Password' : 'Confirm Password'} name={mode === 'reset' ? 'password' : 'confirmPassword'} required minLength={12} autoComplete="new-password" placeholder={mode === 'reset' ? 'Create a new password' : 'Re-enter your password'} />}
             {mode === 'reset' && <PasswordField id="auth-confirm-new-password" label="Confirm New Password" name="confirmPassword" required minLength={12} autoComplete="new-password" placeholder="Re-enter your new password" />}
@@ -789,10 +846,10 @@ function PatientDashboard({ currentUser, currentPatient, onPublicHub, onSignOut 
   const isTestingEnabled = db.getTable('PlatformServices').find((s) => s.service_key === 'testing_referrals')?.is_enabled ?? true;
   const isTreatmentEnabled = db.getTable('PlatformServices').find((s) => s.service_key === 'treatment_referrals')?.is_enabled ?? true;
   const content = {
-    home: <section className="patient-public-home"><p className="eyebrow"><span className="pulse-dot" /> Patient public view</p><h1>Start with<br /><i>what you know.</i></h1><p className="dashboard-intro">Clear HIV and AIDS information, local testing guidance, and trusted ways to support the community.</p><img src="https://images.unsplash.com/photo-1576091160399-112ba8d25d1d?auto=format&fit=crop&w=1100&q=85" alt="Healthcare professional speaking with a patient" /></section>,
+    home: <section className="patient-public-home"><p className="eyebrow"><span className="pulse-dot" /> Welcome to HIVeLink</p><h1>Care and support,<br /><i>at your pace.</i></h1><p className="dashboard-intro">Your private space to find trusted HIV information, explore local care, request appointments, review services, and connect with support.</p><img src="https://images.unsplash.com/photo-1576091160399-112ba8d25d1d?auto=format&fit=crop&w=1100&q=85" alt="Healthcare professional speaking with a patient" /><div className="guest-offerings-grid patient-home-offerings"><button type="button" onClick={() => navigate('information')}><span>LEARN</span><strong>Trusted information</strong><p>Read practical guides and watch educational videos.</p></button><button type="button" onClick={() => navigate('testing')}><span>FIND CARE</span><strong>Local services</strong><p>Review testing locations and treatment guidance.</p></button><button type="button" onClick={() => navigate('appointments')}><span>MANAGE CARE</span><strong>Appointments</strong><p>Send a request to the care team and track its status.</p></button><button type="button" onClick={() => navigate('chat')}><span>CONNECT</span><strong>Support</strong><p>Find private chat and community support options.</p></button></div></section>,
     care: <PagePanel eyebrow="Private care tools" title={<>Care, all in<br /><i>one place.</i></>}><div className="care-grid care-summary-grid"><PatientAction title="Appointments" text="Book and manage visits with your care team." action={() => navigate('appointments')} /><PatientAction title="Services availed" text="Review your booked appointments and care history." action={() => navigate('services')} /></div></PagePanel>,
     services: <PagePanel eyebrow="Your care history" title={<>Services<br /><i>availed.</i></>}><ServicesAvailedView servicesAvailed={servicesAvailed} emptyMessage="You have not availed any services yet. Request an appointment or contact your care team to get started." /></PagePanel>,
-    information: <PagePanel eyebrow="HIV information" title={<>Care starts<br /><i>with clarity.</i></>}><div className="patient-info-grid"><article><span>01</span><h2>Know your status</h2><p>Testing is the only way to know. Confidential testing and treatment are available.</p></article><article><span>02</span><h2>Treatment works</h2><p>With the right treatment, people living with HIV can live long, healthy lives.</p></article><article><span>03</span><h2>U=U</h2><p>An undetectable viral load means HIV is not transmitted through sex.</p></article><article><span>04</span><h2>More information soon</h2><p>This space is reserved for locally reviewed information. Ask a health worker about questions specific to you.</p></article></div><div className="profile-card"><div><span>UIC (UNIQUE IDENTIFIER CODE)</span><strong>{activeUser.uic || 'Not available'}</strong></div><div><span>FULL NAME</span><strong>{activeUser.full_name}</strong></div><div><span>EMAIL ADDRESS</span><strong>{activeUser.email}</strong></div><div><span>CONTACT NUMBER</span><strong>{activeUser.contact_number || 'Not provided'}</strong></div><div><span>ACCOUNT STATUS</span><div><StatusBadge status={activeUser.is_active !== false ? 'Active' : 'Inactive'} /></div></div><div><span>CARE STATUS</span><div><StatusBadge status={patientRecord.care_status || 'Active care plan'} /></div></div><div style={{ display: 'flex', gap: '12px', flexWrap: 'wrap', gridColumn: '1 / -1' }}><button className="primary-button" onClick={() => setEditing({ type: 'profile', name: activeUser.full_name, email: activeUser.email, phone: activeUser.contact_number || '', gender: normalizeGender(activeUser.gender) })}>Edit profile <span>↗</span></button><button className="text-button" onClick={() => navigate('services')}>View availed services ↗</button></div></div></PagePanel>,
+    information: <PagePanel eyebrow="HIV information" title={<>Care starts<br /><i>with clarity.</i></>}><KnowledgeInformationGrid className="patient-info-grid" /><PromotionalMediaGallery /><div className="profile-card"><div><span>UIC (UNIQUE IDENTIFIER CODE)</span><strong>{activeUser.uic || 'Not available'}</strong></div><div><span>FULL NAME</span><strong>{activeUser.full_name}</strong></div><div><span>EMAIL ADDRESS</span><strong>{activeUser.email}</strong></div><div><span>CONTACT NUMBER</span><strong>{activeUser.contact_number || 'Not provided'}</strong></div><div><span>ACCOUNT STATUS</span><div><StatusBadge status={activeUser.is_active !== false ? 'Active' : 'Inactive'} /></div></div><div><span>CARE STATUS</span><div><StatusBadge status={patientRecord.care_status || 'Active care plan'} /></div></div><div style={{ display: 'flex', gap: '12px', flexWrap: 'wrap', gridColumn: '1 / -1' }}><button className="primary-button" onClick={() => setEditing({ type: 'profile', name: activeUser.full_name, email: activeUser.email, phone: activeUser.contact_number || '', gender: normalizeGender(activeUser.gender) })}>Edit profile <span>↗</span></button><button className="text-button" onClick={() => navigate('services')}>View availed services ↗</button></div></div></PagePanel>,
     testing: <PagePanel eyebrow="Find your next step" title={<>Testing and<br /><i>treatment.</i></>}><div className="patient-testing-intro"><p>Testing is confidential. Treatment is available, and early care makes a difference.</p><a className="text-button" href="https://www.google.com/maps/dir/?api=1&origin=12.39998%2C121.98136&destination=12.39459,121.98408" target="_blank" rel="noreferrer">Open in Google Maps ↗</a>{isTestingEnabled && <button className="primary-button" onClick={() => navigate('appointments')}>Request an appointment</button>}</div>{!isTestingEnabled && <p className="form-error" style={{ margin: '16px 0' }}>HIV testing referrals are currently offline.</p>}<div className="map-wrap patient-map"><FacilityMap /><p className="map-caption"><strong>Odiongan, Romblon</strong><span>OpenStreetMap with both facilities marked. Select a pin for its name.</span></p></div><div className="testing-notes patient-testing-notes"><div><span>01</span><h2>Where to begin</h2><p>Visit your local Rural Health Unit, municipal health office, or hospital and ask about confidential HIV testing.</p></div><div><span>02</span><h2>Where to get treated</h2><p>{isTreatmentEnabled ? 'Ask a health worker about referral to an HIV treatment hub, medicines, and follow-up care.' : 'Treatment referral service is currently offline.'}</p></div></div></PagePanel>,
     appointments: <PagePanel eyebrow="Care schedule" title={<>Appointment<br /><i>requests.</i></>}>
       <div className="appointment-page-intro">
@@ -1075,8 +1132,7 @@ function PatientForm({ data, onClose, onSave }) {
                 <option value="" disabled>Select an option</option>
                 <option>Male</option>
                 <option>Female</option>
-                <option>Other</option>
-                <option>LGBT</option>
+                <option>Lesbian, Gay, Bisexual, and Transgender</option>
                 <option>Prefer not to say</option>
               </select> : <input
                 required={type !== 'checkbox' && !['phone', 'notes', 'isRefill'].includes(key)}
@@ -1394,8 +1450,7 @@ function AdminUserFormModal({ user, onClose, onSave }) {
               <select value={formData.gender} onChange={(e) => setFormData({ ...formData, gender: e.target.value })}>
                 <option>Male</option>
                 <option>Female</option>
-                <option>Other</option>
-                <option>LGBT</option>
+                <option>Lesbian, Gay, Bisexual, and Transgender</option>
                 <option>Prefer not to say</option>
               </select>
             </label>
@@ -1897,6 +1952,7 @@ function AdminDashboard({ onPublicHub, onSignOut }) {
   const [workerVerificationFilter, setWorkerVerificationFilter] = useState('all');
   const [verificationNotice, setVerificationNotice] = useState('');
   const [appointmentNotice, setAppointmentNotice] = useState('');
+  const [appointmentWorkerSelection, setAppointmentWorkerSelection] = useState({});
 
   useEffect(() => {
     return db.subscribe(() => setDbVersion((v) => v + 1));
@@ -1942,6 +1998,17 @@ function AdminDashboard({ onPublicHub, onSignOut }) {
     } catch (error) {
       setAppointmentNotice(error.message || 'The appointment could not be updated. Please try again.');
     }
+  };
+  const assignAndApproveAppointment = async (appointmentId) => {
+    setAppointmentNotice('');
+    const workerId = appointmentWorkerSelection[appointmentId];
+    if (!workerId) {
+      setAppointmentNotice('Select an available health worker before approving this request.');
+      return;
+    }
+    const result = await db.assignAppointment(appointmentId, workerId);
+    if (result?.error) setAppointmentNotice(result.error);
+    else setAppointmentWorkerSelection((selections) => ({ ...selections, [appointmentId]: '' }));
   };
   const openAppointmentReschedule = (appointment) => setActiveModal({
     type: 'reschedule-appointment',
@@ -1998,20 +2065,37 @@ function AdminDashboard({ onPublicHub, onSignOut }) {
             const status = String(appointment.status || 'Requested');
             const isClosed = ['completed', 'cancelled'].includes(status.toLowerCase());
             const isConfirmed = status.toLowerCase() === 'confirmed';
+            const appointmentId = appointment.appointment_id || appointment.id;
+            const availableWorkers = db.getAvailableWorkersForAppointment(appointmentId);
             return (
-              <article key={appointment.appointment_id || appointment.id}>
+              <article key={appointmentId}>
                 <div>
                   <strong>UIC {appointment.uic}</strong>
                   <span>{appointment.appointment_date} · {formatAppointmentTime(appointment.appointment_time)} · {appointment.appointment_type} ({appointment.facilityName})</span>
+                  {appointment.worker_id && <small className="appointment-worker-note">Assigned health worker UIC {db.findById('Users', db.findById('HealthWorkers', appointment.worker_id)?.user_id)?.uic || 'Unavailable'}</small>}
                   {appointment.notes && <small className="appointment-worker-note">Patient note: {appointment.notes}</small>}
                 </div>
                 <StatusBadge status={status} />
                 {!isClosed && (
                   <div className="worker-actions">
-                    {!isConfirmed && <button type="button" className="card-link" onClick={() => updateAppointmentStatus(appointment.appointment_id || appointment.id, 'Confirmed')}>Confirm</button>}
-                    {isConfirmed && <button type="button" className="card-link" onClick={() => updateAppointmentStatus(appointment.appointment_id || appointment.id, 'Completed')}>Mark completed</button>}
+                    {!isConfirmed && (
+                      <>
+                        <select
+                          className="admin-filter-select"
+                          aria-label={`Health worker for appointment ${appointmentId}`}
+                          value={appointmentWorkerSelection[appointmentId] || ''}
+                          onChange={(event) => setAppointmentWorkerSelection((selections) => ({ ...selections, [appointmentId]: event.target.value }))}
+                        >
+                          <option value="">Select available health worker</option>
+                          {availableWorkers.map((worker) => <option key={worker.workerId} value={worker.workerId}>UIC {db.findById('Users', worker.userId)?.uic || 'Unavailable'}</option>)}
+                        </select>
+                        <button type="button" className="card-link" disabled={!availableWorkers.length} onClick={() => assignAndApproveAppointment(appointmentId)}>Approve &amp; assign</button>
+                        {!availableWorkers.length && <small>No verified, available health worker has an open slot at this clinic and time.</small>}
+                      </>
+                    )}
+                    {isConfirmed && <button type="button" className="card-link" onClick={() => updateAppointmentStatus(appointmentId, 'Completed')}>Mark completed</button>}
                     <button type="button" className="card-link" onClick={() => openAppointmentReschedule(appointment)}>Reschedule</button>
-                    <button type="button" className="card-link" onClick={() => updateAppointmentStatus(appointment.appointment_id || appointment.id, 'Cancelled')}>Cancel</button>
+                    <button type="button" className="card-link" onClick={() => updateAppointmentStatus(appointmentId, 'Cancelled')}>Cancel</button>
                   </div>
                 )}
               </article>
@@ -2212,6 +2296,7 @@ function AdminDashboard({ onPublicHub, onSignOut }) {
           appointment_time: record.time,
           appointment_type: record.appointmentType,
           notes: record.notes || '',
+          worker_id: null,
           status: 'Rescheduled',
         });
         return result?.error ? result : result || { error: 'The appointment could not be rescheduled. Please try again.' };
@@ -2407,9 +2492,8 @@ function App() {
               <div className="resource-number">{resource.number}</div><div><h3>{resource.title}</h3><p>{resource.text}</p>{activeResource === index && <p className="resource-detail">We can help you find a local, confidential next step at your own pace.</p>}<button className="card-link" onClick={() => setActiveResource(activeResource === index ? null : index)}>{activeResource === index ? 'Close details' : resource.action} <span>↗</span></button></div>
             </article>)}
           </div>
+          <PromotionalMediaGallery />
         </section>
-
-        <PromotionalMediaGallery />
 
         <section className="community-section" id="community"><div className="community-quote"><span className="quote-mark">“</span><blockquote>You are more than<br />a diagnosis.</blockquote><p>Support starts with being seen, heard, and met with respect.</p></div><div className="community-panel"><p className="eyebrow">A private conversation</p><h2>Questions are<br /><i>welcome here.</i></h2><p>Our support team can help you sort through testing, treatment, prevention, or just a difficult day.</p><button className="primary-button light-button" onClick={openSupport}>Reach out <span>↗</span></button></div></section>
       </main>

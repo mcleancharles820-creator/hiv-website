@@ -127,7 +127,7 @@ test('shows all requested registration fields', () => {
   expect(screen.getByLabelText(/birth order in family/i)).toBeRequired();
   const signupGender = screen.getByLabelText(/^gender/i);
   expect(signupGender).toBeRequired();
-  expect(Array.from(signupGender.options).map((option) => option.text)).toEqual(['Select an option', 'Male', 'Female', 'Other', 'LGBT', 'Prefer not to say']);
+  expect(Array.from(signupGender.options).map((option) => option.text)).toEqual(['Select an option', 'Male', 'Female', 'Lesbian, Gay, Bisexual, and Transgender', 'Prefer not to say']);
   expect(screen.getByLabelText(/^password$/i)).toBeInTheDocument();
   expect(screen.getByLabelText(/confirm password/i)).toBeInTheDocument();
   expect(screen.getByLabelText(/contact number/i)).toBeInTheDocument();
@@ -173,8 +173,9 @@ test('admin email service sends a registered user ID to the backend', async () =
 test('gender validation matches patient and health-worker account choices', () => {
   expect(isAllowedGender('Male', 'patient')).toBe(true);
   expect(isAllowedGender('Female', 'patient')).toBe(true);
-  expect(isAllowedGender('Other', 'patient')).toBe(true);
-  expect(isAllowedGender('LGBT', 'patient')).toBe(true);
+  expect(isAllowedGender('Other', 'patient')).toBe(false);
+  expect(isAllowedGender('Lesbian, Gay, Bisexual, and Transgender', 'patient')).toBe(true);
+  expect(isAllowedGender('LGBT', 'patient')).toBe(false);
   expect(isAllowedGender('Non-binary', 'patient')).toBe(false);
   expect(isAllowedGender('Self-described', 'patient')).toBe(false);
   expect(isAllowedGender('Prefer not to say', 'patient')).toBe(true);
@@ -188,15 +189,29 @@ test('server name validation requires each name and respects the users.full_name
   expect(getFullNameFromParts({ firstName: 'Ada', middleName: 'Marie', lastName: 'L'.repeat(150) }).error).toMatch(/150 characters or fewer/i);
 });
 
-test('promotional image cards open an interactive image preview with a source link', () => {
+test('guest home summarizes the platform and information includes playable videos and visual guides', () => {
   render(<App />);
   userEvent.click(screen.getByRole('button', { name: /continue as guest/i }));
 
-  userEvent.click(screen.getByRole('link', { name: /explore treatment information: treatment works/i }));
+  expect(screen.getByRole('heading', { name: /care and support, at your pace/i })).toBeInTheDocument();
+  expect(screen.getByText(/what you can do here/i)).toBeInTheDocument();
+  expect(screen.queryByRole('button', { name: /watch: hiv basics/i })).not.toBeInTheDocument();
+
+  userEvent.click(screen.getByRole('button', { name: 'Information' }));
+  expect(screen.getByRole('heading', { name: /knowledge without stigma/i })).toBeInTheDocument();
+  expect(screen.getByRole('heading', { name: /hiv and pregnancy/i })).toBeInTheDocument();
+  expect(screen.getAllByRole('button', { name: /^watch:/i })).toHaveLength(6);
+
+  userEvent.click(screen.getByRole('button', { name: /watch: hiv basics: testing, prevention, and living with hiv/i }));
+  const videoPreview = screen.getByRole('dialog', { name: /hiv basics: testing, prevention, and living with hiv/i });
+  expect(within(videoPreview).getByTitle(/hiv basics: testing/i)).toHaveAttribute('src', 'https://www.youtube-nocookie.com/embed/JY1qi3bf-Os?autoplay=1&rel=0');
+  userEvent.click(within(videoPreview).getByRole('button', { name: /close image preview/i }));
+
+  userEvent.click(screen.getByRole('button', { name: /view: treatment works/i }));
 
   const preview = screen.getByRole('dialog', { name: /treatment works/i });
   expect(within(preview).getByRole('img', { name: /treatment works/i })).toHaveAttribute('src', '/promotional-treatment.svg');
-  expect(within(preview).getByRole('link', { name: /explore treatment information/i })).toHaveAttribute('href', 'https://www.who.int/news-room/fact-sheets/detail/hiv-aids');
+  expect(within(preview).getByRole('link', { name: /treatment and u=u/i })).toHaveAttribute('href', 'https://www.who.int/news-room/fact-sheets/detail/hiv-aids');
   userEvent.click(within(preview).getByRole('button', { name: /close image preview/i }));
   expect(screen.queryByRole('dialog', { name: /treatment works/i })).not.toBeInTheDocument();
 });
@@ -208,12 +223,12 @@ test('registration services send all three name parts and never send password co
   const nameParts = { firstName: 'Ada', middleName: 'Marie', lastName: 'Lovelace' };
 
   try {
-    await db.registerUser({ ...nameParts, email: 'ada@example.com', password: 'securePassword123', confirmPassword: 'securePassword123', gender: 'Other' });
+    await db.registerUser({ ...nameParts, email: 'ada@example.com', password: 'securePassword123', confirmPassword: 'securePassword123', gender: 'Lesbian, Gay, Bisexual, and Transgender' });
     await db.adminCreateUser({ ...nameParts, email: 'patient@example.com', password: 'securePassword123', confirmPassword: 'securePassword123', gender: 'Male' });
     await db.adminCreateHealthWorker({ ...nameParts, email: 'worker@example.com', password: 'securePassword123', confirmPassword: 'securePassword123', gender: 'Female' });
 
     const requestBody = (path) => JSON.parse(fetchMock.mock.calls.find(([url]) => url === path)[1].body);
-    expect(requestBody('/api/auth/register')).toMatchObject({ ...nameParts, gender: 'Other' });
+    expect(requestBody('/api/auth/register')).toMatchObject({ ...nameParts, gender: 'Lesbian, Gay, Bisexual, and Transgender' });
     expect(requestBody('/api/admin/users')).toMatchObject({ ...nameParts, gender: 'Male' });
     expect(requestBody('/api/admin/workers')).toMatchObject({ ...nameParts, gender: 'Female' });
     ['/api/auth/register', '/api/admin/users', '/api/admin/workers'].forEach((path) => {
@@ -534,14 +549,17 @@ test('health workers can review but cannot process patient appointment requests'
 
 test('administrator can find appointment requests by UIC and reschedule or cancel them', async () => {
   db.registerUser({ fullName: 'Appointment Admin', email: 'appointment.admin@example.com', password: 'securePassword123', role: 'admin' });
+  const worker = db.registerUser({ firstName: 'Care', lastName: 'Worker', fullName: 'Care Worker', email: 'appointment.worker@example.com', password: 'securePassword123', role: 'health-worker' });
   const patient = db.registerUser({ fullName: 'Appointment Patient', email: 'appointment.patient@example.com', password: 'securePassword123', role: 'patient' });
   const appointment = db.bookAppointment({
     patient_id: patient.patient.patient_id,
+    worker_id: worker.worker.worker_id,
     facility_id: 1,
     appointment_date: dateAfterDays(2),
     appointment_time: '09:30',
     appointment_type: 'Routine follow-up',
     notes: 'Morning preferred.',
+    status: 'Confirmed',
   });
 
   render(<App />);
@@ -563,13 +581,15 @@ test('administrator can find appointment requests by UIC and reschedule or cance
     appointment_date: rescheduledDate,
     appointment_time: '10:15',
     status: 'Rescheduled',
+    worker_id: null,
   });
   userEvent.click(screen.getByRole('button', { name: 'Cancel' }));
   expect(db.findById('Appointments', appointment.appointment_id).status).toBe('Cancelled');
 });
 
-test('administrator can confirm and complete an appointment request', () => {
+test('administrator must assign an available clinic health worker before completing an appointment', async () => {
   db.registerUser({ fullName: 'Status Admin', email: 'status.admin@example.com', password: 'securePassword123', role: 'admin' });
+  const worker = db.registerUser({ firstName: 'Health', lastName: 'Worker', fullName: 'Health Worker', email: 'status.worker@example.com', password: 'securePassword123', role: 'health-worker' });
   const patient = db.registerUser({ fullName: 'Status Patient', email: 'status.patient@example.com', password: 'securePassword123', role: 'patient' });
   const appointment = db.bookAppointment({
     patient_id: patient.patient.patient_id,
@@ -583,10 +603,43 @@ test('administrator can confirm and complete an appointment request', () => {
   userEvent.selectOptions(screen.getByLabelText(/account type/i), 'admin');
   signInAs('status.admin@example.com', 'securePassword123');
   userEvent.click(screen.getByRole('button', { name: 'Appointments' }));
-  userEvent.click(screen.getByRole('button', { name: 'Confirm' }));
-  expect(db.findById('Appointments', appointment.appointment_id).status).toBe('Confirmed');
+  userEvent.selectOptions(screen.getByRole('combobox', { name: `Health worker for appointment ${appointment.appointment_id}` }), String(worker.worker.worker_id));
+  userEvent.click(screen.getByRole('button', { name: /approve & assign/i }));
+  await waitFor(() => expect(db.findById('Appointments', appointment.appointment_id)).toMatchObject({
+    worker_id: worker.worker.worker_id,
+    status: 'Confirmed',
+  }));
+  expect(db.getTable('ActivityLogs').some((log) => log.action === 'Approved and assigned appointment')).toBe(true);
   userEvent.click(screen.getByRole('button', { name: /mark completed/i }));
   expect(db.findById('Appointments', appointment.appointment_id).status).toBe('Completed');
+});
+
+test('appointment assignment excludes workers with a confirmed appointment in the same slot', async () => {
+  const worker = db.registerUser({ firstName: 'Jamie', lastName: 'Lee', fullName: 'Jamie Lee', email: 'slot.worker@example.com', password: 'securePassword123', role: 'health-worker' });
+  const firstPatient = db.registerUser({ fullName: 'First Patient', email: 'slot.first@example.com', password: 'securePassword123', role: 'patient' });
+  const secondPatient = db.registerUser({ fullName: 'Second Patient', email: 'slot.second@example.com', password: 'securePassword123', role: 'patient' });
+  const requested = db.bookAppointment({
+    patient_id: firstPatient.patient.patient_id,
+    facility_id: 1,
+    appointment_date: dateAfterDays(10),
+    appointment_time: '09:30',
+    appointment_type: 'Routine follow-up',
+  });
+  const existing = db.bookAppointment({
+    patient_id: secondPatient.patient.patient_id,
+    worker_id: worker.worker.worker_id,
+    facility_id: 1,
+    appointment_date: dateAfterDays(10),
+    appointment_time: '09:30',
+    appointment_type: 'Routine follow-up',
+    status: 'Confirmed',
+  });
+
+  expect(db.getAvailableWorkersForAppointment(requested.appointment_id)).toHaveLength(0);
+  await expect(db.assignAppointment(requested.appointment_id, worker.worker.worker_id)).resolves.toMatchObject({ error: expect.stringMatching(/no longer available/i) });
+
+  db.update('Appointments', existing.appointment_id, { appointment_time: '10:00' });
+  expect(db.getAvailableWorkersForAppointment(requested.appointment_id).map((entry) => entry.workerId)).toContain(worker.worker.worker_id);
 });
 
 test('patient appointment cancellation waits for confirmation', () => {
@@ -713,7 +766,7 @@ test('patient public pages match the guest experience', () => {
   render(<App />);
   signInAs('morgan@example.com', 'password');
 
-  expect(screen.getByRole('heading', { name: /start with what you know/i })).toBeInTheDocument();
+  expect(screen.getByRole('heading', { name: /care and support, at your pace/i })).toBeInTheDocument();
   userEvent.click(screen.getByRole('button', { name: 'Information' }));
   expect(screen.getByRole('heading', { name: /knowledge without stigma/i })).toBeInTheDocument();
   expect(screen.getByRole('button', { name: /sign out/i })).toBeInTheDocument();
@@ -1156,7 +1209,7 @@ test('encodes registered user into the database and loads their personalized das
   // The account header identifies the registered user by their UIC.
   const registeredUser = db.getTable('Users').find((user) => user.email === 'jordan@testdomain.org');
   expect(registeredUser.full_name).toBe('Jordan Marie Taylor');
-  expect(registeredUser.uic).toMatch(/^J-03-19970415-\d{6}$/);
+  expect(registeredUser.uic).toMatch(/^JT-03-19970415-\d+$/);
   expect(screen.getByText(`UIC ${registeredUser.uic}`)).toBeInTheDocument();
   userEvent.click(screen.getByRole('button', { name: /open uic .* care dashboard/i }));
   expect(screen.getByText('Jordan Marie Taylor')).toBeInTheDocument();
@@ -1165,6 +1218,7 @@ test('encodes registered user into the database and loads their personalized das
 test('UIC remains unique when two patients share the same name initial, birth order, and date of birth', () => {
   const first = db.registerUser({
     firstName: 'Alex',
+    lastName: 'Rivera',
     fullName: 'Alex Rivera',
     email: 'alex.one@example.com',
     password: 'securePassword123',
@@ -1173,6 +1227,7 @@ test('UIC remains unique when two patients share the same name initial, birth or
   });
   const second = db.registerUser({
     firstName: 'Avery',
+    lastName: 'Stone',
     fullName: 'Avery Stone',
     email: 'avery.two@example.com',
     password: 'securePassword123',
@@ -1181,8 +1236,8 @@ test('UIC remains unique when two patients share the same name initial, birth or
   });
 
   expect(first.user.uic).not.toBe(second.user.uic);
-  expect(first.user.uic).toMatch(/^A-01-20000101-\d{6}$/);
-  expect(second.user.uic).toMatch(/^A-01-20000101-\d{6}$/);
+  expect(first.user.uic).toMatch(/^AR-01-20000101-\d+$/);
+  expect(second.user.uic).toMatch(/^AS-01-20000101-\d+$/);
 });
 
 test('UIC and birth order stay immutable after registration', () => {
@@ -1217,11 +1272,11 @@ test('patient can update gender from their care dashboard profile form', async (
   signInAs('gender.profile@example.com', 'securePassword123');
   userEvent.click(screen.getByRole('button', { name: /open uic .* care dashboard/i }));
   userEvent.click(screen.getByRole('button', { name: 'Open Edit profile' }));
-  userEvent.selectOptions(screen.getByLabelText(/^gender$/i), 'LGBT');
+  userEvent.selectOptions(screen.getByLabelText(/^gender$/i), 'Lesbian, Gay, Bisexual, and Transgender');
   userEvent.click(screen.getByRole('button', { name: /save record/i }));
 
   await waitFor(() => {
-    expect(db.findById('Users', registered.user.user_id).gender).toBe('LGBT');
+    expect(db.findById('Users', registered.user.user_id).gender).toBe('Lesbian, Gay, Bisexual, and Transgender');
   });
 });
 
@@ -1305,8 +1360,8 @@ test('admin can perform full CRUD on users, see full user info, and inspect avai
   userEvent.click(screen.getByRole('button', { name: /^add user/i }));
   expect(screen.getByRole('heading', { name: /add new user/i })).toBeInTheDocument();
   const patientGender = screen.getByLabelText(/^gender$/i);
-  expect(Array.from(patientGender.options).map((option) => option.text)).toEqual(['Male', 'Female', 'Other', 'LGBT', 'Prefer not to say']);
-  userEvent.selectOptions(patientGender, 'Other');
+  expect(Array.from(patientGender.options).map((option) => option.text)).toEqual(['Male', 'Female', 'Lesbian, Gay, Bisexual, and Transgender', 'Prefer not to say']);
+  userEvent.selectOptions(patientGender, 'Lesbian, Gay, Bisexual, and Transgender');
 
   userEvent.type(screen.getByLabelText(/first name/i), 'Alex');
   userEvent.type(screen.getByLabelText(/middle name/i), 'James');
@@ -1331,7 +1386,7 @@ test('admin can perform full CRUD on users, see full user info, and inspect avai
 
   expect(screen.getByText('Alex James Rivera')).toBeInTheDocument();
   expect(screen.getByText(/alex\.rivera@example\.com/i)).toBeInTheDocument();
-  expect(db.getTable('Users').find((account) => account.email === 'alex.rivera@example.com').gender).toBe('Other');
+  expect(db.getTable('Users').find((account) => account.email === 'alex.rivera@example.com').gender).toBe('Lesbian, Gay, Bisexual, and Transgender');
 
   // Book an appointment for this newly created patient so they have an availed service
   const alexUser = db.getTable('Users').find((u) => u.email === 'alex.rivera@example.com');

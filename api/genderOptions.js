@@ -1,4 +1,4 @@
-const PATIENT_GENDER_OPTIONS = Object.freeze(['Male', 'Female', 'Other', 'LGBT', 'Prefer not to say']);
+const PATIENT_GENDER_OPTIONS = Object.freeze(['Male', 'Female', 'Lesbian, Gay, Bisexual, and Transgender', 'Prefer not to say']);
 const HEALTH_WORKER_GENDER_OPTIONS = Object.freeze(['Male', 'Female']);
 
 function isAllowedGender(value, accountType = 'patient') {

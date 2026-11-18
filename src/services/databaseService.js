@@ -530,9 +530,11 @@ class DatabaseService {
       terms_accepted: Boolean(termsAccepted),
       is_active: true,
     });
-    const uicInitial = String(firstName || formattedName).trim().normalize('NFD').replace(/[\u0300-\u036f]/g, '').match(/[A-Za-z]/)?.[0] || 'X';
+    const normalizeInitial = (value) => String(value || '').trim().normalize('NFD').replace(/[\u0300-\u036f]/g, '').match(/[A-Za-z]/)?.[0]?.toUpperCase() || 'X';
+    const firstInitial = normalizeInitial(firstName || formattedName);
+    const lastInitial = normalizeInitial(lastName || formattedName.split(/\s+/).filter(Boolean).pop());
     const uicDate = String(formattedDob || new Date().toISOString().slice(0, 10)).replace(/-/g, '');
-    newUser.uic = `${uicInitial.toUpperCase()}-${String(parsedBirthOrder).padStart(2, '0')}-${uicDate}-${String(newUser.user_id).padStart(6, '0')}`;
+    newUser.uic = `${firstInitial}${lastInitial}-${String(parsedBirthOrder).padStart(2, '0')}-${uicDate}-${newUser.user_id}`;
     this.update('Users', newUser.user_id, { uic: newUser.uic });
 
     // Create role-specific relational record
@@ -649,6 +651,54 @@ class DatabaseService {
       status: String(status),
       notes: String(notes || ''),
     });
+  }
+
+  getAvailableWorkersForAppointment(appointmentId) {
+    const appointment = this.findById('Appointments', appointmentId);
+    if (!appointment) return [];
+    return this.getHealthWorkersListDetailed().filter((worker) => {
+      if (!worker.isVerified || !worker.isAvailable || !worker.emailVerified || worker.accountStatus !== 'Active') return false;
+      if (Number(worker.rawWorker.primary_facility_id) !== Number(appointment.facility_id)) return false;
+      return !this.getTable('Appointments').some((other) =>
+        Number(other.appointment_id) !== Number(appointmentId)
+        && Number(other.worker_id) === Number(worker.workerId)
+        && String(other.status).toLowerCase() === 'confirmed'
+        && String(other.appointment_date) === String(appointment.appointment_date)
+        && String(other.appointment_time).slice(0, 5) === String(appointment.appointment_time).slice(0, 5));
+    });
+  }
+
+  async assignAppointment(appointmentId, workerId) {
+    if (this.useApi) {
+      try {
+        const result = await this.apiRequest(`/api/admin/appointments/${encodeURIComponent(appointmentId)}/assign`, {
+          method: 'POST',
+          body: JSON.stringify({ workerId }),
+        });
+        await this.refresh();
+        return result;
+      } catch (error) {
+        return { error: error.message };
+      }
+    }
+    const appointment = this.findById('Appointments', appointmentId);
+    if (!appointment) return { error: 'Appointment not found.' };
+    const worker = this.getAvailableWorkersForAppointment(appointmentId)
+      .find((entry) => Number(entry.workerId) === Number(workerId));
+    if (!worker) return { error: 'That health worker is no longer available for this appointment time and facility.' };
+    const updated = this.update('Appointments', appointmentId, { worker_id: Number(workerId), status: 'Confirmed' });
+    if (!updated) return { error: 'The appointment could not be approved and assigned.' };
+    const patient = this.getTable('Patients').find((entry) => Number(entry.patient_id) === Number(appointment.patient_id));
+    const patientUic = patient ? this.findById('Users', patient.user_id)?.uic || 'Unavailable' : 'Unavailable';
+    const workerUic = this.findById('Users', worker.userId)?.uic || 'Unavailable';
+    this.insert('ActivityLogs', {
+      actor_user_id: 1,
+      actor_name: 'Administrator',
+      action: 'Approved and assigned appointment',
+      category: 'Appointments',
+      details: `Assigned appointment for UIC ${patientUic} to health worker UIC ${workerUic}.`,
+    });
+    return updated;
   }
 
   /**

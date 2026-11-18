@@ -2293,12 +2293,17 @@ html { scrollbar-gutter: stable; }
   background: #fff;
   border: 1px solid rgba(31, 25, 30, 0.1);
   border-radius: 14px;
+  cursor: pointer;
   color: inherit;
   display: flex;
   flex-direction: column;
+  font: inherit;
   overflow: hidden;
+  padding: 0;
+  text-align: left;
   text-decoration: none;
   transition: box-shadow 180ms ease, transform 180ms ease;
+  width: 100%;
 }
 
 .promo-media-card:hover,
@@ -2393,6 +2398,18 @@ html { scrollbar-gutter: stable; }
   width: 100%;
 }
 
+.promo-video-frame {
+  aspect-ratio: 16 / 9;
+  background: #171717;
+  width: 100%;
+}
+
+.promo-video-frame iframe {
+  border: 0;
+  height: 100%;
+  width: 100%;
+}
+
 .promo-preview-modal h2 {
   font: 400 32px/1.1 Georgia, serif;
   margin: 0 0 12px;
@@ -2410,6 +2427,86 @@ html { scrollbar-gutter: stable; }
 @media (max-width: 760px) {
   .promo-media-grid {
     grid-template-columns: 1fr;
+  }
+
+  .guest-offerings {
+    background: #f7f2ef;
+    padding: clamp(52px, 7vw, 88px) max(24px, calc((100vw - 1180px) / 2));
+  }
+
+  .guest-offerings-grid {
+    display: grid;
+    gap: 16px;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    margin-top: 32px;
+  }
+
+  .guest-offerings-grid > * {
+    background: #fff;
+    border: 1px solid rgba(31, 25, 30, 0.1);
+    color: inherit;
+    display: flex;
+    flex-direction: column;
+    min-height: 180px;
+    padding: 24px;
+    text-align: left;
+  }
+
+  .guest-offerings-grid > button {
+    cursor: pointer;
+    font: inherit;
+    transition: box-shadow 180ms ease, transform 180ms ease;
+  }
+
+  .guest-offerings-grid > button:hover,
+  .guest-offerings-grid > button:focus-visible {
+    box-shadow: 0 12px 28px rgba(31, 25, 30, 0.1);
+    transform: translateY(-2px);
+  }
+
+  .guest-offerings-grid span {
+    color: var(--coral);
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: 0.08em;
+  }
+
+  .guest-offerings-grid strong {
+    font: 400 22px Georgia, serif;
+    margin: 18px 0 8px;
+  }
+
+  .guest-offerings-grid p {
+    color: var(--muted);
+    font: 14px/1.5 'Arial Narrow', sans-serif;
+    margin: 0;
+  }
+
+  .guest-knowledge > div > .promo-section {
+    margin-top: 40px;
+    padding: 48px 0;
+  }
+
+  .learn-section > .promo-section {
+    background: transparent;
+    grid-column: 1 / -1;
+    padding: 48px 0;
+    width: 100%;
+  }
+
+  .guest-knowledge > div > .promo-section .promo-media-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .patient-home-offerings {
+    margin-top: 32px;
+  }
+
+  @media (max-width: 760px) {
+    .guest-offerings-grid,
+    .guest-knowledge > div > .promo-section .promo-media-grid {
+      grid-template-columns: 1fr;
+    }
   }
 
   .promo-preview-modal {

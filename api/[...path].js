@@ -32,10 +32,11 @@ function supabaseClients() {
 }
 
 const sessionCookie = 'hivelink_session';
-function makeUic(firstName, birthOrder, dateOfBirth, userId) {
-  const initial = String(firstName || '').trim().normalize('NFD').replace(/[\u0300-\u036f]/g, '').match(/[A-Za-z]/)?.[0] || 'X';
+function makeUic(firstName, lastName, birthOrder, dateOfBirth, userId) {
+  const normalizeInitial = (value) => String(value || '').trim().normalize('NFD').replace(/[\u0300-\u036f]/g, '').match(/[A-Za-z]/)?.[0]?.toUpperCase() || 'X';
+  const initials = `${normalizeInitial(firstName)}${normalizeInitial(lastName)}`;
   const date = String(dateOfBirth || new Date().toISOString().slice(0, 10)).replace(/-/g, '');
-  return `${initial.toUpperCase()}-${String(birthOrder).padStart(2, '0')}-${date}-${String(userId).padStart(6, '0')}`;
+  return `${initials}-${String(birthOrder).padStart(2, '0')}-${date}-${userId}`;
 }
 const tableConfig = {
   Users: { sql: 'users', id: 'user_id', updated: true, columns: ['full_name', 'email', 'contact_number', 'age', 'date_of_birth', 'gender', 'is_active'] },
@@ -541,9 +542,19 @@ async function mutate(req, user, table, id) {
       && values.status && !['Requested', 'Confirmed', 'Completed', 'Cancelled', 'Rescheduled'].includes(values.status)) {
     return { status: 400, body: { error: 'Choose a valid appointment status.' } };
   }
+  if (table === 'Appointments' && operation === 'update' && values.status === 'Confirmed') {
+    return { status: 403, body: { error: 'Appointments must be approved and assigned to an available health worker by an administrator.' } };
+  }
+  if (table === 'Appointments' && operation === 'update'
+      && Object.prototype.hasOwnProperty.call(values, 'worker_id') && values.worker_id !== null) {
+    return { status: 403, body: { error: 'Use the administrator assignment action to assign a health worker.' } };
+  }
   if (user.role === 'admin' && table === 'Appointments' && operation === 'update'
       && values.status && !['Requested', 'Confirmed', 'Completed', 'Cancelled', 'Rescheduled'].includes(values.status)) {
     return { status: 400, body: { error: 'Choose a valid appointment status.' } };
+  }
+  if (user.role === 'admin' && table === 'Appointments' && operation === 'update' && values.status === 'Rescheduled') {
+    values.worker_id = null;
   }
   if (table === 'Appointments' && operation === 'insert') {
     if (user.role === 'patient') {
@@ -570,8 +581,8 @@ async function mutate(req, user, table, id) {
       if (!/^(?:[01]\d|2[0-3]):[0-5]\d$/.test(values.appointment_time)) return { status: 400, body: { error: 'Choose a valid preferred appointment time.' } };
       if (!values.appointment_type || values.appointment_type.length > 100) return { status: 400, body: { error: 'Choose a visit reason of 1–100 characters.' } };
       if (values.notes.length > 500) return { status: 400, body: { error: 'Appointment notes must be 500 characters or fewer.' } };
-    } else if (!values.appointment_date || !values.appointment_time || !values.appointment_type) {
-      return { status: 400, body: { error: 'Appointment date, time, and type are required.' } };
+    } else {
+      return { status: 403, body: { error: 'Appointment requests must be submitted by patients.' } };
     }
   }
   if (table === 'MedicationRequests' && operation === 'insert' && user.role === 'patient') {
@@ -680,7 +691,7 @@ module.exports = async function handler(req, res) {
       try {
         await client.query('BEGIN');
         const allocatedId = (await client.query("SELECT nextval(pg_get_serial_sequence('users', 'user_id')) AS user_id")).rows[0].user_id;
-        const uic = makeUic(body.firstName, birthOrder, dateOfBirth, allocatedId);
+        const uic = makeUic(body.firstName, body.lastName, birthOrder, dateOfBirth, allocatedId);
         const inserted = await client.query('INSERT INTO users (user_id, uic, birth_order, supabase_user_id, email, password_hash, full_name, role, contact_number, date_of_birth, age, gender, terms_accepted, email_verified) VALUES ($1,$2,$3,$4,$5,NULL,$6,$7,$8,$9,$10,$11,$12,$13) RETURNING user_id, uic, birth_order, supabase_user_id, email, full_name, role, contact_number, date_of_birth, age, gender, is_active, email_verified', [allocatedId, uic, birthOrder, authData.user.id, email, fullName, 'patient', body.contactNumber || null, dateOfBirth, body.age || null, body.gender || null, Boolean(body.termsAccepted), emailVerified]);
         const patient = await client.query("INSERT INTO patients (user_id, preferred_facility_id, care_status, medical_notes) VALUES ($1, 1, 'Active care plan', 'Newly registered patient account.') RETURNING *", [inserted.rows[0].user_id]);
         await client.query("INSERT INTO chat_sessions (patient_id, subject, status, preview) VALUES ($1, 'Welcome to private support', 'Open', 'A health worker will be ready to answer your questions.')", [patient.rows[0].patient_id]);
@@ -1264,6 +1275,65 @@ module.exports = async function handler(req, res) {
       const result = await sendRegisteredEmail(userId, { subject, text });
       return result.sent ? send(res, 200, { sent: true }) : send(res, 502, { error: result.error });
     }
+    const appointmentAssignment = pathname.match(/^\/api\/admin\/appointments\/(\d+)\/assign$/);
+    if (appointmentAssignment) {
+      if (user?.role !== 'admin') return send(res, user ? 403 : 401, { error: 'Administrator access required.' });
+      if (req.method !== 'POST') return send(res, 405, { error: 'Method not allowed.' });
+      const appointmentId = Number(appointmentAssignment[1]);
+      const workerId = Number(getBody(req).workerId);
+      if (!Number.isSafeInteger(workerId) || workerId < 1) return send(res, 400, { error: 'Choose a valid health worker.' });
+      const client = await pool.connect();
+      try {
+        await client.query('BEGIN');
+        const appointment = await client.query('SELECT appointment_id, patient_id, facility_id, appointment_date, appointment_time, status FROM appointments WHERE appointment_id = $1 FOR UPDATE', [appointmentId]);
+        if (!appointment.rowCount) {
+          await client.query('ROLLBACK');
+          return send(res, 404, { error: 'Appointment not found.' });
+        }
+        const requested = appointment.rows[0];
+        if (!['requested', 'rescheduled'].includes(String(requested.status).toLowerCase())) {
+          await client.query('ROLLBACK');
+          return send(res, 409, { error: 'Only requested or rescheduled appointments can be approved.' });
+        }
+        const worker = await client.query(
+          'SELECT h.worker_id, u.uic FROM health_workers h JOIN users u USING (user_id) WHERE h.worker_id = $1 AND h.is_verified = TRUE AND h.is_available = TRUE AND u.is_active = TRUE AND u.email_verified = TRUE AND h.primary_facility_id = $2 FOR UPDATE OF h',
+          [workerId, requested.facility_id],
+        );
+        if (!worker.rowCount) {
+          await client.query('ROLLBACK');
+          return send(res, 409, { error: 'That health worker is not verified, available, and assigned to the requested clinic.' });
+        }
+        const conflict = await client.query(
+          "SELECT 1 FROM appointments WHERE worker_id = $1 AND appointment_id <> $2 AND status = 'Confirmed' AND appointment_date = $3 AND appointment_time = $4 LIMIT 1",
+          [workerId, appointmentId, requested.appointment_date, requested.appointment_time],
+        );
+        if (conflict.rowCount) {
+          await client.query('ROLLBACK');
+          return send(res, 409, { error: 'That health worker already has a confirmed appointment at this date and time.' });
+        }
+        const updated = await client.query(
+          "UPDATE appointments SET worker_id = $1, status = 'Confirmed', updated_at = NOW() WHERE appointment_id = $2 RETURNING *",
+          [workerId, appointmentId],
+        );
+        const patient = await client.query('SELECT u.user_id, u.uic FROM patients p JOIN users u USING (user_id) WHERE p.patient_id = $1', [requested.patient_id]);
+        const patientUic = patient.rows[0]?.uic || 'Unavailable';
+        await client.query(
+          'INSERT INTO activity_logs (actor_user_id, actor_name, action, category, details) VALUES ($1,$2,$3,$4,$5)',
+          [user.user_id, user.uic || 'Administrator', 'Approved and assigned appointment', 'Appointments', `Assigned appointment for UIC ${patientUic} to health worker UIC ${worker.rows[0].uic || 'Unavailable'}.`],
+        );
+        await client.query('COMMIT');
+        if (patient.rows[0]) await bestEffort(() => sendRegisteredEmail(patient.rows[0].user_id, {
+          subject: 'Appointment approved',
+          text: `Your appointment request for ${requested.appointment_date} at ${requested.appointment_time} has been approved and assigned to a health worker. Sign in to HIVeLink for details.`,
+        }));
+        return send(res, 200, { record: updated.rows[0] });
+      } catch (error) {
+        await client.query('ROLLBACK');
+        throw error;
+      } finally {
+        client.release();
+      }
+    }
     const adminUserRoute = pathname.match(/^\/api\/admin\/(users|workers)(?:\/(\d+))?$/);
     if (adminUserRoute) {
       if (user?.role !== 'admin') return send(res, user ? 403 : 401, { error: 'Administrator access required.' });
@@ -1302,7 +1372,7 @@ module.exports = async function handler(req, res) {
           supabaseAuthUserId = authData.user.id;
           if (!Number.isSafeInteger(birthOrder) || birthOrder < 1 || birthOrder > 50) { await client.query('ROLLBACK'); return send(res, 400, { error: 'Enter a birth order between 1 and 50.' }); }
           const allocatedId = (await client.query("SELECT nextval(pg_get_serial_sequence('users', 'user_id')) AS user_id")).rows[0].user_id;
-          const uic = makeUic(body.firstName, birthOrder, dateOfBirth, allocatedId);
+          const uic = makeUic(body.firstName, body.lastName, birthOrder, dateOfBirth, allocatedId);
           const created = await client.query('INSERT INTO users (user_id, uic, birth_order, supabase_user_id, email, password_hash, full_name, role, contact_number, date_of_birth, age, gender, is_active, terms_accepted, email_verified) VALUES ($1,$2,$3,$4,$5,NULL,$6,\'patient\',$7,$8,$9,$10,$11,$12,FALSE) RETURNING user_id, uic, birth_order, supabase_user_id, email, full_name, role, contact_number, date_of_birth, age, gender, is_active, email_verified', [allocatedId, uic, birthOrder, supabaseAuthUserId, email, fullName, body.contactNumber || null, dateOfBirth, body.age || null, body.gender || null, body.isActive !== false, true]);
           const patient = await client.query('INSERT INTO patients (user_id, care_status, medical_notes, preferred_facility_id, assigned_worker_id, emergency_contact, emergency_phone) VALUES ($1,$2,$3,$4,$5,$6,$7) RETURNING *', [created.rows[0].user_id, body.careStatus || 'Active care plan', body.medicalNotes || 'Managed patient account', body.preferredFacilityId || 1, assignedWorkerId, body.emergencyContact || null, body.emergencyPhone || null]);
           await client.query("INSERT INTO chat_sessions (patient_id, subject, status, preview) VALUES ($1, 'Welcome to private support', 'Open', 'A health worker will be ready to answer your questions.')", [patient.rows[0].patient_id]);
@@ -1324,7 +1394,7 @@ module.exports = async function handler(req, res) {
           supabaseAuthUserId = authData.user.id;
           const allocatedId = (await client.query("SELECT nextval(pg_get_serial_sequence('users', 'user_id')) AS user_id")).rows[0].user_id;
           const birthOrder = 1;
-          const uic = makeUic(body.firstName, birthOrder, body.dateOfBirth, allocatedId);
+          const uic = makeUic(body.firstName, body.lastName, birthOrder, body.dateOfBirth, allocatedId);
           const created = await client.query('INSERT INTO users (user_id, uic, birth_order, supabase_user_id, email, password_hash, full_name, role, contact_number, date_of_birth, gender, is_active, terms_accepted, email_verified) VALUES ($1,$2,$3,$4,$5,NULL,$6,\'health-worker\',$7,$8,$9,$10,TRUE,FALSE) RETURNING user_id, uic, birth_order, supabase_user_id, email, full_name, role, contact_number, date_of_birth, gender, is_active, email_verified', [allocatedId, uic, birthOrder, supabaseAuthUserId, email, fullName, body.contactNumber || null, body.dateOfBirth || null, body.gender, body.isActive !== false]);
           const worker = await client.query('INSERT INTO health_workers (user_id, specialty, license_number, primary_facility_id, is_verified, is_available, bio_summary) VALUES ($1,$2,$3,$4,$5,$6,$7) RETURNING *', [created.rows[0].user_id, body.specialty || 'HIV care support', body.licenseNumber || null, body.primaryFacilityId || 1, body.isVerified !== false, body.isAvailable !== false, body.bioSummary || 'Licensed Health Worker']);
           await client.query('INSERT INTO activity_logs (actor_user_id, actor_name, action, category, details) VALUES ($1,$2,$3,$4,$5)', [user.user_id, user.uic || 'Unknown account', 'Created health worker', 'Care Team Management', `Created health worker UIC ${created.rows[0].uic}`]);

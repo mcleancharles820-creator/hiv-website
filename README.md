@@ -67,7 +67,7 @@ This section has moved here: [https://facebook.github.io/create-react-app/docs/d
 
 ## Backend API (Vercel + Supabase)
 
-Production builds use the Vercel functions in `api/` instead of browser `localStorage`. The API uses PostgreSQL and a signed, `HttpOnly` session cookie. Public signup always creates a patient account; an administrator must be provisioned separately. Patients sign in with their generated UIC and password. UICs encode the patient's first-name initial, birth order, and date of birth, plus a unique database ID suffix. Email remains required for verification and password recovery. Passwords are hashed with bcrypt and role checks are enforced by the API.
+Production builds use the Vercel functions in `api/` instead of browser `localStorage`. The API uses PostgreSQL and a signed, `HttpOnly` session cookie. Public signup always creates a patient account; an administrator must be provisioned separately. Patients sign in with their generated UIC and password. UICs encode the patient's first and last initials, birth order, and date of birth, plus a unique database ID suffix. Email remains required for verification and password recovery. Passwords are hashed with bcrypt and role checks are enforced by the API.
 
 ### Supabase setup
 
@@ -84,11 +84,12 @@ Production builds use the Vercel functions in `api/` instead of browser `localSt
 11. Run `api/migrations/010_patient_uic.sql` to assign unique UICs and birth-order values to existing accounts. Existing accounts without a date of birth use their account creation date when migrated.
 12. Run `api/migrations/011_remove_medication_inventory.sql` to remove medication stock and request-availability columns.
 13. Run `api/migrations/012_self_described_gender.sql` to retain existing gender values and replace activity-log actor names with UICs where the account still exists.
-14. Run `api/migrations/013_lgbt_gender_option.sql` to allow the LGBT patient gender option while retaining existing stored gender values.
-15. Copy the PostgreSQL connection string from Supabase. Use a connection pooler URL supported by Vercel and include `sslmode=require`.
-16. Create a long random session secret (at least 32 characters). Do not commit it or put it in React source.
-17. In Supabase Dashboard > Authentication > Providers > Email, enable email confirmations. Under URL Configuration, set the Site URL to the deployed app and allow that URL under Redirect URLs; password recovery redirects to the app root with `?password-reset=1`.
-18. Supabase's built-in email service needs no custom domain and is suitable for capstone testing, but it is rate-limited and may only deliver to authorized/verified addresses in the Supabase organization. To verify arbitrary recipients, configure a custom SMTP provider.
+14. Run `api/migrations/013_lgbt_gender_option.sql` to allow the Lesbian, Gay, Bisexual, and Transgender patient gender option while retaining existing stored gender values.
+15. Back up the database, then run `api/migrations/014_uic_first_last_initials.sql` to regenerate UICs in the first-initial/last-initial format. The final numeric suffix keeps codes unique when initials, birth order, and date of birth match.
+16. Copy the PostgreSQL connection string from Supabase. Use a connection pooler URL supported by Vercel and include `sslmode=require`.
+17. Create a long random session secret (at least 32 characters). Do not commit it or put it in React source.
+18. In Supabase Dashboard > Authentication > Providers > Email, enable email confirmations. Under URL Configuration, set the Site URL to the deployed app and allow that URL under Redirect URLs; password recovery redirects to the app root with `?password-reset=1`.
+19. Supabase's built-in email service needs no custom domain and is suitable for capstone testing, but it is rate-limited and may only deliver to authorized/verified addresses in the Supabase organization. To verify arbitrary recipients, configure a custom SMTP provider.
 
 ### Vercel setup
 
@@ -108,11 +109,11 @@ Deploy, then check `/api/health`; it should return `{"status":"ok"}`. New public
 
 ### Medication inventory removal and appointment requests
 
-For an existing database, apply migrations `010_patient_uic.sql`, `011_remove_medication_inventory.sql`, `012_self_described_gender.sql`, and `013_lgbt_gender_option.sql` in order before deploying code that requires the new schema. New databases already include these changes in `api/schema.sql`. Patient medication-request screens and writes are disabled; historical records and staff workflows remain available, but stock and availability details are removed.
+For an existing database, apply migrations `010_patient_uic.sql`, `011_remove_medication_inventory.sql`, `012_self_described_gender.sql`, `013_lgbt_gender_option.sql`, and `014_uic_first_last_initials.sql` in order before deploying code that requires the new schema. Back up the database first. New databases already include the UIC columns and uniqueness constraint in `api/schema.sql`; the migration is still required to convert UICs for an existing database. Patient medication-request screens and writes are disabled; historical records and staff workflows remain available, but stock and availability details are removed.
 
-After the migrations succeed, deploy the updated repository to Vercel (push the change to the connected Git branch or use the Vercel dashboard's redeploy action). Check `/api/health`, register a test patient with a date of birth and birth order, save the displayed UIC, and verify sign-in with that UIC and password. Submit a patient appointment request and confirm that it appears in the Admin appointment queue for confirmation, cancellation, or rescheduling. Configure `RESEND_API_KEY` and `EMAIL_FROM` if administrator email alerts are required; appointment requests are stored in the shared database regardless.
+After the migrations succeed, deploy the updated repository to Vercel (push the change to the connected Git branch or use the Vercel dashboard's redeploy action). Check `/api/health`, register a test patient with first and last names, date of birth, and birth order, save the displayed UIC, and verify sign-in with that UIC and password. Submit a patient appointment request and confirm that it appears in the Admin queue. An administrator must choose a verified, active, available health worker at that clinic and approve-and-assign the request before it becomes confirmed; the API rejects direct confirmation or assignment updates. Existing availability data is a worker availability flag plus conflict checks for another confirmed appointment at the exact same date and time; the database does not currently store shift schedules or appointment durations. Admins can also cancel or reschedule requests. Configure `RESEND_API_KEY` and `EMAIL_FROM` if administrator email alerts are required; appointment requests are stored in the shared database regardless.
 
-The public information page includes linked educational video and image cards. Images open an in-page preview with a link to the source organization; video cards open the educational video search in a new tab.
+The Information page includes 17 practical HIV learning topics and six videos from the CDC that play in an in-page player, plus locally hosted visual guides with links to WHO and CDC references. The public Home page summarizes the information, local care, patient services, and support offered by HIVeLink.
 
 Chat Realtime uses authenticated Postgres Changes with row-level security. Patients receive changes only for their own private chat; workers only for assigned chats. The support-group conversation uses a separate alias-only message table: active members and the currently designated verified supervisor can read it, writes go through the API, and administrators do not receive group-message content. Patients can join with a chosen alias and leave at any time; after leaving, the API and RLS no longer return the conversation. Messages are retained for remaining members and supervisor moderation, so this is access control—not end-to-end encryption or a promise of anonymity. Do not share identifying or urgent medical details in the group; use private care channels for those.
 

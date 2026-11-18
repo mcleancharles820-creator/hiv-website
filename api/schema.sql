@@ -26,7 +26,7 @@ CREATE TABLE users (
     date_of_birth DATE,
     birth_order INT NOT NULL DEFAULT 1 CHECK (birth_order BETWEEN 1 AND 50),
     age INT CHECK (age IS NULL OR (age >= 13 AND age <= 120)),
-    gender VARCHAR(50) CHECK (gender IS NULL OR gender IN ('Male', 'Female', 'Other', 'LGBT', 'Woman', 'Man', 'Non-binary', 'Prefer not to say', 'Self-describe', 'Self-described')),
+    gender VARCHAR(50) CHECK (gender IS NULL OR gender IN ('Male', 'Female', 'Other', 'Lesbian, Gay, Bisexual, and Transgender', 'LGBT', 'Woman', 'Man', 'Non-binary', 'Prefer not to say', 'Self-describe', 'Self-described')),
     terms_accepted BOOLEAN NOT NULL DEFAULT TRUE,
     is_active BOOLEAN NOT NULL DEFAULT TRUE,
     email_verified BOOLEAN NOT NULL DEFAULT FALSE,
