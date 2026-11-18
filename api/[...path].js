@@ -705,7 +705,7 @@ module.exports = async function handler(req, res) {
         if (emailVerified && authData.session) setSessionCookie(res, signSession(user));
         return send(res, 201, emailVerified && authData.session
           ? { user, patient: patient.rows[0], worker: null, realtimeSession: authData.session }
-          : { verificationRequired: true, email: user.email, uic: user.uic });
+          : { verificationRequired: true, email: user.email });
       } catch (error) {
         await client.query('ROLLBACK');
         await adminClient.auth.admin.deleteUser(authData.user.id).catch(() => {});
@@ -842,6 +842,64 @@ module.exports = async function handler(req, res) {
       if (revokeError) console.error('Could not revoke Supabase sessions after password reset:', revokeError.message);
       res.setHeader('Set-Cookie', `${sessionCookie}=; HttpOnly; Path=/; SameSite=Lax; Max-Age=0${process.env.NODE_ENV === 'production' ? '; Secure' : ''}`);
       return send(res, 200, { ok: true, message: 'Your password has been changed. Sign in with your new password.' });
+    }
+    if (pathname === '/api/auth/verification-complete' && req.method === 'POST') {
+      const accessToken = String(getBody(req).accessToken || '');
+      if (!accessToken || /^Bearer\s/i.test(accessToken)) return send(res, 400, { error: 'A valid email verification link is required.' });
+
+      const { publicClient } = supabaseClients();
+      const { data: authData, error: authError } = await publicClient.auth.getUser(accessToken);
+      const verifiedUser = authData?.user;
+      if (authError || !verifiedUser?.id || !verifiedUser.email || !verifiedUser.email_confirmed_at) {
+        return send(res, 401, { error: 'This verification link is invalid or has expired.' });
+      }
+
+      const client = await pool.connect();
+      try {
+        await client.query('BEGIN');
+        const registered = await client.query(
+          `SELECT user_id, uic, email, uic_email_sent_at
+           FROM users
+           WHERE supabase_user_id = $1 AND LOWER(email) = LOWER($2)
+             AND role = 'patient' AND is_active = TRUE
+           FOR UPDATE`,
+          [verifiedUser.id, verifiedUser.email],
+        );
+        if (!registered.rowCount) {
+          await client.query('ROLLBACK');
+          return send(res, 404, { error: 'The verified account could not be found.' });
+        }
+
+        const patient = registered.rows[0];
+        await client.query('UPDATE users SET email_verified = TRUE, updated_at = NOW() WHERE user_id = $1', [patient.user_id]);
+        if (patient.uic_email_sent_at) {
+          await client.query('COMMIT');
+          return send(res, 200, { emailVerified: true, emailSent: true, email: patient.email });
+        }
+
+        const delivery = await sendRegisteredEmail(patient.user_id, {
+          subject: 'Your HIVeLink sign-in UIC',
+          text: `Your email has been verified. Your patient Unique Identifier Code (UIC) is: ${patient.uic}\n\nUse this UIC and your password to sign in. For your security, your password is never included in email.`,
+        });
+        if (delivery.sent) {
+          await client.query('UPDATE users SET uic_email_sent_at = NOW(), updated_at = NOW() WHERE user_id = $1', [patient.user_id]);
+        }
+        await client.query('COMMIT');
+        if (!delivery.sent) {
+          return send(res, 502, {
+            emailVerified: true,
+            emailSent: false,
+            email: patient.email,
+            error: 'Your email is verified, but your UIC email could not be sent. Please retry.',
+          });
+        }
+        return send(res, 200, { emailVerified: true, emailSent: true, email: patient.email });
+      } catch (error) {
+        await client.query('ROLLBACK');
+        throw error;
+      } finally {
+        client.release();
+      }
     }
     if (pathname === '/api/auth/resend-verification' && req.method === 'POST') {
       if (!applicationUrl()) return send(res, 503, { error: 'APP_URL is not configured.' });

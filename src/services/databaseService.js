@@ -247,6 +247,18 @@ class DatabaseService {
     }
   }
 
+  async confirmEmailVerification(accessToken) {
+    if (!this.useApi) return { error: 'Email verification is only available when the backend API is enabled.' };
+    try {
+      return await this.apiRequest('/api/auth/verification-complete', {
+        method: 'POST',
+        body: JSON.stringify({ accessToken }),
+      });
+    } catch (error) {
+      return { ...error.details, error: error.message };
+    }
+  }
+
   async requestPasswordReset(email) {
     if (!this.useApi) return { error: 'Password recovery is only available when the backend API is enabled.' };
     try {

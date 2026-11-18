@@ -5,6 +5,7 @@ import AppointmentRequestForm from './components/AppointmentRequestForm';
 import { PatientSupportGroupPanel, SupervisorSupportGroupPanel } from './components/SupportGroupPanel';
 import db from './services/databaseService';
 import { consumePasswordRecoveryToken, isPasswordRecoveryRedirect } from './services/passwordRecovery';
+import { consumeEmailVerificationToken } from './services/emailVerification';
 const { Buffer } = require('buffer');
 const getFullNameFromParts = require('../api/accountName');
 const { isAllowedGender } = require('../api/genderOptions');
@@ -193,7 +194,7 @@ test('server name validation requires each name and respects the users.full_name
   expect(getFullNameFromParts({ firstName: 'Ada', middleName: 'Marie', lastName: 'L'.repeat(150) }).error).toMatch(/150 characters or fewer/i);
 });
 
-test('guest home summarizes the platform and information includes playable videos and visual guides', () => {
+test('guest information interleaves media and expandable HIV topics', () => {
   render(<App />);
   userEvent.click(screen.getByRole('button', { name: /continue as guest/i }));
 
@@ -204,20 +205,35 @@ test('guest home summarizes the platform and information includes playable video
   userEvent.click(screen.getByRole('button', { name: 'Information' }));
   expect(screen.getByRole('heading', { name: /knowledge without stigma/i })).toBeInTheDocument();
   expect(screen.getByRole('heading', { name: /hiv and pregnancy/i })).toBeInTheDocument();
+  expect(screen.getAllByRole('img', { name: /illustrative healthcare scene/i })).toHaveLength(17);
+  expect(screen.getAllByRole('link', { name: /photo source on unsplash/i })).toHaveLength(17);
+  expect(screen.getAllByRole('link', { name: /^information source:/i })).toHaveLength(17);
+  expect(screen.getByRole('link', { name: /unsplash license/i })).toHaveAttribute('href', 'https://unsplash.com/license');
   expect(screen.getAllByRole('button', { name: /^watch:/i })).toHaveLength(6);
+  expect(screen.queryByRole('heading', { name: /more to know about hiv/i })).not.toBeInTheDocument();
+  expect(screen.queryByRole('heading', { name: /explore key topics|videos and visual guides/i })).not.toBeInTheDocument();
+  expect(screen.queryByRole('heading', { name: /treatment works|prevention is personal/i })).not.toBeInTheDocument();
+  expect(screen.getAllByRole('button', { name: /^read more/i })).toHaveLength(17);
+
+  const firstTopicsAndMedia = Array.from(document.querySelectorAll('.knowledge-flow-item')).slice(0, 6).map((item) => {
+    if (item.classList.contains('knowledge-flow-topic')) return 'topic';
+    return item.classList.contains('is-video') ? 'video' : 'photo';
+  });
+  expect(firstTopicsAndMedia).toEqual(['topic', 'video', 'topic', 'video', 'topic', 'video']);
+
+  const hivTopic = screen.getByRole('heading', { name: /what is hiv\?/i });
+  const hivTopicButton = within(hivTopic).getByRole('button', { name: /what is hiv\?/i });
+  expect(hivTopicButton).toHaveAttribute('aria-expanded', 'false');
+  userEvent.click(hivTopicButton);
+  expect(screen.getByText(/hiv mainly affects cd4 cells/i)).toBeVisible();
+  expect(hivTopicButton).toHaveAttribute('aria-expanded', 'true');
+  userEvent.click(hivTopicButton);
+  expect(screen.queryByText(/hiv mainly affects cd4 cells/i)).not.toBeVisible();
 
   userEvent.click(screen.getByRole('button', { name: /watch: hiv basics: testing, prevention, and living with hiv/i }));
   const videoPreview = screen.getByRole('dialog', { name: /hiv basics: testing, prevention, and living with hiv/i });
   expect(within(videoPreview).getByTitle(/hiv basics: testing/i)).toHaveAttribute('src', 'https://www.youtube-nocookie.com/embed/JY1qi3bf-Os?autoplay=1&rel=0');
   userEvent.click(within(videoPreview).getByRole('button', { name: /close image preview/i }));
-
-  userEvent.click(screen.getByRole('button', { name: /view: treatment works/i }));
-
-  const preview = screen.getByRole('dialog', { name: /treatment works/i });
-  expect(within(preview).getByRole('img', { name: /treatment works/i })).toHaveAttribute('src', '/promotional-treatment.svg');
-  expect(within(preview).getByRole('link', { name: /treatment and u=u/i })).toHaveAttribute('href', 'https://www.who.int/news-room/fact-sheets/detail/hiv-aids');
-  userEvent.click(within(preview).getByRole('button', { name: /close image preview/i }));
-  expect(screen.queryByRole('dialog', { name: /treatment works/i })).not.toBeInTheDocument();
 });
 
 test('registration services send all three name parts and never send password confirmation', async () => {
@@ -327,7 +343,8 @@ test('API signup waits for email verification and supports resending the link', 
     userEvent.click(screen.getByRole('button', { name: /create my account/i }));
 
     expect(await screen.findByRole('heading', { name: /check your email/i })).toBeInTheDocument();
-    expect(screen.getByText(/V-02-19960101-000001/)).toBeInTheDocument();
+    expect(screen.getByText('verify@example.com')).toBeInTheDocument();
+    expect(screen.queryByText(/V-02-19960101-000001/)).not.toBeInTheDocument();
     expect(screen.queryByRole('heading', { name: /your care dashboard/i })).not.toBeInTheDocument();
     userEvent.click(screen.getByRole('button', { name: /resend verification email/i }));
     expect(await screen.findByText(/if the account needs verification/i)).toBeInTheDocument();
@@ -335,6 +352,40 @@ test('API signup waits for email verification and supports resending the link', 
   } finally {
     db.useApi = previousApiMode;
   }
+});
+
+test('email verification callback sends a verified patient their UIC by email', async () => {
+  const previousApiMode = db.useApi;
+  db.useApi = true;
+  window.history.replaceState(window.history.state, '', '/#access_token=verified-access-token&refresh_token=verified-refresh-token&type=signup');
+  const fetchMock = jest.spyOn(global, 'fetch').mockImplementation(async (url, options) => {
+    if (url === '/api/auth/session') return { ok: false, json: async () => ({ error: 'Sign in required.' }) };
+    if (url === '/api/auth/verification-complete') return {
+      ok: true,
+      json: async () => ({ emailVerified: true, emailSent: true, email: 'verify@example.com' }),
+    };
+    throw new Error(`Unexpected request: ${url} ${options?.method || 'GET'}`);
+  });
+
+  try {
+    render(<App />);
+    expect(await screen.findByRole('heading', { name: /your email is verified/i })).toBeInTheDocument();
+    expect(screen.getByRole('status')).toHaveTextContent(/sent your uic/i);
+    expect(screen.getByText('verify@example.com')).toBeInTheDocument();
+    expect(window.location.hash).toBe('');
+    expect(fetchMock).toHaveBeenCalledWith('/api/auth/verification-complete', expect.objectContaining({
+      method: 'POST',
+      body: JSON.stringify({ accessToken: 'verified-access-token' }),
+    }));
+  } finally {
+    db.useApi = previousApiMode;
+  }
+});
+
+test('email verification token consumer removes the signup token from the URL', () => {
+  window.history.replaceState(window.history.state, '', '/#access_token=signup-token&type=signup');
+  expect(consumeEmailVerificationToken()).toEqual({ accessToken: 'signup-token' });
+  expect(window.location.hash).toBe('');
 });
 
 test('forgot-password sends an email request and displays a generic confirmation', async () => {
@@ -429,15 +480,16 @@ test('switching from sign in to sign up clears entered credentials and account t
   expect(screen.getByLabelText(/uic/i)).toHaveValue('');
 });
 
-test('navigating between guest pages scrolls smoothly', () => {
+test('navigating between guest pages resets scroll once without an animated transition', () => {
   render(<App />);
   userEvent.click(screen.getByRole('button', { name: /continue as guest/i }));
   window.scrollTo.mockClear();
 
   userEvent.click(screen.getByRole('button', { name: 'Information' }));
 
-  expect(window.scrollTo).toHaveBeenCalledWith({ top: 0, behavior: 'smooth' });
-  expect(screen.getByRole('main')).toHaveClass('route-transition');
+  expect(window.scrollTo).toHaveBeenCalledTimes(1);
+  expect(window.scrollTo).toHaveBeenCalledWith({ top: 0, behavior: 'auto' });
+  expect(screen.getByRole('main')).not.toHaveClass('route-transition');
 });
 
 test('patient submits an appointment request with a clinic, preferred time, and optional note', async () => {

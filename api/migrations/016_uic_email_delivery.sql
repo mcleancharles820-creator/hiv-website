@@ -1,0 +1,2 @@
+ALTER TABLE users
+  ADD COLUMN IF NOT EXISTS uic_email_sent_at TIMESTAMPTZ;
