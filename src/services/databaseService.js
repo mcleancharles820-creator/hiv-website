@@ -21,7 +21,7 @@ const initialDatabase = {
   ActivityLogs: [],
   PublicInquiries: [],
   TestingFacilities: [
-    { facility_id: 1, name: 'Rural Health Unit', facility_type: 'Rural Health Unit', address: '9XXJ+WXX, JP Laurel St, Odiongan, Romblon', city: 'Odiongan', province: 'Romblon', country: 'Philippines', latitude: 12.399980, longitude: 121.981360, contact_phone: '+63 917 123 4567', services_offered: 'Confidential HIV Testing, PrEP counseling', operating_hours: 'Mon-Fri 8:00 AM - 5:00 PM', maps_url: 'https://www.google.com/maps/search/?api=1&query=9XXJ%2BWXX%2C+JP+Laurel+St%2C+Odiongan%2C+Romblon', is_active: true, created_at: '2026-01-01T00:00:00Z' },
+    { facility_id: 1, name: 'Rural Health Unit', facility_type: 'Rural Health Unit', address: '9XXJ+WXX, JP Laurel St, Odiongan, Romblon', city: 'Odiongan', province: 'Romblon', country: 'Philippines', latitude: 12.399906, longitude: 121.982498, contact_phone: '+63 917 123 4567', services_offered: 'Confidential HIV Testing, PrEP counseling', operating_hours: 'Mon-Fri 8:00 AM - 5:00 PM', maps_url: 'https://www.google.com/maps/search/?api=1&query=12.399906%2C121.982498', is_active: true, created_at: '2026-01-01T00:00:00Z' },
     { facility_id: 2, name: 'Romblon Provincial Hospital', facility_type: 'Provincial Hospital', address: 'Liwanag, Odiongan', city: 'Odiongan', province: 'Romblon', country: 'Philippines', latitude: 12.405500, longitude: 121.986200, contact_phone: '+63 920 987 6543', services_offered: 'HIV Treatment Hub, ART Dispensing, Confirmatory Testing', operating_hours: '24/7 Care', maps_url: 'https://www.google.com/maps/search/Romblon+Provincial+Hospital+Odiongan', is_active: true, created_at: '2026-01-01T00:00:00Z' }
   ],
   SupportGroups: [
@@ -387,6 +387,13 @@ class DatabaseService {
         const database = JSON.parse(stored);
         const staffUics = new Map();
         let changed = false;
+        const rhuMapsUrl = 'https://www.google.com/maps/search/?api=1&query=12.399906%2C121.982498';
+        database.TestingFacilities = (database.TestingFacilities || []).map((facility) => {
+          if (facility.facility_type !== 'Rural Health Unit' || facility.city !== 'Odiongan' || facility.province !== 'Romblon') return facility;
+          if (facility.latitude === 12.399906 && facility.longitude === 121.982498 && facility.maps_url === rhuMapsUrl) return facility;
+          changed = true;
+          return { ...facility, latitude: 12.399906, longitude: 121.982498, maps_url: rhuMapsUrl };
+        });
         ['SystemSettings', 'EducationalResources', 'PartnerOrganizations'].forEach((tableName) => {
           if (Object.prototype.hasOwnProperty.call(database, tableName)) {
             delete database[tableName];

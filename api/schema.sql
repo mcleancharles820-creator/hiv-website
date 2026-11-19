@@ -190,7 +190,7 @@ CREATE INDEX idx_chat_messages_session ON chat_messages(chat_session_id, sent_at
 -- Initial Seed Data (Infrastructure & Public Catalogs)
 INSERT INTO testing_facilities (facility_id, name, facility_type, address, city, province, country, latitude, longitude, contact_phone, services_offered, operating_hours, maps_url)
 VALUES
-(1, 'Rural Health Unit Odiongan', 'Rural Health Unit', '9XXJ+WXX, JP Laurel St, Odiongan, Romblon', 'Odiongan', 'Romblon', 'Philippines', 12.399980, 121.981360, '+63 917 123 4567', 'Confidential HIV Testing, PrEP counseling, Primary Healthcare', 'Mon-Fri 8:00 AM - 5:00 PM', 'https://www.google.com/maps/search/?api=1&query=9XXJ%2BWXX%2C+JP+Laurel+St%2C+Odiongan%2C+Romblon'),
+(1, 'Rural Health Unit Odiongan', 'Rural Health Unit', '9XXJ+WXX, JP Laurel St, Odiongan, Romblon', 'Odiongan', 'Romblon', 'Philippines', 12.399906, 121.982498, '+63 917 123 4567', 'Confidential HIV Testing, PrEP counseling, Primary Healthcare', 'Mon-Fri 8:00 AM - 5:00 PM', 'https://www.google.com/maps/search/?api=1&query=12.399906%2C121.982498'),
 (2, 'Romblon Provincial Hospital', 'Provincial Hospital', 'Liwanag, Odiongan', 'Odiongan', 'Romblon', 'Philippines', 12.405500, 121.986200, '+63 920 987 6543', 'HIV Treatment Hub, ART Dispensing, Confirmatory Testing', '24/7 Care', 'https://www.google.com/maps/search/Romblon+Provincial+Hospital+Odiongan');
 
 INSERT INTO support_groups (group_id, name, detail, schedule, target_audience, facilitator_worker_id, member_count)
