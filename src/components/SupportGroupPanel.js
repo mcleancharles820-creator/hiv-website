@@ -217,7 +217,7 @@ export function PatientSupportGroupPanel({ group, membership, messages = [], loc
   );
 }
 
-export function SupervisorSupportGroupPanel({ group, messages = [], localMode = false, onSend, onRedact, onRefresh }) {
+export function SupervisorSupportGroupPanel({ group, messages = [], members = [], localMode = false, onSend, onRedact, onRefresh, onRemoveMember, onToggleChat, memberNotice = '' }) {
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
   const [stateReady, setStateReady] = useState(localMode || !onRefresh);
@@ -307,6 +307,26 @@ export function SupervisorSupportGroupPanel({ group, messages = [], localMode = 
         <span className="support-group-status is-live"><i aria-hidden="true" /> Supervisor</span>
       </div>
       <div className="support-group-privacy"><strong>Moderation responsibility</strong><p>Support the conversation, protect member privacy, and remove unsafe messages when needed. Removing a post replaces its text for current members and is recorded in the activity log.</p></div>
+      {memberNotice && <p className="form-status" role="status">{memberNotice}</p>}
+      {onRemoveMember && members.length > 0 && (
+        <section className="support-group-members" aria-label="Group member management">
+          <h3>Members ({members.length})</h3>
+          <div className="worker-list">
+            {members.map((patient) => (
+              <article key={patient.userId || patient.patientId || patient.patient_id}>
+                <div>
+                  <strong>UIC {patient.uic || 'Unavailable'}</strong>
+                  <span>{patient.careStatus || patient.care_status || 'Active care plan'} · chat {patient.chatPrivileges === false ? 'restricted' : 'allowed'}</span>
+                </div>
+                <div className="worker-actions">
+                  <button type="button" className="card-link" onClick={() => onRemoveMember(patient)}>Remove from group</button>
+                  <button type="button" className="card-link" onClick={() => onToggleChat(patient)}>{patient.chatPrivileges === false ? 'Restore chat' : 'Restrict chat'}</button>
+                </div>
+              </article>
+            ))}
+          </div>
+        </section>
+      )}
       <SupportGroupChat messages={messages} viewerRole="supervisor" busy={busy} error={error} onSend={send} onRedact={redact} />
     </section>
   );

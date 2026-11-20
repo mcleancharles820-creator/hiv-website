@@ -1,5 +1,5 @@
 import './App.css';
-import { CircleUser } from 'lucide-react';
+import { Bell, CircleUser } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
 import { AdminSupportGroupSupervisor, PatientSupportGroupPanel, SupervisorSupportGroupPanel } from './components/SupportGroupPanel';
 import AppointmentRequestForm from './components/AppointmentRequestForm';
@@ -460,9 +460,48 @@ const patientPrivateNavItems = [
   ['support', 'Support Groups'],
 ];
 
-function NotificationBar({ items, tone = 'info' }) {
-  if (!items.length) return null;
-  return <div className={`notification-bar notification-${tone}`} role="status" aria-live="polite">{items.map((item, index) => <p key={index}>{item}</p>)}</div>;
+
+
+function NotificationBell({ items }) {
+  const [isOpen, setIsOpen] = useState(false);
+  const bellRef = useRef(null);
+
+  useEffect(() => {
+    if (!isOpen) return undefined;
+    const closeOnOutsideClick = (event) => {
+      if (bellRef.current && !bellRef.current.contains(event.target)) setIsOpen(false);
+    };
+    const closeOnEscape = (event) => {
+      if (event.key === 'Escape') setIsOpen(false);
+    };
+    document.addEventListener('mousedown', closeOnOutsideClick);
+    document.addEventListener('keydown', closeOnEscape);
+    return () => {
+      document.removeEventListener('mousedown', closeOnOutsideClick);
+      document.removeEventListener('keydown', closeOnEscape);
+    };
+  }, [isOpen]);
+
+  return (
+    <div className="notification-bell-wrap" ref={bellRef}>
+      <button
+        type="button"
+        className={`notification-bell ${items.length ? 'has-notifications' : ''}`}
+        aria-label={`Notifications${items.length ? ` (${items.length} unread)` : ' (none)'}`}
+        aria-expanded={isOpen}
+        onClick={() => setIsOpen((open) => !open)}
+      >
+        <Bell aria-hidden="true" color="currentColor" size={18} strokeWidth={1.6} />
+        {items.length > 0 && <span className="notification-count" aria-hidden="true">{items.length}</span>}
+      </button>
+      {isOpen && (
+        <div className="notification-dropdown" role="region" aria-label="Notifications">
+          <p className="notification-dropdown-title">Notifications</p>
+          {items.length ? items.map((item, index) => <p className="notification-dropdown-item" key={index}>{item}</p>) : <p className="notification-dropdown-item empty">You're all caught up.</p>}
+        </div>
+      )}
+    </div>
+  );
 }
 
 function patientNotifications({ upcomingAppointment, unreadWorkerMessages, hasChatPrivileges, isChatEnabled }) {
@@ -484,7 +523,7 @@ function workerNotifications({ unreadPatientMessages, pendingAppointments, worke
   return items;
 }
 
-function UserNavbar({ page, userCode, onNavigate, onSignOut }) {
+function UserNavbar({ page, userCode, onNavigate, onSignOut, notificationItems = [] }) {
   const items = [['home', 'Home'], ['information', 'Information'], ['testing', 'Testing'], ...patientPrivateNavItems];
   return (
     <header className="site-header user-header patient-header">
@@ -495,6 +534,7 @@ function UserNavbar({ page, userCode, onNavigate, onSignOut }) {
         ))}
       </nav>
       <div className="patient-header-actions">
+        <NotificationBell items={notificationItems} />
         <span className="profile-name">UIC {userCode || 'Unavailable'}</span>
         <button className={`profile-icon ${page === 'account' ? 'active' : ''}`} type="button" aria-label={`Open UIC ${userCode || ''} care dashboard`} aria-current={page === 'account' ? 'page' : undefined} onClick={() => onNavigate('account')} title="Open care dashboard">
           <CircleUser aria-hidden="true" className="profile-icon-glyph" color="currentColor" size={18} strokeWidth={1.6} />
@@ -866,15 +906,14 @@ function AuthScreen({ onEnter, onPasswordRecoveryComplete }) {
   return (
     <div className="auth-shell">
       <div className="auth-visual">
-        <div className="auth-message"><p className="eyebrow"><span className="pulse-dot" /> A judgment-free place to start</p><h1>Care begins<br /><span>with you.</span></h1><p>You deserve care, respect, and support. We are here to help you take the next step at your own pace.</p></div>
-        <div className="auth-stamp">Your health.<br /><strong>Your pace.</strong></div>
+        <div className="auth-message"><p className="eyebrow"><span className="pulse-dot" /> Welcome</p><h1>HIVeLink<span>.</span></h1></div>
       </div>
       <div className="auth-panel">
         <div className="auth-panel-top"><span>WELCOME</span><span>01 / 01</span></div>
         <div key={mode} className="auth-form-wrap route-transition">
           <div className="auth-page-label"><span>{verificationEmail ? 'VERIFY EMAIL' : mode === 'login' ? 'LOG IN' : mode === 'register' ? 'SIGN UP' : 'PASSWORD RECOVERY'}</span><span>01 / 01</span></div>
           <h2>{emailVerificationStatus ? emailVerificationStatus === 'sent' ? <>Your email<br /><i>is verified.</i></> : <>Check your<br /><i>email.</i></> : mode === 'forgot-sent' ? <>Check your<br /><i>email.</i></> : mode === 'reset' ? <>Choose a new<br /><i>password.</i></> : mode === 'reset-complete' ? <>Password<br /><i>updated.</i></> : mode === 'forgot' ? <>Reset your<br /><i>password.</i></> : mode === 'login' ? <>Good to<br /><i>see you.</i></> : <>Make space<br /><i>for care.</i></>}</h2>
-          <p className="auth-intro">{emailVerificationStatus === 'sent' ? 'Your account is ready. Sign in with the UIC we emailed you and your password.' : emailVerificationStatus === 'processing' ? 'We are confirming your email address and sending your UIC.' : emailVerificationStatus === 'failed' ? 'Your email could not be fully confirmed or your UIC email could not be delivered. You can retry while this page is open.' : emailVerificationStatus === 'pending' ? `We sent a verification link to ${verificationEmail}. Verify your address to receive your UIC by email, then sign in.` : mode === 'forgot' ? 'Enter the email address associated with your account. We will send a secure password reset link if it matches an active account.' : mode === 'forgot-sent' ? `If an active account exists for ${resetEmail}, a password reset link has been sent.` : mode === 'reset' ? 'Create a new password to secure your account. Use at least 12 characters.' : mode === 'reset-complete' ? 'Your password has been changed. You can now log in with your new password.' : mode === 'login' ? (role === 'patient' ? 'Patients sign in with their Unique Identifier Code (UIC) and password. Administrators and health workers sign in with their email address and password.' : 'Administrators and health workers sign in with their registered email address and password.') : 'Create an account to save resources and connect with support. Your UIC will be generated from your first and last initials, birth order, and date of birth.'}</p>
+          <p className="auth-intro">{emailVerificationStatus === 'sent' ? 'Your account is ready. Sign in with the UIC we emailed you and your password.' : emailVerificationStatus === 'processing' ? 'We are confirming your email address and sending your UIC.' : emailVerificationStatus === 'failed' ? 'Your email could not be fully confirmed or your UIC email could not be delivered. You can retry while this page is open.' : emailVerificationStatus === 'pending' ? `We sent a verification link to ${verificationEmail}. Verify your address to receive your UIC by email, then sign in.` : mode === 'forgot' ? 'Enter the email address associated with your account. We will send a secure password reset link if it matches an active account.' : mode === 'forgot-sent' ? `If an active account exists for ${resetEmail}, a password reset link has been sent.` : mode === 'reset' ? 'Create a new password to secure your account. Use at least 12 characters.' : mode === 'reset-complete' ? 'Your password has been changed. You can now log in with your new password.' : mode === 'login' ? 'Enter your credentials to continue.' : 'Create an account to save resources and connect with support. Your UIC will be generated from your first and last initials, birth order, and date of birth.'}</p>
           {emailVerificationStatus ? <div className="verification-prompt">
             {verificationEmail && <p className="verification-address">{verificationEmail}</p>}
             {verificationMessage && <p className="verification-feedback" role="status">{verificationMessage}</p>}
@@ -1200,8 +1239,7 @@ function PatientDashboard({ currentUser, currentPatient, onPublicHub, onSignOut 
   return (
     <div className="patient-shell">
       <div className="topline"><span>WORLD AIDS DAY IS EVERY DAY</span><span className="topline-detail">Information. Care. Community.</span></div>
-      <UserNavbar page={page} userCode={activeUser.uic} onNavigate={navigate} onSignOut={onSignOut} />
-      <NotificationBar items={patientNotificationItems} tone="info" />
+      <UserNavbar page={page} userCode={activeUser.uic} onNavigate={navigate} onSignOut={onSignOut} notificationItems={patientNotificationItems} />
       <main key={page} className="patient-main route-transition">{content[page]}</main>
       <footer>
         <span className="footer-brand">HIVeLink</span>
@@ -1558,7 +1596,7 @@ function AdminUserDetailModal({ user, onClose, onEdit, onDelete, canDelete = tru
 
         <div style={{ borderTop: '1px solid var(--line)', marginTop: '28px', paddingTop: '20px', display: 'flex', gap: '12px', justifyContent: 'flex-end', alignItems: 'center' }}>
           {canDelete && <button type="button" className="admin-btn admin-btn-danger" onClick={() => onDelete(user.userId, user.fullName)}>Delete User</button>}
-          <button type="button" className="admin-btn admin-btn-primary" onClick={() => onEdit(user)}>Edit User Profile <span>↗</span></button>
+          {canDelete && <button type="button" className="admin-btn admin-btn-primary" onClick={() => onEdit(user)}>Edit User Profile <span>↗</span></button>}
         </div>
       </div>
     </div>
@@ -2101,6 +2139,21 @@ function HealthWorkerDashboard({ currentUser, currentWorker, onPublicHub, onSign
   const supportGroupMessages = supportGroup
     ? db.getTable('SupportGroupMessages').filter((message) => Number(message.group_id) === Number(supportGroup.group_id))
     : [];
+  const groupMemberPatients = supportGroup
+    ? db.getTable('SupportGroupMembers')
+      .filter((membership) => Number(membership.group_id) === Number(supportGroup.group_id))
+      .map((membership) => {
+        const patientRecordEntry = db.findById('Patients', membership.patient_id);
+        const patientUser = patientRecordEntry ? db.findById('Users', patientRecordEntry.user_id) : null;
+        return {
+          patientId: membership.patient_id,
+          userId: patientUser?.user_id,
+          uic: patientUser?.uic,
+          careStatus: patientRecordEntry?.care_status || 'Active care plan',
+          chatPrivileges: patientUser?.chat_privileges,
+        };
+      })
+    : [];
 
   const navigate = (nextPage) => { setPage(nextPage); scrollPageToTop(); };
   const savePatient = async (patient) => {
@@ -2174,7 +2227,7 @@ function HealthWorkerDashboard({ currentUser, currentWorker, onPublicHub, onSign
       {assignmentNotice && <p className="form-status" role="status">{assignmentNotice}</p>}
       <section aria-labelledby="assigned-heading">
         <div className="claimable-heading"><div><h2 id="assigned-heading">Assigned patients</h2></div><span>{workerPatients.length} assigned</span></div>
-        <div className="worker-list">{workerPatients.map((patient) => <article key={patient.userId || patient.id}><div><strong>UIC {patient.uic || 'Unavailable'}</strong><span>{patient.medicalNotes || patient.detail}{patient.userId === 1 && latestMessage ? ` · “${latestMessage}”` : ''} · <strong style={{ color: 'var(--coral)', fontWeight: 400 }}>{patient.servicesAvailedCount || 0} services availed</strong></span></div><div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}><StatusBadge status={patient.careStatus || patient.status} /><StatusBadge status={patient.accountStatus || 'Active'} /></div><div className="worker-actions"><button type="button" className="card-link" onClick={() => setInspectingUser(patient)}>View Services ↗</button><button type="button" className="card-link" onClick={() => removePatientFromSupportGroup(patient)}>Remove from group</button><button type="button" className="card-link" onClick={() => toggleChatPrivileges(patient)}>{patient.chatPrivileges === false ? 'Restore chat' : 'Restrict chat'}</button></div></article>)}</div>
+        <div className="worker-list">{workerPatients.map((patient) => <article key={patient.userId || patient.id}><div><strong>UIC {patient.uic || 'Unavailable'}</strong><span>{patient.medicalNotes || patient.detail}{patient.userId === 1 && latestMessage ? ` · “${latestMessage}”` : ''} · <strong style={{ color: 'var(--coral)', fontWeight: 400 }}>{patient.servicesAvailedCount || 0} services availed</strong></span></div><div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}><StatusBadge status={patient.careStatus || patient.status} /><StatusBadge status={patient.accountStatus || 'Active'} /></div><div className="worker-actions"><button type="button" className="card-link" onClick={() => setInspectingUser(patient)}>View Services ↗</button></div></article>)}</div>
         {!workerPatients.length && <p className="empty-records">No patients are currently assigned to you.</p>}
       </section>
       {claimablePatients.length > 0 && <section className="claimable-patients" aria-labelledby="claimable-heading"><div className="claimable-heading"><div><p className="eyebrow">Matching facility</p><h2 id="claimable-heading">Available patients</h2></div><span>{claimablePatients.length} unassigned</span></div><div className="worker-list">{claimablePatients.map((patient) => <article key={patient.patient_id}><div><strong>UIC {patient.uic || 'Unavailable'}</strong><span>{patient.care_status || 'Active care plan'}</span></div><button className="admin-btn admin-btn-primary" type="button" onClick={() => claimPatient(patient)}>Assign to me</button></article>)}</div></section>}
@@ -2183,7 +2236,7 @@ function HealthWorkerDashboard({ currentUser, currentWorker, onPublicHub, onSign
           const status = String(appointment.status || 'Requested');
           return <article key={appointment.id}><div><strong>UIC {appointment.patient}</strong><span>{appointment.date} · {formatAppointmentTime(appointment.time)} · {appointment.type} ({appointment.facilityName})</span>{appointment.notes && <small className="appointment-worker-note">Patient note: {appointment.notes}</small>}</div><StatusBadge status={status} /><span className="appointment-locked-note">Appointment requests are processed by an administrator.</span></article>;
         })}</div>{!appointments.length && <p className="empty-records">No appointment requests are waiting for your review.</p>}</PagePanel>,
-    groups: <PagePanel eyebrow="Supervised community care" title={<>One support<br /><i>group.</i></>}><SupervisorSupportGroupPanel group={supportGroup} messages={supportGroupMessages} localMode={!db.useApi} onSend={(messageText) => db.sendSupportGroupMessage({ patientId: workerUser.user_id, messageText, isSupervisor: true })} onRedact={(messageId) => db.redactSupportGroupMessage(messageId)} onRefresh={() => db.refreshSupportGroupState().catch(() => false)} /></PagePanel>,
+    groups: <PagePanel eyebrow="Supervised community care" title={<>One support<br /><i>group.</i></>}><SupervisorSupportGroupPanel group={supportGroup} messages={supportGroupMessages} members={groupMemberPatients} memberNotice={assignmentNotice} localMode={!db.useApi} onSend={(messageText) => db.sendSupportGroupMessage({ patientId: workerUser.user_id, messageText, isSupervisor: true })} onRedact={(messageId) => db.redactSupportGroupMessage(messageId)} onRefresh={() => db.refreshSupportGroupState().catch(() => false)} onRemoveMember={removePatientFromSupportGroup} onToggleChat={toggleChatPrivileges} /></PagePanel>,
   };
 
   return (
@@ -2193,6 +2246,7 @@ function HealthWorkerDashboard({ currentUser, currentWorker, onPublicHub, onSign
         <button className="brand brand-button" onClick={() => navigate('overview')} aria-label="HIVeLink home"><span>HIVeLink</span></button>
         <nav className="nav-links worker-nav" aria-label="Health worker navigation">{[['patientsChats', 'Patients'], ['chat', 'Chats'], ['appointments', 'Appointments'], ['groups', 'Groups']].map(([key, label]) => <button className={`guest-nav-link ${page === key ? 'active' : ''}`} key={key} onClick={() => navigate(key)}>{label}</button>)}</nav>
         <div className="patient-header-actions">
+          <NotificationBell items={workerNotificationItems} />
           <StatusBadge status={workerRecord.is_available ? 'Available' : 'On Leave'} />
           <button type="button" className="text-button" style={{ fontSize: '10px' }} onClick={toggleAvailability}>Toggle {workerRecord.is_available ? 'On Leave' : 'Available'}</button>
           <span className="profile-name">{profileName}</span>
@@ -2200,7 +2254,6 @@ function HealthWorkerDashboard({ currentUser, currentWorker, onPublicHub, onSign
           <button className="sign-out-button" onClick={onSignOut}>Sign out</button>
         </div>
       </header>
-      <NotificationBar items={workerNotificationItems} tone="worker" />
       <main key={page} className="patient-main route-transition">{content[page]}</main>
       <footer><span className="footer-brand">HIVeLink</span><button className="patient-public-link" onClick={onPublicHub}>Public awareness hub ↗</button><button className="footer-back" onClick={() => navigate('overview')}>Back to top ↑</button></footer>
       {patientEditor && <PatientForm data={patientEditor} onClose={() => setPatientEditor(null)} onSave={savePatient} />}
