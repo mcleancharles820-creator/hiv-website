@@ -460,6 +460,30 @@ const patientPrivateNavItems = [
   ['support', 'Support Groups'],
 ];
 
+function NotificationBar({ items, tone = 'info' }) {
+  if (!items.length) return null;
+  return <div className={`notification-bar notification-${tone}`} role="status" aria-live="polite">{items.map((item, index) => <p key={index}>{item}</p>)}</div>;
+}
+
+function patientNotifications({ upcomingAppointment, unreadWorkerMessages, hasChatPrivileges, isChatEnabled }) {
+  const items = [];
+  if (upcomingAppointment) items.push(`Upcoming appointment: ${upcomingAppointment.appointment_date} at ${formatAppointmentTime(upcomingAppointment.appointment_time)} (${upcomingAppointment.appointment_type || 'Visit'}).`);
+  if (unreadWorkerMessages) items.push(`You have ${unreadWorkerMessages} unread message${unreadWorkerMessages === 1 ? '' : 's'} from your care team.`);
+  if (!isChatEnabled) items.push('Private chat support is temporarily unavailable.');
+  else if (!hasChatPrivileges) items.push('Private chat access is currently limited by your care team.');
+  return items;
+}
+
+function workerNotifications({ unreadPatientMessages, pendingAppointments, workerRecord, supportGroup }) {
+  const items = [];
+  if (unreadPatientMessages) items.push(`${unreadPatientMessages} unread patient message${unreadPatientMessages === 1 ? '' : 's'} waiting in your inbox.`);
+  if (pendingAppointments.length) items.push(`${pendingAppointments.length} appointment request${pendingAppointments.length === 1 ? '' : 's'} for your assigned patients.`);
+  if (!workerRecord.is_available) items.push('You are currently marked On Leave — update your availability when ready.');
+  if (!supportGroup?.facilitator_worker_id) items.push('The support group has no supervisor assigned.');
+  else if (Number(supportGroup.facilitator_worker_id) !== Number(workerRecord.worker_id)) items.push('You are not supervising the active support group.');
+  return items;
+}
+
 function UserNavbar({ page, userCode, onNavigate, onSignOut }) {
   const items = [['home', 'Home'], ['information', 'Information'], ['testing', 'Testing'], ...patientPrivateNavItems];
   return (
@@ -1124,6 +1148,15 @@ function PatientDashboard({ currentUser, currentPatient, onPublicHub, onSignOut 
 
   const isTestingEnabled = db.getTable('PlatformServices').find((s) => s.service_key === 'testing_referrals')?.is_enabled ?? true;
   const isTreatmentEnabled = db.getTable('PlatformServices').find((s) => s.service_key === 'treatment_referrals')?.is_enabled ?? true;
+  const hasChatPrivileges = activeUser.chat_privileges !== false;
+  const isChatEnabled = db.getTable('PlatformServices').find((service) => service.service_key === 'chat_support')?.is_enabled ?? true;
+  const unreadWorkerMessages = chats.reduce((count, session) => count + db.getTable('ChatMessages').filter((message) => message.chat_session_id === session.chat_session_id && message.sender_role === 'worker' && !message.is_read).length, 0);
+  const patientNotificationItems = patientNotifications({
+    upcomingAppointment,
+    unreadWorkerMessages,
+    hasChatPrivileges,
+    isChatEnabled,
+  });
   const content = {
     home: <section className="patient-public-home"><p className="eyebrow"><span className="pulse-dot" /> Welcome to HIVeLink</p><h1>Care and support,<br /><i>at your pace.</i></h1><p className="dashboard-intro">Your private space to find trusted HIV information, explore local care, request appointments, review services, and connect with support.</p><img src="https://images.unsplash.com/photo-1576091160399-112ba8d25d1d?auto=format&fit=crop&w=1100&q=85" alt="Healthcare professional speaking with a patient" /><div className="guest-offerings-grid patient-home-offerings"><button type="button" onClick={() => navigate('information')}><span>LEARN</span><strong>Trusted information</strong><p>Read practical guides and watch educational videos.</p></button><button type="button" onClick={() => navigate('testing')}><span>FIND CARE</span><strong>Local services</strong><p>Review testing locations and treatment guidance.</p></button><button type="button" onClick={() => navigate('appointments')}><span>MANAGE CARE</span><strong>Appointments</strong><p>Send a request to the care team and track its status.</p></button><button type="button" onClick={() => navigate('chat')}><span>CONNECT</span><strong>Support</strong><p>Find private chat and community support options.</p></button></div></section>,
     care: <PagePanel eyebrow="Private care tools" title={<>Care, all in<br /><i>one place.</i></>}><div className="care-grid care-summary-grid"><PatientAction title="Appointments" text="Book and manage visits with your care team." action={() => navigate('appointments')} /><PatientAction title="Services availed" text="Review your booked appointments and care history." action={() => navigate('services')} /></div></PagePanel>,
@@ -1155,7 +1188,7 @@ function PatientDashboard({ currentUser, currentPatient, onPublicHub, onSignOut 
         </>;
       }} />
     </PagePanel>,
-    chat: <PagePanel eyebrow="Confidential support" title={<>Private<br /><i>conversation.</i></>}><ChatMessenger patientId={activePatientId} userId={activeUser.user_id} ticket={chats[0] || null} onUpdate={(preview) => { if (chats[0]?.chat_session_id) { db.update('ChatSessions', chats[0].chat_session_id, { preview, last_updated: new Date().toISOString() }); } }} /></PagePanel>,
+    chat: <PagePanel eyebrow="Confidential support" title={<>Private<br /><i>conversation.</i></>}>{hasChatPrivileges ? <ChatMessenger patientId={activePatientId} userId={activeUser.user_id} ticket={chats[0] || null} onUpdate={(preview) => { if (chats[0]?.chat_session_id) { db.update('ChatSessions', chats[0].chat_session_id, { preview, last_updated: new Date().toISOString() }); } }} /> : <p className="form-error" role="status">Your private chat access is currently limited by your care team. Contact your health worker for assistance.</p>}</PagePanel>,
     support: <PagePanel eyebrow="Private community care" title={<>You belong<br /><i>here.</i></>}><PatientSupportGroupPanel group={activeSupportGroup} membership={supportGroupMembership} messages={supportGroupMessages} localMode={!db.useApi} onJoin={(alias) => db.joinSupportGroup({ patientId: activePatientId, alias })} onLeave={() => db.leaveSupportGroup({ patientId: activePatientId })} onSend={(messageText) => db.sendSupportGroupMessage({ patientId: activePatientId, messageText })} onRefresh={() => db.refreshSupportGroupState().catch(() => false)} /></PagePanel>,
     account: <PagePanel eyebrow="Your account" title={<>Your care<br /><i>dashboard.</i></>}><div style={{ display: 'flex', gap: '10px', alignItems: 'center', marginBottom: '20px', flexWrap: 'wrap' }}><StatusBadge status={activeUser.is_active !== false ? 'Active' : 'Inactive'} label={`Account: ${activeUser.is_active !== false ? 'Active' : 'Inactive'}`} /><StatusBadge status={patientRecord.care_status || 'Active care plan'} label={`Care status: ${patientRecord.care_status || 'Active care plan'}`} /></div><div className="profile-card"><div><span>UIC (UNIQUE IDENTIFIER CODE)</span><strong>{activeUser.uic || 'Not available'}</strong></div><div><span>FULL NAME</span><strong>{activeUser.full_name}</strong></div><div><span>EMAIL ADDRESS</span><strong>{activeUser.email}</strong></div></div><div className="dashboard-tiles"><DashboardTile label="Services availed" value={`${patientServicesCount} total`} detail="Review your care history" /><DashboardTile label="Upcoming appointment" value={upcomingAppointment ? `${upcomingAppointment.appointment_date} · ${formatAppointmentTime(upcomingAppointment.appointment_time)}` : 'Nothing scheduled'} detail={upcomingAppointment?.appointment_type || 'Book your first visit'} /><DashboardTile label="Private chat notifications" value={`${chats.length || 1} open ${chats.length === 1 ? 'conversation' : 'conversations'}`} detail="View your support messages" /><DashboardTile label="Support groups joined" value={`${joinedGroups.length} groups`} detail="Find a community to join" /></div><h2 className="quick-heading">Quick actions</h2><div className="care-grid"><PatientAction title="View availed services" text="Check appointment and support statuses." action={() => navigate('services')} /><PatientAction title="Book appointment" text="Schedule a visit with the care team." action={() => navigate('appointments')} /><PatientAction title="Edit profile" text="Update your contact details and gender selection." action={() => setEditing({ type: 'profile', name: activeUser.full_name, email: activeUser.email, phone: activeUser.contact_number || '', gender: normalizeGender(activeUser.gender) })} /></div></PagePanel>,
   };
@@ -1168,6 +1201,7 @@ function PatientDashboard({ currentUser, currentPatient, onPublicHub, onSignOut 
     <div className="patient-shell">
       <div className="topline"><span>WORLD AIDS DAY IS EVERY DAY</span><span className="topline-detail">Information. Care. Community.</span></div>
       <UserNavbar page={page} userCode={activeUser.uic} onNavigate={navigate} onSignOut={onSignOut} />
+      <NotificationBar items={patientNotificationItems} tone="info" />
       <main key={page} className="patient-main route-transition">{content[page]}</main>
       <footer>
         <span className="footer-brand">HIVeLink</span>
@@ -2084,6 +2118,30 @@ function HealthWorkerDashboard({ currentUser, currentWorker, onPublicHub, onSign
     setPatientEditor(null);
   };
 
+  const removePatientFromSupportGroup = async (patient) => {
+    setAssignmentNotice('');
+    const result = await db.removeSupportGroupMember({ patientId: Number(patient.patientId || patient.patient_id) });
+    if (result?.error) {
+      setAssignmentNotice(result.error);
+      return;
+    }
+    setAssignmentNotice(result?.removed === false
+      ? 'That patient is not a member of the support group.'
+      : `Patient UIC ${patient.uic || 'unavailable'} was removed from the support group.`);
+  };
+
+  const toggleChatPrivileges = async (patient) => {
+    setAssignmentNotice('');
+    const userId = Number(patient.userId || patient.user_id);
+    const enabled = patient.chatPrivileges === false;
+    const result = await db.setChatPrivileges({ userId, enabled });
+    if (result?.error) {
+      setAssignmentNotice(result.error);
+      return;
+    }
+    setAssignmentNotice(`Private chat ${enabled ? 'restored for' : 'restricted for'} patient UIC ${patient.uic || 'unavailable'}.`);
+  };
+
   const claimPatient = async (patient) => {
     setAssignmentNotice('');
     const result = await db.claimPatient(patient.patient_id || patient.patientId, workerRecord.worker_id);
@@ -2101,14 +2159,26 @@ function HealthWorkerDashboard({ currentUser, currentWorker, onPublicHub, onSign
   };
 
   const latestMessage = db.getTable('ChatMessages').filter((m) => m.sender_role === 'patient').at(-1)?.message_text || '';
+  const unreadPatientMessages = db.getTable('ChatSessions').reduce((count, session) => count + db.getTable('ChatMessages').filter((message) => message.chat_session_id === session.chat_session_id && message.sender_role === 'patient' && !message.is_read).length, 0);
+  const workerNotificationItems = workerNotifications({
+    unreadPatientMessages,
+    pendingAppointments: appointments.filter((appointment) => ['requested', 'rescheduled'].includes(String(appointment.status || '').toLowerCase())),
+    workerRecord,
+    supportGroup,
+  });
 
   const content = {
     overview: <><p className="eyebrow"><span className="pulse-dot" /> Health worker overview</p><h1>Care that<br /><i>connects.</i></h1><p className="dashboard-intro">Support patients with trusted information, treatment follow-up, and compassionate care.</p><div className="dashboard-tiles worker-tiles"><DashboardTile label="Patients needing care" value={`${workerPatients.length} active`} detail="View patient support" /><DashboardTile label="Today’s appointments" value={`${appointments.length} scheduled`} detail="Open schedule" /><DashboardTile label="Support group" value={supportGroup ? '1 configured' : 'Unavailable'} detail="Supervise the group chat" /></div><h2 className="quick-heading">Quick actions</h2><div className="care-grid"><PatientAction title="Open patient chats" text="Respond to confidential patient questions." action={() => navigate('chat')} /><PatientAction title="Manage appointments" text="Confirm and organize patient visits." action={() => navigate('appointments')} /></div></>,
     chat: <PagePanel eyebrow="Private patient support" title={<>Conversation<br /><i>inbox.</i></>}><HealthWorkerChatInbox userId={workerUser.user_id} /></PagePanel>,
     patientsChats: <PagePanel eyebrow="Patient care and private support" title={<>Patients and<br /><i>chats.</i></>}>
       {assignmentNotice && <p className="form-status" role="status">{assignmentNotice}</p>}
+      <section aria-labelledby="assigned-heading">
+        <div className="claimable-heading"><div><h2 id="assigned-heading">Assigned patients</h2></div><span>{workerPatients.length} assigned</span></div>
+        <div className="worker-list">{workerPatients.map((patient) => <article key={patient.userId || patient.id}><div><strong>UIC {patient.uic || 'Unavailable'}</strong><span>{patient.medicalNotes || patient.detail}{patient.userId === 1 && latestMessage ? ` · “${latestMessage}”` : ''} · <strong style={{ color: 'var(--coral)', fontWeight: 400 }}>{patient.servicesAvailedCount || 0} services availed</strong></span></div><div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}><StatusBadge status={patient.careStatus || patient.status} /><StatusBadge status={patient.accountStatus || 'Active'} /></div><div className="worker-actions"><button type="button" className="card-link" onClick={() => setInspectingUser(patient)}>View Services ↗</button><button type="button" className="card-link" onClick={() => removePatientFromSupportGroup(patient)}>Remove from group</button><button type="button" className="card-link" onClick={() => toggleChatPrivileges(patient)}>{patient.chatPrivileges === false ? 'Restore chat' : 'Restrict chat'}</button></div></article>)}</div>
+        {!workerPatients.length && <p className="empty-records">No patients are currently assigned to you.</p>}
+      </section>
       {claimablePatients.length > 0 && <section className="claimable-patients" aria-labelledby="claimable-heading"><div className="claimable-heading"><div><p className="eyebrow">Matching facility</p><h2 id="claimable-heading">Available patients</h2></div><span>{claimablePatients.length} unassigned</span></div><div className="worker-list">{claimablePatients.map((patient) => <article key={patient.patient_id}><div><strong>UIC {patient.uic || 'Unavailable'}</strong><span>{patient.care_status || 'Active care plan'}</span></div><button className="admin-btn admin-btn-primary" type="button" onClick={() => claimPatient(patient)}>Assign to me</button></article>)}</div></section>}
-      <h2 className="quick-heading">Assigned patients</h2><div className="worker-list">{workerPatients.map((patient) => <article key={patient.userId || patient.id}><div><strong>UIC {patient.uic || 'Unavailable'}</strong><span>{patient.medicalNotes || patient.detail}{patient.userId === 1 && latestMessage ? ` · “${latestMessage}”` : ''} · <strong style={{ color: 'var(--coral)', fontWeight: 400 }}>{patient.servicesAvailedCount || 0} services availed</strong></span></div><div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}><StatusBadge status={patient.careStatus || patient.status} /><StatusBadge status={patient.accountStatus || 'Active'} /></div><div className="worker-actions"><button type="button" className="card-link" onClick={() => setInspectingUser(patient)}>View Services ↗</button><button className="card-link" onClick={() => setPatientEditor({ type: 'worker-patient', ...patient, id: patient.patientId, user_id: patient.userId, name: patient.uic })}>Edit Care Plan</button></div></article>)}</div>{!workerPatients.length && <p className="empty-records">No patients are currently assigned to you.</p>}</PagePanel>,
+    </PagePanel>,
     appointments: <PagePanel eyebrow="Care schedule" title={<>Manage<br /><i>appointments.</i></>}><div className="worker-list">{appointments.map((appointment) => {
           const status = String(appointment.status || 'Requested');
           return <article key={appointment.id}><div><strong>UIC {appointment.patient}</strong><span>{appointment.date} · {formatAppointmentTime(appointment.time)} · {appointment.type} ({appointment.facilityName})</span>{appointment.notes && <small className="appointment-worker-note">Patient note: {appointment.notes}</small>}</div><StatusBadge status={status} /><span className="appointment-locked-note">Appointment requests are processed by an administrator.</span></article>;
@@ -2130,6 +2200,7 @@ function HealthWorkerDashboard({ currentUser, currentWorker, onPublicHub, onSign
           <button className="sign-out-button" onClick={onSignOut}>Sign out</button>
         </div>
       </header>
+      <NotificationBar items={workerNotificationItems} tone="worker" />
       <main key={page} className="patient-main route-transition">{content[page]}</main>
       <footer><span className="footer-brand">HIVeLink</span><button className="patient-public-link" onClick={onPublicHub}>Public awareness hub ↗</button><button className="footer-back" onClick={() => navigate('overview')}>Back to top ↑</button></footer>
       {patientEditor && <PatientForm data={patientEditor} onClose={() => setPatientEditor(null)} onSave={savePatient} />}
@@ -2181,6 +2252,43 @@ function AdminEmailModal({ user, onClose }) {
       </section>
     </div>
   );
+}
+
+function countAppointmentsPerWeekday() {
+  const today = new Date();
+  const counts = [0, 0, 0, 0, 0, 0, 0]; // Mon..Sun
+  db.getTable('Appointments').forEach((appointment) => {
+    const value = appointment.created_at || appointment.appointment_date;
+    if (!value) return;
+    const date = new Date(String(value).length <= 10 ? `${value}T00:00:00` : value);
+    if (Number.isNaN(date.getTime())) return;
+    const daysAgo = Math.floor((today.setHours(0, 0, 0, 0) - date.setHours(0, 0, 0, 0)) / 86400000);
+    if (daysAgo < 0 || daysAgo > 27) return;
+    const weekday = (date.getDay() + 6) % 7; // Monday = 0
+    counts[weekday] += 1;
+  });
+  return counts;
+}
+
+function computeAverageChatResponseMinutes() {
+  const messages = db.getTable('ChatMessages')
+    .filter((m) => m.sent_at)
+    .sort((a, b) => new Date(a.sent_at) - new Date(b.sent_at));
+  const gaps = [];
+  let lastPatientAt = null;
+  messages.forEach((message) => {
+    const sentAt = new Date(message.sent_at);
+    if (message.sender_role === 'patient') {
+      lastPatientAt = sentAt;
+    } else if (message.sender_role === 'worker' && lastPatientAt) {
+      const minutes = (sentAt - lastPatientAt) / 60000;
+      if (minutes >= 0 && minutes < 10080) gaps.push(minutes);
+      lastPatientAt = null;
+    }
+  });
+  if (!gaps.length) return null;
+  const average = gaps.reduce((sum, value) => sum + value, 0) / gaps.length;
+  return average < 60 ? `${Math.round(average)} min` : `${(average / 60).toFixed(1)} hr`;
 }
 
 function AdminDashboard({ onPublicHub, onSignOut }) {
@@ -2267,7 +2375,12 @@ function AdminDashboard({ onPublicHub, onSignOut }) {
     uic: appointment.uic,
   });
 
-  const appointmentsCount = db.getTable('Appointments').length;
+  const appointmentRecords = db.getTable('Appointments');
+  const appointmentsCount = appointmentRecords.length;
+  const weeklyActivity = countAppointmentsPerWeekday();
+  const weeklyActivityMax = Math.max(1, ...weeklyActivity);
+  const completedReferralsCount = appointmentRecords.filter((appointment) => String(appointment.status || '').toLowerCase() === 'completed').length;
+  const averageChatResponse = computeAverageChatResponseMinutes();
   const activeAppointmentFacilities = db.getTable('TestingFacilities').filter((facility) => facility.is_active !== false);
   const adminAppointments = db.getTable('Appointments').map((appointment) => {
     const patient = db.getTable('Patients').find((entry) => Number(entry.patient_id) === Number(appointment.patient_id));
@@ -2298,7 +2411,7 @@ function AdminDashboard({ onPublicHub, onSignOut }) {
   });
 
   const content = {
-    overview: <><p className="eyebrow"><span className="pulse-dot" /> Admin overview</p><h1>Keep care<br /><i>connected.</i></h1><p className="dashboard-intro">Monitor the HIVeLink platform, its people, services, and support activity.</p><div className="dashboard-tiles admin-tiles"><DashboardTile label="Total users" value={detailedUsers.length} detail="Registered patients" /><DashboardTile label="Health workers" value={detailedWorkers.length} detail="Active care team" /><DashboardTile label="Monthly appointments" value={appointmentsCount} detail="This month" /><DashboardTile label="Active chat sessions" value={openChatsCount} detail="Currently open" /></div><div className="admin-overview-grid"><section><h2>Platform activity</h2><div className="activity-bars"><span style={{ height: '0%' }} /><span style={{ height: '0%' }} /><span style={{ height: '0%' }} /><span style={{ height: '0%' }} /><span style={{ height: '0%' }} /><span style={{ height: '0%' }} /><span style={{ height: '0%' }} /></div><div className="activity-labels"><span>Mon</span><span>Tue</span><span>Wed</span><span>Thu</span><span>Fri</span><span>Sat</span><span>Sun</span></div></section><section><h2>Recent activity</h2><div className="recent-list">{logs.length ? logs.map((log) => <div key={log.id}><strong>{log.action}</strong><span>{log.actor} · {log.time}</span></div>) : <p className="empty-records">No recent activity.</p>}</div></section></div></>,
+    overview: <><p className="eyebrow"><span className="pulse-dot" /> Admin overview</p><h1>Keep care<br /><i>connected.</i></h1><p className="dashboard-intro">Monitor the HIVeLink platform, its people, services, and support activity.</p><div className="dashboard-tiles admin-tiles"><DashboardTile label="Total users" value={detailedUsers.length} detail="Registered patients" /><DashboardTile label="Health workers" value={detailedWorkers.length} detail="Active care team" /><DashboardTile label="Monthly appointments" value={appointmentsCount} detail="This month" /><DashboardTile label="Active chat sessions" value={openChatsCount} detail="Currently open" /></div><div className="admin-overview-grid"><section><h2>Platform activity</h2><div className="activity-bars">{weeklyActivity.map((count, index) => <span key={index} style={{ height: `${Math.round((count / weeklyActivityMax) * 100)}%` }} title={`${count} appointments`} aria-label={`${count} appointments`} />)}</div><div className="activity-labels"><span>Mon</span><span>Tue</span><span>Wed</span><span>Thu</span><span>Fri</span><span>Sat</span><span>Sun</span></div></section><section><h2>Recent activity</h2><div className="recent-list">{logs.length ? logs.map((log) => <div key={log.id}><strong>{log.action}</strong><span>{log.actor} · {log.time}</span></div>) : <p className="empty-records">No recent activity.</p>}</div></section></div></>,
     appointments: (
       <PagePanel eyebrow="Administrator queue" title={<>Appointment<br /><i>requests.</i></>}>
         <p>Review patient requests by UIC. Confirm, cancel, or change the requested date and time.</p>
@@ -2516,7 +2629,7 @@ function AdminDashboard({ onPublicHub, onSignOut }) {
       </PagePanel>
     ),
     logs: <PagePanel eyebrow="Audit trail" title={<>Activity<br /><i>logs.</i></>}><AdminList items={logs} render={(log) => <><div><strong>{log.action}</strong><span>{log.actor}</span></div><em>{log.time}</em></>} /></PagePanel>,
-    reports: <PagePanel eyebrow="Platform insights" title={<>Reports and<br /><i>insights.</i></>}><div className="report-grid"><DashboardTile label="New registrations" value={detailedUsers.length} detail="Across all services" /><DashboardTile label="Completed referrals" value={0} detail="Across all services" /><DashboardTile label="Avg. response time" value={0} detail="Chat support" /><DashboardTile label="Service uptime" value={0} detail="Last 30 days" /></div><button className="primary-button" onClick={() => window.print()}>Print report <span>↗</span></button></PagePanel>,
+    reports: <PagePanel eyebrow="Platform insights" title={<>Reports and<br /><i>insights.</i></>}><div className="report-grid"><DashboardTile label="Registered patients" value={detailedUsers.length} detail="Across all services" /><DashboardTile label="Completed referrals" value={completedReferralsCount} detail={`Of ${appointmentsCount} appointment requests`} /><DashboardTile label="Avg. response time" value={averageChatResponse || 'No replies yet'} detail="Patient message to worker reply" /><DashboardTile label="Services available" value={`${services.filter((service) => service.enabled).length} of ${services.length}`} detail="Currently enabled on the platform" /></div><section className="admin-report-chart"><h2>Appointments logged per weekday</h2><p className="admin-note">Appointment activity across the last four weeks, grouped by weekday.</p><div className="activity-bars">{weeklyActivity.map((count, index) => <span key={index} style={{ height: `${Math.round((count / weeklyActivityMax) * 100)}%` }} title={`${count} appointments`} aria-label={`${count} appointments`} />)}</div><div className="activity-labels"><span>Mon</span><span>Tue</span><span>Wed</span><span>Thu</span><span>Fri</span><span>Sat</span><span>Sun</span></div></section><div className="report-grid"><DashboardTile label="Cancelled requests" value={appointmentRecords.filter((appointment) => String(appointment.status || '').toLowerCase() === 'cancelled').length} detail="Appointments cancelled" /><DashboardTile label="Open chat sessions" value={openChatsCount} detail="Awaiting support" /><DashboardTile label="Health workers" value={detailedWorkers.length} detail={`${detailedWorkers.filter((worker) => worker.isAvailable).length} currently available`} /><DashboardTile label="Support group" value={activeSupportGroup ? 'Active' : 'Not configured'} detail={activeSupportGroup ? 'Supervised community care' : 'No active group'} /></div><button className="primary-button" onClick={() => window.print()}>Print report <span>↗</span></button></PagePanel>,
     settings: <PagePanel eyebrow="System administration" title={<>System<br /><i>settings.</i></>}><div className="settings-list"><label>Platform name<input defaultValue="HIVeLink" /></label><label>Support email<input type="email" defaultValue="support@risinghiv.org" /></label><label className="setting-check"><input type="checkbox" defaultChecked /> Require approval for new health workers</label><label className="setting-check"><input type="checkbox" defaultChecked /> Enable activity logging</label><button className="primary-button">Save settings <span>↗</span></button></div></PagePanel>,
   };
 

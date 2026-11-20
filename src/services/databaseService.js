@@ -100,6 +100,24 @@ class DatabaseService {
     return this.insert('SupportGroupMembers', { group_id: group.group_id, patient_id: patientId, role_in_group: 'Member', display_alias: normalizedAlias, joined_at: new Date().toISOString() });
   }
 
+  async removeSupportGroupMember({ patientId }) {
+    const group = this.getTable('SupportGroups').find((item) => item.is_active);
+    const membership = this.getTable('SupportGroupMembers').find((item) => item.group_id === group?.group_id && item.patient_id === patientId);
+    if (!membership) return { removed: false };
+    this.data = {
+      ...this.data,
+      SupportGroupMembers: this.getTable('SupportGroupMembers').filter((item) => item.membership_id !== membership.membership_id),
+    };
+    this.saveDatabase(this.data);
+    this.notify();
+    return { removed: true };
+  }
+
+  async setChatPrivileges({ userId, enabled }) {
+    const result = await this.update('Users', userId, { chat_privileges: Boolean(enabled) });
+    return result?.error ? result : { chatPrivileges: Boolean(enabled) };
+  }
+
   async leaveSupportGroup({ patientId }) {
     if (this.useApi) {
       try {
