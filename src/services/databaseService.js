@@ -365,6 +365,48 @@ class DatabaseService {
     return { patient: this.findById('Patients', patientId) };
   }
 
+  async getAvailableHealthWorkers(patientId) {
+    if (this.useApi) {
+      try {
+        const result = await this.apiRequest('/api/patient/available-workers');
+        return result.workers || [];
+      } catch (error) {
+        return { error: error.message };
+      }
+    }
+    const patient = this.findById('Patients', patientId);
+    if (!patient || patient.assigned_worker_id) return [];
+    return this.getTable('HealthWorkers').filter((worker) => {
+      const user = this.findById('Users', worker.user_id);
+      return worker.is_verified && worker.is_available && user?.is_active !== false && user?.email_verified !== false
+        && (!worker.primary_facility_id || !patient.preferred_facility_id || Number(worker.primary_facility_id) === Number(patient.preferred_facility_id));
+    }).map((worker) => {
+      const user = this.findById('Users', worker.user_id);
+      const facility = this.findById('TestingFacilities', worker.primary_facility_id);
+      return { worker_id: worker.worker_id, full_name: user?.full_name || 'Health Worker', specialty: worker.specialty || 'HIV care support', bio_summary: worker.bio_summary || '', facility_name: facility?.name || 'Your local clinic' };
+    });
+  }
+
+  async choosePatientHealthWorker(patientId, workerId) {
+    if (this.useApi) {
+      try {
+        const result = await this.apiRequest('/api/patient/select-worker', { method: 'POST', body: JSON.stringify({ workerId }) });
+        await this.refresh();
+        return result;
+      } catch (error) {
+        return { error: error.message };
+      }
+    }
+    const patient = this.findById('Patients', patientId);
+    const worker = this.findById('HealthWorkers', workerId);
+    const user = worker ? this.findById('Users', worker.user_id) : null;
+    if (!patient || patient.assigned_worker_id) return { error: 'A health worker has already been assigned to your care. Refresh the page to continue.' };
+    if (!worker || !worker.is_verified || !worker.is_available || user?.is_active === false || user?.email_verified === false) return { error: 'This health worker is no longer available. Please choose another available profile.' };
+    if (worker.primary_facility_id && patient.preferred_facility_id && Number(worker.primary_facility_id) !== Number(patient.preferred_facility_id)) return { error: 'This health worker is not available at your selected clinic.' };
+    const updatedPatient = this.update('Patients', patientId, { assigned_worker_id: Number(workerId) });
+    return { patient: updatedPatient };
+  }
+
   async remoteMutation(method, tableName, id, record) {
     try {
       const url = `/api/records/${tableName}${id === undefined ? '' : `/${encodeURIComponent(id)}`}`;

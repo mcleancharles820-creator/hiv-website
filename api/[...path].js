@@ -304,8 +304,18 @@ async function loadSnapshot(user) {
       )).rows;
     })();
     queries.push(patientGroupMembershipQuery);
-    queries.push((async () => { snapshot.Users = [user]; })());
+    queries.push((async () => {
+      const assignedWorkerUser = await pool.query(
+        `SELECT u.user_id, u.full_name, u.role
+         FROM users u JOIN health_workers h ON h.user_id = u.user_id
+         JOIN patients p ON p.assigned_worker_id = h.worker_id
+         WHERE p.user_id = $1`,
+        [user.user_id],
+      );
+      snapshot.Users = [user, ...assignedWorkerUser.rows];
+    })());
     queries.push((async () => { snapshot.Patients = (await pool.query('SELECT * FROM patients WHERE user_id = $1', [user.user_id])).rows; })());
+    queries.push((async () => { snapshot.HealthWorkers = (await pool.query('SELECT h.worker_id, h.user_id, h.specialty, h.is_available, h.bio_summary FROM health_workers h JOIN patients p ON p.assigned_worker_id = h.worker_id WHERE p.user_id = $1', [user.user_id])).rows; })());
     queries.push((async () => { snapshot.Appointments = (await pool.query('SELECT a.* FROM appointments a JOIN patients p USING (patient_id) WHERE p.user_id = $1', [user.user_id])).rows; })());
     queries.push((async () => { snapshot.ChatSessions = (await pool.query('SELECT c.* FROM chat_sessions c JOIN patients p USING (patient_id) WHERE p.user_id = $1', [user.user_id])).rows; })());
     queries.push((async () => { snapshot.ChatMessages = (await pool.query('SELECT m.* FROM chat_messages m JOIN chat_sessions c USING (chat_session_id) JOIN patients p USING (patient_id) WHERE p.user_id = $1 ORDER BY sent_at', [user.user_id])).rows; })());
@@ -849,6 +859,40 @@ module.exports = async function handler(req, res) {
       return send(res, 200, { ok: true });
     }
     const user = await currentUser(req);
+    if (pathname === '/api/patient/available-workers' && req.method === 'GET') {
+      if (user?.role !== 'patient') return send(res, user ? 403 : 401, { error: 'Patient access required.' });
+      const patientResult = await pool.query('SELECT patient_id, assigned_worker_id, preferred_facility_id FROM patients WHERE user_id = $1', [user.user_id]);
+      const patient = patientResult.rows[0];
+      if (!patient) return send(res, 404, { error: 'Patient profile not found.' });
+      if (patient.assigned_worker_id) return send(res, 200, { workers: [] });
+      const workers = await pool.query(
+        `SELECT h.worker_id, u.full_name, h.specialty, h.bio_summary, f.name AS facility_name
+         FROM health_workers h JOIN users u ON u.user_id = h.user_id
+         LEFT JOIN testing_facilities f ON f.facility_id = h.primary_facility_id
+         WHERE h.is_verified = TRUE AND h.is_available = TRUE AND u.is_active = TRUE AND u.email_verified = TRUE
+           AND (h.primary_facility_id IS NULL OR $1::integer IS NULL OR h.primary_facility_id = $1)
+         ORDER BY u.full_name`,
+        [patient.preferred_facility_id],
+      );
+      return send(res, 200, { workers: workers.rows });
+    }
+    if (pathname === '/api/patient/select-worker' && req.method === 'POST') {
+      if (user?.role !== 'patient') return send(res, user ? 403 : 401, { error: 'Patient access required.' });
+      const workerId = Number(getBody(req).workerId);
+      if (!Number.isSafeInteger(workerId) || workerId < 1) return send(res, 400, { error: 'Choose a valid health worker.' });
+      const assigned = await pool.query(
+        `UPDATE patients p SET assigned_worker_id = h.worker_id, updated_at = NOW()
+         FROM health_workers h JOIN users worker_user ON worker_user.user_id = h.user_id
+         WHERE p.user_id = $1 AND p.assigned_worker_id IS NULL AND h.worker_id = $2
+           AND h.is_verified = TRUE AND h.is_available = TRUE
+           AND worker_user.is_active = TRUE AND worker_user.email_verified = TRUE
+           AND (h.primary_facility_id IS NULL OR p.preferred_facility_id IS NULL OR h.primary_facility_id = p.preferred_facility_id)
+         RETURNING p.*`,
+        [user.user_id, workerId],
+      );
+      if (!assigned.rowCount) return send(res, 409, { error: 'This health worker is no longer available, or a worker has already been assigned. Refresh the page and try again.' });
+      return send(res, 200, { patient: assigned.rows[0] });
+    }
     if (pathname === '/api/worker/claimable-patients' && req.method === 'GET') {
       if (user?.role !== 'health-worker') return send(res, user ? 403 : 401, { error: 'Health worker access required.' });
       const result = await pool.query(

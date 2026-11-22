@@ -1108,6 +1108,10 @@ function PatientDashboard({ currentUser, currentPatient, onPublicHub, onSignOut 
   const [page, setPage] = useState('home');
   const [editing, setEditing] = useState(null);
   const [appointmentActionError, setAppointmentActionError] = useState('');
+  const [availableChatWorkers, setAvailableChatWorkers] = useState([]);
+  const [workerListLoading, setWorkerListLoading] = useState(false);
+  const [workerSelectionId, setWorkerSelectionId] = useState(null);
+  const [workerSelectionError, setWorkerSelectionError] = useState('');
 
   useEffect(() => {
     return db.subscribe(() => setDbVersion((v) => v + 1));
@@ -1119,6 +1123,30 @@ function PatientDashboard({ currentUser, currentPatient, onPublicHub, onSignOut 
   const activePatientId = patientRecord.patient_id;
   const assignedWorker = patientRecord.assigned_worker_id ? db.findById('HealthWorkers', patientRecord.assigned_worker_id) : null;
   const assignedWorkerUser = assignedWorker ? db.findById('Users', assignedWorker.user_id) : null;
+
+  useEffect(() => {
+    if (page !== 'chat' || assignedWorker || !activePatientId) return undefined;
+    let isCurrent = true;
+    setWorkerListLoading(true);
+    db.getAvailableHealthWorkers(activePatientId).then((workers) => {
+      if (!isCurrent) return;
+      setAvailableChatWorkers(Array.isArray(workers) ? workers : []);
+      setWorkerSelectionError(workers?.error || '');
+    }).finally(() => { if (isCurrent) setWorkerListLoading(false); });
+    return () => { isCurrent = false; };
+  }, [page, activePatientId, Boolean(assignedWorker)]);
+
+  const selectChatWorker = async (workerId) => {
+    setWorkerSelectionId(workerId);
+    setWorkerSelectionError('');
+    const result = await db.choosePatientHealthWorker(activePatientId, workerId);
+    if (result?.error) {
+      setWorkerSelectionError(result.error);
+      const refreshedWorkers = await db.getAvailableHealthWorkers(activePatientId);
+      setAvailableChatWorkers(Array.isArray(refreshedWorkers) ? refreshedWorkers : []);
+    } else setAvailableChatWorkers([]);
+    setWorkerSelectionId(null);
+  };
 
   const appointments = activePatientId ? db.getTable('Appointments')
     .filter((appointment) => Number(appointment.patient_id) === Number(activePatientId))
@@ -1227,7 +1255,12 @@ function PatientDashboard({ currentUser, currentPatient, onPublicHub, onSignOut 
       }} />
     </PagePanel>,
     chat: <PagePanel eyebrow="Confidential support" title={<>Private<br /><i>conversation.</i></>}>
-      {!assignedWorker ? <div className="chat-assignment-empty" role="status"><span className="eyebrow">Your care team</span><h2>A health worker will connect with you</h2><p>Private chat opens after a health worker has been assigned to your patient record. Please contact your clinic or care team to request an assignment. Once assigned, their profile will appear here and you can start a confidential conversation directly.</p></div> : <>
+      {!assignedWorker ? <div className="chat-assignment-empty"><span className="eyebrow">Your care team</span><h2>Choose an available health worker</h2><p>You can select a verified health worker who is currently available and serves your selected clinic. Choosing a profile assigns that worker to your care and opens your private chat. If a member of the care team assigns someone first, their profile will appear here instead.</p>
+        {workerSelectionError && <p className="form-error" role="alert">{workerSelectionError}</p>}
+        {workerListLoading ? <p className="empty-records" role="status">Loading available health workers…</p> : availableChatWorkers.length ? <div className="available-worker-list" aria-label="Available health workers">{availableChatWorkers.map((worker) => <button className="assigned-worker-profile" key={worker.worker_id} type="button" disabled={workerSelectionId !== null} onClick={() => selectChatWorker(worker.worker_id)}>
+          <span className="worker-avatar">{(worker.full_name || 'Health Worker').charAt(0)}</span><span><strong>{worker.full_name || 'Health Worker'}</strong><small>{worker.specialty || 'HIV care support'} · {worker.facility_name || 'Your local clinic'}</small><small>{worker.bio_summary || 'Available to answer private questions and support your next steps in care.'}</small></span><span aria-hidden="true">{workerSelectionId === worker.worker_id ? '…' : 'Chat →'}</span>
+        </button>)}</div> : <p className="empty-records" role="status">{workerSelectionError ? '' : 'No verified health workers are available for your clinic right now. Please check back soon or contact your clinic for help.'}</p>}
+      </div> : <>
         <section className="assigned-worker-directory" aria-labelledby="assigned-worker-heading">
           <p className="eyebrow">Your health worker</p><h2 id="assigned-worker-heading">Choose a profile to start chatting</h2>
           <button className="assigned-worker-profile" type="button" onClick={() => document.getElementById('patient-chat-messenger')?.scrollIntoView({ behavior: 'smooth', block: 'start' })}>
