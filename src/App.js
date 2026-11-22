@@ -1121,11 +1121,12 @@ function PatientDashboard({ currentUser, currentPatient, onPublicHub, onSignOut 
   const activeUser = (activeUserId ? db.findById('Users', activeUserId) : null) || currentUser || { full_name: 'Your Account', email: '', contact_number: '' };
   const patientRecord = (activeUserId ? db.getTable('Patients').find((p) => p.user_id === activeUserId) : null) || currentPatient || db.getTable('Patients')[0] || { patient_id: null, user_id: activeUserId };
   const activePatientId = patientRecord.patient_id;
-  const assignedWorker = patientRecord.assigned_worker_id ? db.findById('HealthWorkers', patientRecord.assigned_worker_id) : null;
+  const assignedWorkerId = patientRecord.assigned_worker_id || null;
+  const assignedWorker = assignedWorkerId ? db.findById('HealthWorkers', assignedWorkerId) : null;
   const assignedWorkerUser = assignedWorker ? db.findById('Users', assignedWorker.user_id) : null;
 
   useEffect(() => {
-    if (page !== 'chat' || assignedWorker || !activePatientId) return undefined;
+    if (page !== 'chat' || assignedWorkerId || !activePatientId) return undefined;
     let isCurrent = true;
     setWorkerListLoading(true);
     db.getAvailableHealthWorkers(activePatientId).then((workers) => {
@@ -1134,7 +1135,7 @@ function PatientDashboard({ currentUser, currentPatient, onPublicHub, onSignOut 
       setWorkerSelectionError(workers?.error || '');
     }).finally(() => { if (isCurrent) setWorkerListLoading(false); });
     return () => { isCurrent = false; };
-  }, [page, activePatientId, Boolean(assignedWorker)]);
+  }, [page, activePatientId, assignedWorkerId]);
 
   const selectChatWorker = async (workerId) => {
     setWorkerSelectionId(workerId);
