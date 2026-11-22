@@ -540,7 +540,7 @@ async function mutate(req, user, table, id) {
     values.sender_role = user.role === 'health-worker' ? 'worker' : user.role;
     if (!values.message_text?.trim()) return { status: 400, body: { error: 'Message cannot be empty.' } };
     const access = user.role === 'patient'
-      ? await pool.query('SELECT 1 FROM chat_sessions WHERE chat_session_id = $1 AND patient_id = $2', [values.chat_session_id, await patientIdForUser(user.user_id)])
+      ? await pool.query('SELECT 1 FROM chat_sessions c JOIN patients p USING (patient_id) WHERE c.chat_session_id = $1 AND c.patient_id = $2 AND p.assigned_worker_id IS NOT NULL AND c.worker_id = p.assigned_worker_id', [values.chat_session_id, await patientIdForUser(user.user_id)])
       : await pool.query('SELECT 1 FROM chat_sessions c JOIN patients p USING (patient_id) JOIN health_workers h ON h.worker_id = p.assigned_worker_id WHERE c.chat_session_id = $1 AND h.user_id = $2', [values.chat_session_id, user.user_id]);
     if (!access.rowCount) return { status: 404, body: { error: 'Chat session not found.' } };
   }
@@ -901,6 +901,10 @@ module.exports = async function handler(req, res) {
           await client.query('ROLLBACK');
           return send(res, 404, { error: 'Patient profile not found.' });
         }
+        if (!patient.assigned_worker_id) {
+          await client.query('ROLLBACK');
+          return send(res, 403, { error: 'Private chat is available after a health worker has been assigned to your care.' });
+        }
 
         const preferredSessionId = Number(getBody(req).preferredChatSessionId);
         if (Number.isSafeInteger(preferredSessionId) && preferredSessionId > 0) {
@@ -909,6 +913,10 @@ module.exports = async function handler(req, res) {
             [preferredSessionId, patient.patient_id],
           );
           if (preferred.rowCount) {
+            if (Number(preferred.rows[0].worker_id) !== Number(patient.assigned_worker_id)) {
+              const updated = await client.query('UPDATE chat_sessions SET worker_id = $1 WHERE chat_session_id = $2 RETURNING *', [patient.assigned_worker_id, preferred.rows[0].chat_session_id]);
+              preferred.rows[0] = updated.rows[0];
+            }
             await client.query('COMMIT');
             return send(res, 200, { session: preferred.rows[0] });
           }
@@ -919,6 +927,10 @@ module.exports = async function handler(req, res) {
           [patient.patient_id],
         );
         if (existing.rowCount) {
+          if (Number(existing.rows[0].worker_id) !== Number(patient.assigned_worker_id)) {
+            const updated = await client.query('UPDATE chat_sessions SET worker_id = $1 WHERE chat_session_id = $2 RETURNING *', [patient.assigned_worker_id, existing.rows[0].chat_session_id]);
+            existing.rows[0] = updated.rows[0];
+          }
           await client.query('COMMIT');
           return send(res, 200, { session: existing.rows[0] });
         }

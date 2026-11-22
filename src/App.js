@@ -518,8 +518,6 @@ function workerNotifications({ unreadPatientMessages, pendingAppointments, worke
   if (unreadPatientMessages) items.push(`${unreadPatientMessages} unread patient message${unreadPatientMessages === 1 ? '' : 's'} waiting in your inbox.`);
   if (pendingAppointments.length) items.push(`${pendingAppointments.length} appointment request${pendingAppointments.length === 1 ? '' : 's'} for your assigned patients.`);
   if (!workerRecord.is_available) items.push('You are currently marked On Leave — update your availability when ready.');
-  if (!supportGroup?.facilitator_worker_id) items.push('The support group has no supervisor assigned.');
-  else if (Number(supportGroup.facilitator_worker_id) !== Number(workerRecord.worker_id)) items.push('You are not supervising the active support group.');
   return items;
 }
 
@@ -653,7 +651,7 @@ function GuestHub({ onExit, patientMode = false, appointmentsEnabled = true, onP
         <div className="guest-section-intro">
           <p className="eyebrow">HIV / AIDS information</p>
           <h1>Knowledge<br /><i>without stigma.</i></h1>
-          <p>Clear, practical information to help you learn at your own pace. These resources support learning and do not replace advice from a qualified health worker.</p>
+          <p>Explore clear, practical guides on HIV, prevention, testing, treatment, and emotional wellbeing. Open any topic for a deeper explanation, or choose a trusted video or resource to continue learning at your own pace. These materials support learning and do not replace advice from a qualified health worker.</p>
         </div>
         <div>
           <KnowledgeInformationGrid />
@@ -909,9 +907,8 @@ function AuthScreen({ onEnter, onPasswordRecoveryComplete }) {
         <div className="auth-message"><p className="eyebrow"><span className="pulse-dot" /> Welcome</p><h1>HIVeLink<span>.</span></h1></div>
       </div>
       <div className="auth-panel">
-        <div className="auth-panel-top"><span>WELCOME</span><span>01 / 01</span></div>
         <div key={mode} className="auth-form-wrap route-transition">
-          <div className="auth-page-label"><span>{verificationEmail ? 'VERIFY EMAIL' : mode === 'login' ? 'LOG IN' : mode === 'register' ? 'SIGN UP' : 'PASSWORD RECOVERY'}</span><span>01 / 01</span></div>
+          <div className="auth-page-label"><span>{verificationEmail ? 'VERIFY EMAIL' : mode === 'login' ? 'LOG IN' : mode === 'register' ? 'SIGN UP' : 'PASSWORD RECOVERY'}</span></div>
           <h2>{emailVerificationStatus ? emailVerificationStatus === 'sent' ? <>Your email<br /><i>is verified.</i></> : <>Check your<br /><i>email.</i></> : mode === 'forgot-sent' ? <>Check your<br /><i>email.</i></> : mode === 'reset' ? <>Choose a new<br /><i>password.</i></> : mode === 'reset-complete' ? <>Password<br /><i>updated.</i></> : mode === 'forgot' ? <>Reset your<br /><i>password.</i></> : mode === 'login' ? <>Good to<br /><i>see you.</i></> : <>Make space<br /><i>for care.</i></>}</h2>
           <p className="auth-intro">{emailVerificationStatus === 'sent' ? 'Your account is ready. Sign in with the UIC we emailed you and your password.' : emailVerificationStatus === 'processing' ? 'We are confirming your email address and sending your UIC.' : emailVerificationStatus === 'failed' ? 'Your email could not be fully confirmed or your UIC email could not be delivered. You can retry while this page is open.' : emailVerificationStatus === 'pending' ? `We sent a verification link to ${verificationEmail}. Verify your address to receive your UIC by email, then sign in.` : mode === 'forgot' ? 'Enter the email address associated with your account. We will send a secure password reset link if it matches an active account.' : mode === 'forgot-sent' ? `If an active account exists for ${resetEmail}, a password reset link has been sent.` : mode === 'reset' ? 'Create a new password to secure your account. Use at least 12 characters.' : mode === 'reset-complete' ? 'Your password has been changed. You can now log in with your new password.' : mode === 'login' ? 'Enter your credentials to continue.' : 'Create an account to save resources and connect with support. Your UIC will be generated from your first and last initials, birth order, and date of birth.'}</p>
           {emailVerificationStatus ? <div className="verification-prompt">
@@ -1120,6 +1117,8 @@ function PatientDashboard({ currentUser, currentPatient, onPublicHub, onSignOut 
   const activeUser = (activeUserId ? db.findById('Users', activeUserId) : null) || currentUser || { full_name: 'Your Account', email: '', contact_number: '' };
   const patientRecord = (activeUserId ? db.getTable('Patients').find((p) => p.user_id === activeUserId) : null) || currentPatient || db.getTable('Patients')[0] || { patient_id: null, user_id: activeUserId };
   const activePatientId = patientRecord.patient_id;
+  const assignedWorker = patientRecord.assigned_worker_id ? db.findById('HealthWorkers', patientRecord.assigned_worker_id) : null;
+  const assignedWorkerUser = assignedWorker ? db.findById('Users', assignedWorker.user_id) : null;
 
   const appointments = activePatientId ? db.getTable('Appointments')
     .filter((appointment) => Number(appointment.patient_id) === Number(activePatientId))
@@ -1197,7 +1196,7 @@ function PatientDashboard({ currentUser, currentPatient, onPublicHub, onSignOut 
     isChatEnabled,
   });
   const content = {
-    home: <section className="patient-public-home"><p className="eyebrow"><span className="pulse-dot" /> Welcome to HIVeLink</p><h1>Care and support,<br /><i>at your pace.</i></h1><p className="dashboard-intro">Your private space to find trusted HIV information, explore local care, request appointments, review services, and connect with support.</p><img src="https://images.unsplash.com/photo-1576091160399-112ba8d25d1d?auto=format&fit=crop&w=1100&q=85" alt="Healthcare professional speaking with a patient" /><div className="guest-offerings-grid patient-home-offerings"><button type="button" onClick={() => navigate('information')}><span>LEARN</span><strong>Trusted information</strong><p>Read practical guides and watch educational videos.</p></button><button type="button" onClick={() => navigate('testing')}><span>FIND CARE</span><strong>Local services</strong><p>Review testing locations and treatment guidance.</p></button><button type="button" onClick={() => navigate('appointments')}><span>MANAGE CARE</span><strong>Appointments</strong><p>Send a request to the care team and track its status.</p></button><button type="button" onClick={() => navigate('chat')}><span>CONNECT</span><strong>Support</strong><p>Find private chat and community support options.</p></button></div></section>,
+    home: <section className="patient-public-home"><p className="eyebrow"><span className="pulse-dot" /> Welcome to HIVeLink</p><h1>Care and support,<br /><i>at your pace.</i></h1><p className="dashboard-intro">Your private space to find trusted HIV information, explore local care, request appointments, review services, and connect with support.</p><img src="https://images.unsplash.com/photo-1576091160399-112ba8d25d1d?auto=format&fit=crop&w=1100&q=85" alt="Healthcare professional speaking with a patient" /><div className="guest-offerings-grid patient-home-offerings"><button type="button" onClick={() => navigate('information')}><span>LEARN</span><strong>Trusted information</strong><p>Explore stigma-free guides on HIV, prevention, testing, and treatment, with trusted videos and resources for a deeper look.</p></button><button type="button" onClick={() => navigate('testing')}><span>FIND CARE</span><strong>Local services</strong><p>Review local testing contacts, learn what to ask when you call, and open directions to a nearby care facility.</p></button><button type="button" onClick={() => navigate('appointments')}><span>MANAGE CARE</span><strong>Appointments</strong><p>Send your preferred visit details to the care team, then return to review updates and manage your request.</p></button><button type="button" onClick={() => navigate('chat')}><span>CONNECT</span><strong>Support</strong><p>After a health worker is assigned to your care, open their profile to start a confidential one-to-one conversation.</p></button></div></section>,
     care: <PagePanel eyebrow="Private care tools" title={<>Care, all in<br /><i>one place.</i></>}><div className="care-grid care-summary-grid"><PatientAction title="Appointments" text="Book and manage visits with your care team." action={() => navigate('appointments')} /><PatientAction title="Services availed" text="Review your booked appointments and care history." action={() => navigate('services')} /></div></PagePanel>,
     services: <PagePanel eyebrow="Your care history" title={<>Services<br /><i>availed.</i></>}><ServicesAvailedView servicesAvailed={servicesAvailed} emptyMessage="You have not availed any services yet. Request an appointment or contact your care team to get started." /></PagePanel>,
     information: <PagePanel eyebrow="HIV information" title={<>Care starts<br /><i>with clarity.</i></>}><KnowledgeInformationGrid /><div className="profile-card"><div><span>UIC (UNIQUE IDENTIFIER CODE)</span><strong>{activeUser.uic || 'Not available'}</strong></div><div><span>FULL NAME</span><strong>{activeUser.full_name}</strong></div><div><span>EMAIL ADDRESS</span><strong>{activeUser.email}</strong></div><div><span>CONTACT NUMBER</span><strong>{activeUser.contact_number || 'Not provided'}</strong></div><div><span>ACCOUNT STATUS</span><div><StatusBadge status={activeUser.is_active !== false ? 'Active' : 'Inactive'} /></div></div><div><span>CARE STATUS</span><div><StatusBadge status={patientRecord.care_status || 'Active care plan'} /></div></div><div style={{ display: 'flex', gap: '12px', flexWrap: 'wrap', gridColumn: '1 / -1' }}><button className="primary-button" onClick={() => setEditing({ type: 'profile', name: activeUser.full_name, email: activeUser.email, phone: activeUser.contact_number || '', gender: normalizeGender(activeUser.gender) })}>Edit profile <span>↗</span></button><button className="text-button" onClick={() => navigate('services')}>View availed services ↗</button></div></div></PagePanel>,
@@ -1227,7 +1226,17 @@ function PatientDashboard({ currentUser, currentPatient, onPublicHub, onSignOut 
         </>;
       }} />
     </PagePanel>,
-    chat: <PagePanel eyebrow="Confidential support" title={<>Private<br /><i>conversation.</i></>}>{hasChatPrivileges ? <ChatMessenger patientId={activePatientId} userId={activeUser.user_id} ticket={chats[0] || null} onUpdate={(preview) => { if (chats[0]?.chat_session_id) { db.update('ChatSessions', chats[0].chat_session_id, { preview, last_updated: new Date().toISOString() }); } }} /> : <p className="form-error" role="status">Your private chat access is currently limited by your care team. Contact your health worker for assistance.</p>}</PagePanel>,
+    chat: <PagePanel eyebrow="Confidential support" title={<>Private<br /><i>conversation.</i></>}>
+      {!assignedWorker ? <div className="chat-assignment-empty" role="status"><span className="eyebrow">Your care team</span><h2>A health worker will connect with you</h2><p>Private chat opens after a health worker has been assigned to your patient record. Please contact your clinic or care team to request an assignment. Once assigned, their profile will appear here and you can start a confidential conversation directly.</p></div> : <>
+        <section className="assigned-worker-directory" aria-labelledby="assigned-worker-heading">
+          <p className="eyebrow">Your health worker</p><h2 id="assigned-worker-heading">Choose a profile to start chatting</h2>
+          <button className="assigned-worker-profile" type="button" onClick={() => document.getElementById('patient-chat-messenger')?.scrollIntoView({ behavior: 'smooth', block: 'start' })}>
+            <span className="worker-avatar">{(assignedWorkerUser?.full_name || 'Health Worker').charAt(0)}</span><span><strong>{assignedWorkerUser?.full_name || 'Health Worker'}</strong><small>{assignedWorker.specialty || 'HIV care support'} · {assignedWorker.is_available === false ? 'Currently unavailable' : 'Available for support'}</small><small>Assigned to your care · Open private conversation</small></span><span aria-hidden="true">→</span>
+          </button>
+        </section>
+        {hasChatPrivileges ? <div id="patient-chat-messenger"><ChatMessenger patientId={activePatientId} userId={activeUser.user_id} ticket={chats[0] || null} onUpdate={(preview) => { if (chats[0]?.chat_session_id) { db.update('ChatSessions', chats[0].chat_session_id, { preview, last_updated: new Date().toISOString() }); } }} /></div> : <p className="form-error" role="status">Your private chat access is currently limited by your care team. Contact your health worker for assistance.</p>}
+      </>}
+    </PagePanel>,
     support: <PagePanel eyebrow="Private community care" title={<>You belong<br /><i>here.</i></>}><PatientSupportGroupPanel group={activeSupportGroup} membership={supportGroupMembership} messages={supportGroupMessages} localMode={!db.useApi} onJoin={(alias) => db.joinSupportGroup({ patientId: activePatientId, alias })} onLeave={() => db.leaveSupportGroup({ patientId: activePatientId })} onSend={(messageText) => db.sendSupportGroupMessage({ patientId: activePatientId, messageText })} onRefresh={() => db.refreshSupportGroupState().catch(() => false)} /></PagePanel>,
     account: <PagePanel eyebrow="Your account" title={<>Your care<br /><i>dashboard.</i></>}><div style={{ display: 'flex', gap: '10px', alignItems: 'center', marginBottom: '20px', flexWrap: 'wrap' }}><StatusBadge status={activeUser.is_active !== false ? 'Active' : 'Inactive'} label={`Account: ${activeUser.is_active !== false ? 'Active' : 'Inactive'}`} /><StatusBadge status={patientRecord.care_status || 'Active care plan'} label={`Care status: ${patientRecord.care_status || 'Active care plan'}`} /></div><div className="profile-card"><div><span>UIC (UNIQUE IDENTIFIER CODE)</span><strong>{activeUser.uic || 'Not available'}</strong></div><div><span>FULL NAME</span><strong>{activeUser.full_name}</strong></div><div><span>EMAIL ADDRESS</span><strong>{activeUser.email}</strong></div></div><div className="dashboard-tiles"><DashboardTile label="Services availed" value={`${patientServicesCount} total`} detail="Review your care history" /><DashboardTile label="Upcoming appointment" value={upcomingAppointment ? `${upcomingAppointment.appointment_date} · ${formatAppointmentTime(upcomingAppointment.appointment_time)}` : 'Nothing scheduled'} detail={upcomingAppointment?.appointment_type || 'Book your first visit'} /><DashboardTile label="Private chat notifications" value={`${chats.length || 1} open ${chats.length === 1 ? 'conversation' : 'conversations'}`} detail="View your support messages" /><DashboardTile label="Support groups joined" value={`${joinedGroups.length} groups`} detail="Find a community to join" /></div><h2 className="quick-heading">Quick actions</h2><div className="care-grid"><PatientAction title="View availed services" text="Check appointment and support statuses." action={() => navigate('services')} /><PatientAction title="Book appointment" text="Schedule a visit with the care team." action={() => navigate('appointments')} /><PatientAction title="Edit profile" text="Update your contact details and gender selection." action={() => setEditing({ type: 'profile', name: activeUser.full_name, email: activeUser.email, phone: activeUser.contact_number || '', gender: normalizeGender(activeUser.gender) })} /></div></PagePanel>,
   };
@@ -1273,8 +1282,9 @@ function ChatMessenger({ ticket, onUpdate, userId, patientId }) {
     if (chatSessionId) db.markChatRead(chatSessionId, 'patient');
   }, [chatSessionId, unreadIncomingCount]);
 
-  const assignedWorker = ticket?.worker_id ? db.findById('HealthWorkers', ticket.worker_id) : null;
-  const assignedWorkerUser = assignedWorker ? db.findById('Users', assignedWorker.user_id) : db.getTable('Users').find((u) => u.role === 'health-worker');
+  const patientWorkerId = patientId ? db.findById('Patients', patientId)?.assigned_worker_id : null;
+  const assignedWorker = patientWorkerId ? db.findById('HealthWorkers', patientWorkerId) : null;
+  const assignedWorkerUser = assignedWorker ? db.findById('Users', assignedWorker.user_id) : null;
   const workerDisplayName = assignedWorkerUser?.full_name || 'Health Worker Support';
   const workerAvatarInitial = workerDisplayName.charAt(0) || 'H';
 
@@ -1293,6 +1303,11 @@ function ChatMessenger({ ticket, onUpdate, userId, patientId }) {
     const text = draft.trim();
     if (!text) return;
     setSendError('');
+
+    if (!assignedWorker || (ticket?.worker_id && Number(ticket.worker_id) !== Number(patientWorkerId))) {
+      setSendError('Private chat is available after a health worker has been assigned to your care.');
+      return;
+    }
 
     const session = await db.ensurePatientChatSession(patientId, chatSessionId);
     if (session?.error) {

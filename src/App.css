@@ -2119,6 +2119,21 @@ body { background: #f7f7f8; }
 .guest-hub .guest-knowledge .guest-section-intro { margin-bottom: clamp(36px, 5vw, 64px); }
 .guest-knowledge .guest-section-intro > p:last-of-type { max-width: 620px; }
 .knowledge-flow { margin: 0 auto; max-width: 1280px; }
+.guest-hub .guest-knowledge .guest-section-intro { background: linear-gradient(135deg, #f0f8f5, #fff 72%); border: 1px solid #e4efeb; border-radius: 24px; margin-bottom: clamp(36px, 5vw, 64px); padding: clamp(28px, 5vw, 58px); }
+.guest-hub .knowledge-flow-item { border-bottom: 0; border-radius: 22px; margin: 18px 0; padding: clamp(20px, 3vw, 34px); transition: box-shadow .2s ease, transform .2s ease; }
+.guest-hub .knowledge-flow-topic { background: #fff; box-shadow: 0 8px 28px rgba(32, 64, 56, .06); }
+.guest-hub .knowledge-flow-topic:hover { box-shadow: 0 16px 38px rgba(32, 64, 56, .12); transform: translateY(-2px); }
+.guest-hub .knowledge-topic-image { border-radius: 16px; overflow: hidden; }
+.guest-hub .knowledge-topic-image img { transition: transform .35s ease; }
+.guest-hub .knowledge-flow-topic:hover .knowledge-topic-image img { transform: scale(1.035); }
+.assigned-worker-directory { margin: 0 0 28px; }
+.assigned-worker-directory h2, .chat-assignment-empty h2 { font: 400 clamp(23px, 3vw, 32px)/1.15 Georgia, serif; margin: 8px 0 18px; }
+.assigned-worker-profile { align-items: center; background: #fff; border: 1px solid #e6e3e2; border-radius: 16px; color: inherit; cursor: pointer; display: flex; gap: 16px; padding: 18px; text-align: left; transition: border-color .2s, box-shadow .2s, transform .2s; width: 100%; }
+.assigned-worker-profile:hover, .assigned-worker-profile:focus-visible { border-color: #07858a; box-shadow: 0 10px 28px rgba(7, 133, 138, .12); transform: translateY(-2px); }
+.assigned-worker-profile > span:nth-child(2) { display: grid; flex: 1; gap: 5px; }
+.assigned-worker-profile small { color: #62575b; font-size: 13px; line-height: 1.45; }
+.chat-assignment-empty { background: linear-gradient(135deg, #f0f8f5, #fff); border: 1px solid #dcece6; border-radius: 20px; padding: clamp(24px, 5vw, 48px); }
+.chat-assignment-empty p { color: #62575b; line-height: 1.75; margin: 0; max-width: 680px; }
 .knowledge-flow-item { align-items: center; border-bottom: 1px solid #e8e4e5; display: grid; gap: clamp(24px, 5vw, 72px); grid-template-columns: minmax(0, 1.1fr) minmax(0, .9fr); padding: clamp(30px, 5vw, 66px) 0; scroll-margin-top: 100px; }
 .knowledge-flow-topic:nth-child(even) > :first-child { order: 2; }
 .knowledge-flow-topic:nth-child(even) > :last-child { order: 1; }

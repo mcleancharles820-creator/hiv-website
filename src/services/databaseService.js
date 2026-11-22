@@ -776,11 +776,20 @@ class DatabaseService {
     const normalizedPatientId = Number(patientId);
     const patient = this.getTable('Patients').find((record) => Number(record.patient_id) === normalizedPatientId);
     if (!patient) return { error: 'Patient profile not found.' };
+    if (!patient.assigned_worker_id || !this.findById('HealthWorkers', patient.assigned_worker_id)) {
+      return { error: 'Private chat is available after a health worker has been assigned to your care.' };
+    }
 
     const sessions = this.getTable('ChatSessions').filter((session) => Number(session.patient_id) === normalizedPatientId);
     const preferredSession = sessions.find((session) => Number(session.chat_session_id) === Number(preferredSessionId));
-    if (preferredSession) return preferredSession;
-    if (sessions.length) return sessions[0];
+    if (preferredSession) {
+      if (Number(preferredSession.worker_id) !== Number(patient.assigned_worker_id)) this.update('ChatSessions', preferredSession.chat_session_id, { worker_id: patient.assigned_worker_id });
+      return this.findById('ChatSessions', preferredSession.chat_session_id);
+    }
+    if (sessions.length) {
+      if (Number(sessions[0].worker_id) !== Number(patient.assigned_worker_id)) this.update('ChatSessions', sessions[0].chat_session_id, { worker_id: patient.assigned_worker_id });
+      return this.findById('ChatSessions', sessions[0].chat_session_id);
+    }
 
     return this.insert('ChatSessions', {
       patient_id: normalizedPatientId,
@@ -800,6 +809,13 @@ class DatabaseService {
     if (this.useApi) return this.insert('ChatMessages', { chat_session_id: sessionId, sender_user_id, sender_role, message_text: text });
     if (!this.getTable('ChatSessions').some((session) => Number(session.chat_session_id) === sessionId)) {
       return { error: 'Chat session not found.' };
+    }
+    if (sender_role === 'patient') {
+      const session = this.findById('ChatSessions', sessionId);
+      const patient = this.findById('Patients', session?.patient_id);
+      if (!patient?.assigned_worker_id || Number(session.worker_id) !== Number(patient.assigned_worker_id)) {
+        return { error: 'Private chat is available only with your assigned health worker.' };
+      }
     }
 
     const msg = this.insert('ChatMessages', {
