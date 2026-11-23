@@ -1023,6 +1023,7 @@ module.exports = async function handler(req, res) {
         has_supervisor: hasSupervisor,
       };
       let membership = null;
+      let members = [];
       let canRead = false;
       if (user.role === 'patient') {
         const membershipResult = await pool.query(
@@ -1037,6 +1038,14 @@ module.exports = async function handler(req, res) {
         const currentSupervisor = hasSupervisor && Number(row.supervisor_user_id) === Number(user.user_id);
         group.is_current_user_supervisor = currentSupervisor;
         canRead = currentSupervisor;
+        if (currentSupervisor) {
+          members = (await pool.query(
+            `SELECT sgm.patient_id, p.user_id, u.uic, p.care_status, sgm.is_muted
+             FROM support_group_members sgm JOIN patients p USING (patient_id)
+             JOIN users u ON u.user_id = p.user_id WHERE sgm.group_id = $1 ORDER BY sgm.joined_at`,
+            [row.group_id],
+          )).rows;
+        }
       }
       let messages = [];
       if (canRead) {
@@ -1056,7 +1065,27 @@ module.exports = async function handler(req, res) {
           params,
         )).rows;
       }
-      return send(res, 200, { group, membership, messages });
+      return send(res, 200, { group, membership, members, messages });
+    }
+    const moderateSupportGroupMember = pathname.match(/^\/api\/support-group\/members\/(\d+)\/(remove|mute)$/);
+    if (moderateSupportGroupMember && req.method === 'POST') {
+      if (user?.role !== 'health-worker') return send(res, user ? 403 : 401, { error: 'Health-worker access required.' });
+      const patientId = Number(moderateSupportGroupMember[1]);
+      const action = moderateSupportGroupMember[2];
+      const supervisor = await pool.query(
+        `SELECT g.group_id FROM support_groups g JOIN health_workers w ON w.worker_id = g.facilitator_worker_id
+         JOIN users u ON u.user_id = w.user_id WHERE g.is_active = TRUE AND w.user_id = $1
+         AND w.is_verified = TRUE AND w.is_available = TRUE AND u.is_active = TRUE AND u.email_verified = TRUE LIMIT 1`,
+        [user.user_id],
+      );
+      if (!supervisor.rowCount) return send(res, 403, { error: 'Only the designated group supervisor can manage members.' });
+      if (action === 'remove') {
+        const result = await pool.query('DELETE FROM support_group_members WHERE group_id = $1 AND patient_id = $2', [supervisor.rows[0].group_id, patientId]);
+        return send(res, 200, { removed: result.rowCount > 0 });
+      }
+      const muted = Boolean(getBody(req).muted);
+      const result = await pool.query('UPDATE support_group_members SET is_muted = $3 WHERE group_id = $1 AND patient_id = $2', [supervisor.rows[0].group_id, patientId, muted]);
+      return send(res, 200, { muted, updated: result.rowCount > 0 });
     }
     if (pathname === '/api/support-group/join' && req.method === 'POST') {
       if (user?.role !== 'patient') return send(res, user ? 403 : 401, { error: 'Patient access required.' });
@@ -1162,15 +1191,15 @@ module.exports = async function handler(req, res) {
         let senderRole;
         if (user.role === 'patient') {
           const membership = await client.query(
-            `SELECT sgm.display_alias FROM support_group_members sgm
+            `SELECT sgm.display_alias, sgm.is_muted FROM support_group_members sgm
              JOIN patients p USING (patient_id)
              WHERE sgm.group_id = $1 AND p.user_id = $2
              FOR UPDATE OF sgm`,
             [group.group_id, user.user_id],
           );
-          if (!membership.rowCount || !membership.rows[0].display_alias) {
+          if (!membership.rowCount || !membership.rows[0].display_alias || membership.rows[0].is_muted) {
             await client.query('ROLLBACK');
-            return send(res, 403, { error: 'Join the group before sending a message.' });
+            return send(res, 403, { error: membership.rows[0]?.is_muted ? 'Your group messaging has been muted by the supervisor.' : 'Join the group before sending a message.' });
           }
           senderAlias = membership.rows[0].display_alias;
           senderRole = 'member';

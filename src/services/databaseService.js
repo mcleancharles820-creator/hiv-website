@@ -70,7 +70,7 @@ class DatabaseService {
     this.data = {
       ...this.data,
       SupportGroups: state.group ? [state.group] : [],
-      SupportGroupMembers: state.membership ? [state.membership] : [],
+      SupportGroupMembers: state.members ? state.members.map((member) => ({ ...member, group_id: state.group?.group_id })) : (state.membership ? [state.membership] : []),
       SupportGroupMessages: state.messages || [],
     };
     this.notify();
@@ -101,6 +101,10 @@ class DatabaseService {
   }
 
   async removeSupportGroupMember({ patientId }) {
+    if (this.useApi) {
+      try { return await this.apiRequest(`/api/support-group/members/${encodeURIComponent(patientId)}/remove`, { method: 'POST' }); }
+      catch (error) { return { error: error.message }; }
+    }
     const group = this.getTable('SupportGroups').find((item) => item.is_active);
     const membership = this.getTable('SupportGroupMembers').find((item) => item.group_id === group?.group_id && item.patient_id === patientId);
     if (!membership) return { removed: false };
@@ -114,6 +118,12 @@ class DatabaseService {
   }
 
   async setChatPrivileges({ userId, enabled }) {
+    if (this.useApi) {
+      const member = this.getTable('SupportGroupMembers').find((item) => Number(item.user_id) === Number(userId));
+      if (!member) return { error: 'That patient is not a member of the support group.' };
+      try { return await this.apiRequest(`/api/support-group/members/${encodeURIComponent(member.patient_id)}/mute`, { method: 'POST', body: JSON.stringify({ muted: !enabled }) }); }
+      catch (error) { return { error: error.message }; }
+    }
     const result = await this.update('Users', userId, { chat_privileges: Boolean(enabled) });
     return result?.error ? result : { chatPrivileges: Boolean(enabled) };
   }

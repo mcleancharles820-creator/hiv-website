@@ -1,0 +1,2 @@
+ALTER TABLE public.support_group_members
+  ADD COLUMN IF NOT EXISTS is_muted BOOLEAN NOT NULL DEFAULT FALSE;

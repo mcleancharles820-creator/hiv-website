@@ -320,7 +320,7 @@ export function SupervisorSupportGroupPanel({ group, messages = [], members = []
                 </div>
                 <div className="worker-actions">
                   <button type="button" className="card-link" onClick={() => onRemoveMember(patient)}>Remove from group</button>
-                  <button type="button" className="card-link" onClick={() => onToggleChat(patient)}>{patient.chatPrivileges === false ? 'Restore chat' : 'Restrict chat'}</button>
+                  <button type="button" className="card-link" onClick={() => onToggleChat(patient)}>{patient.chatPrivileges === false ? 'Unmute member' : 'Mute member'}</button>
                 </div>
               </article>
             ))}

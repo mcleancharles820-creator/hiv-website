@@ -142,6 +142,7 @@ CREATE TABLE support_group_members (
     group_id INT NOT NULL REFERENCES support_groups(group_id) ON DELETE CASCADE,
     patient_id INT NOT NULL REFERENCES patients(patient_id) ON DELETE CASCADE,
     role_in_group VARCHAR(50) NOT NULL DEFAULT 'Member' CHECK (role_in_group IN ('Member', 'Peer Leader', 'Moderator')),
+    is_muted BOOLEAN NOT NULL DEFAULT FALSE,
     joined_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     UNIQUE (group_id, patient_id)
 );

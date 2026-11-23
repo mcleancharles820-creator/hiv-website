@@ -2192,6 +2192,13 @@ function HealthWorkerDashboard({ currentUser, currentWorker, onPublicHub, onSign
     ? db.getTable('SupportGroupMembers')
       .filter((membership) => Number(membership.group_id) === Number(supportGroup.group_id))
       .map((membership) => {
+        if (membership.user_id) return {
+          patientId: membership.patient_id,
+          userId: membership.user_id,
+          uic: membership.uic,
+          careStatus: membership.care_status || 'Active care plan',
+          chatPrivileges: !membership.is_muted,
+        };
         const patientRecordEntry = db.findById('Patients', membership.patient_id);
         const patientUser = patientRecordEntry ? db.findById('Users', patientRecordEntry.user_id) : null;
         return {
@@ -2227,6 +2234,7 @@ function HealthWorkerDashboard({ currentUser, currentWorker, onPublicHub, onSign
       setAssignmentNotice(result.error);
       return;
     }
+    if (db.useApi) await db.refreshSupportGroupState().catch(() => false);
     setAssignmentNotice(result?.removed === false
       ? 'That patient is not a member of the support group.'
       : `Patient UIC ${patient.uic || 'unavailable'} was removed from the support group.`);
@@ -2241,7 +2249,8 @@ function HealthWorkerDashboard({ currentUser, currentWorker, onPublicHub, onSign
       setAssignmentNotice(result.error);
       return;
     }
-    setAssignmentNotice(`Private chat ${enabled ? 'restored for' : 'restricted for'} patient UIC ${patient.uic || 'unavailable'}.`);
+    if (db.useApi) await db.refreshSupportGroupState().catch(() => false);
+    setAssignmentNotice(`Group messaging ${enabled ? 'restored for' : 'muted for'} patient UIC ${patient.uic || 'unavailable'}.`);
   };
 
   const claimPatient = async (patient) => {
